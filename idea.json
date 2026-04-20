@@ -1,0 +1,43 @@
+{
+	"name": "Brainrain",
+	"pages": [
+		{
+			"name": "home",
+			"elements": [
+				{
+					"type": "div",
+					"attributes": {
+						"class": "home-element welcome"
+					},
+					"children": [
+						{
+							"type": "h1",
+							"text": "Welcome to Brainrain!",
+							"attributes": {
+								"class": "home-title",
+								"id": "welcome-title"
+							}
+						},
+						{
+							"type": "p",
+							"text": "This is the home page of our amazing application."
+						}
+					]
+				}
+			],
+			"include": {
+				"js": ["home.js"],
+				"css": ["global.css", "home.css"]
+			}
+		}
+	],
+
+    "styles": {
+		"global.css": "body { font-family: Arial, sans-serif; }",
+		"home.css": "h1 { color: blue; }"
+	},
+
+    "scripts": {
+		"home.js": "console.log('Home page script loaded');"
+	}
+}
