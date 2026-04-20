@@ -114,25 +114,6 @@ header nav a:hover {
 	overflow: hidden;
 }
 
-.jelly-tank-owner .jelly,
-#jellytank .jelly {
-	pointer-events: none;
-}
-
-.jelly-tank-owner .bubble,
-#jellytank .bubble {
-	border-radius: 50%;
-	background: #fff;
-	border: none;
-	padding: 0;
-	pointer-events: auto;
-}
-
-.jelly-tank-owner .bubble:focus-visible,
-#jellytank .bubble:focus-visible {
-	outline: 1px solid rgba(255, 255, 255, 0.8);
-}
-
 .particle {
 	position: absolute;
 	width: 6px;
@@ -368,7 +349,8 @@ header nav a:hover {
 	pointer-events: none;
 	opacity: 0;
 
-	transition: opacity 0.1s ease-out;
+	/* opacity transition with 0.1s delay */
+	transition: opacity 0.15s ease-out 0.1s;
 
 	perspective: 100px;
 }
@@ -385,8 +367,7 @@ header nav a:hover {
 	transition:
 		transform 0.28s cubic-bezier(1,-0.02,.55,1.02);
 
-	
-	border: 1px solid red;
+	perspective: 200px;
 }
 
 #welcome .right-side div {
@@ -398,42 +379,47 @@ header nav a:hover {
 	transition: transform 0.28s cubic-bezier(1,-0.02,.55,1.02);
 }
 
+:root {
+	--welcome-translate-x: -30vw;
+}
+
 #welcome .right-side .introduction-div {
-	transform: translateX(-20vw) rotateZ(-10deg) scale(0.4) ;
+	transform: rotateZ(-6deg) translateX(var(--welcome-translate-x)) scale(0.4) ;
 	transition-duration: 0.26s;
 	transition-delay: 0.04s;
 }
 #welcome .right-side .news-div {
-	transform: rotateZ(-3deg) scale(0.4) translateX(-20vw);
+	transform: rotateZ(-3deg) translateX(var(--welcome-translate-x)) scale(0.4);
 	transition-duration: 0.22s;
 	transition-delay: 0.05s;
 }
 #welcome .right-side .discography-div {
-	transform: rotateZ(3deg) scale(0.4) translateX(-20vw);
+	transform: rotateZ(3deg) translateX(var(--welcome-translate-x)) scale(0.4);
 	transition-duration: 0.24s;
 	transition-delay: 0.06s;
 }
 #welcome .right-side .merch-div {
-	transform: rotateZ(10deg) scale(0.4) translateX(-20vw);
+	transform: rotateZ(6deg) translateX(var(--welcome-translate-x)) scale(0.4);
 	transition-duration: 0.21s;
 	transition-delay: 0.03s;
 }
 
+/* Popup upon toggle */
 #welcome #toggle-popup:checked ~ .right-side {
 	opacity: 1;
 	pointer-events: auto;
 }
 #welcome #toggle-popup:checked ~ .right-side .introduction-div {
-	transform: rotateZ(-10deg) rotateY(4deg) rotateX(-3deg);
+	transform: rotateZ(-6deg) rotateY(4deg) rotateX(-1deg);
 }
 #welcome #toggle-popup:checked ~ .right-side .news-div {
-	transform: rotateZ(-3deg) rotateY(6deg) rotateX(-3deg);
+	transform: rotateZ(-3deg) rotateY(6deg) rotateX(-1deg);
 }
 #welcome #toggle-popup:checked ~ .right-side .discography-div {
-	transform: rotateZ(3deg) rotateY(5deg);
+	transform: rotateZ(3deg) rotateY(5deg) rotateX(1deg);
 }
 #welcome #toggle-popup:checked ~ .right-side .merch-div {
-	transform: rotateZ(10deg) rotateY(3deg) rotateX(3deg);
+	transform: rotateZ(6deg) rotateY(3deg) rotateX(1deg);
 }
 
 
@@ -499,6 +485,12 @@ header nav a:hover {
 	align-items: center;
 
 	overflow-y: auto;
+	pointer-events: none;
+}
+
+/* Only enable pointer events for inner content */
+.reveal-section-content * {
+	pointer-events: auto;
 }
 
 .reveal-close-btn {

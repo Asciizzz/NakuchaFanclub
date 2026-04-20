@@ -2,11 +2,11 @@
 EzParallax
 By Asciiz
 
-Parallax template model:
+# Parallax template model:
 - data-ezparallax-template : transform template with token placeholders, e.g. translate3d($tx%,$ty%,0)
 - data-ezparallax-value    : whitespace-delimited starting values in token order, e.g. "10 20"
 
-Tokens are replaced with raw numeric values. Units are defined directly in the template.
+# Tokens are replaced with raw numeric values. Units are defined directly in the template.
 */
 (function() {
     const TEMPLATE_ATTR = "data-ezparallax-template";

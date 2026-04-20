@@ -1,4 +1,6 @@
-/* EzFloater by Asciiz
+/*
+EzFloater
+By Asciiz
 
 # Cool dynamic context menus and hover tooltips that is aware of iframes and DOMs and shi
 
