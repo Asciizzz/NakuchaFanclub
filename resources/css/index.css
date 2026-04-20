@@ -39,11 +39,6 @@ label {
 	cursor: pointer;
 }
 
-.sprite {
-	position: absolute;
-	opacity: 0.4;
-}
-
 header {
 	position: fixed;
 	top: 0;
@@ -98,6 +93,21 @@ header nav a {
 
 header nav a:hover {
 	text-decoration: underline;
+}
+
+
+#ez-floater {
+	background: var(--color-2);
+	color: var(--text-color-1);
+	border: 1px solid var(--color-3);
+	border-radius: 4px;
+	padding: 1rem 2rem;
+	font-size: 1.4rem;
+	line-height: 1.2;
+	backdrop-filter: blur(6px);
+	box-shadow: 0 10px 30px rgba(32, 64, 82, 0.38);
+	max-width: min(320px, 80vw);
+	white-space: nowrap;
 }
 
 #jellytank {
@@ -360,7 +370,7 @@ header nav a:hover {
 	font-weight: normal;
 	width: max-content;
 
-	margin: 1rem 0 1rem 20vw;
+	margin: 0.5rem 0 0.5rem 20vw;
 
 	display: inline-block;
 
@@ -376,7 +386,10 @@ header nav a:hover {
 	padding: 0.3rem 3rem;
 	border: #fff 2px solid;
 
-	transition: transform 0.28s cubic-bezier(1,-0.02,.55,1.02);
+	transition: 
+		transform 0.28s cubic-bezier(1,-0.02,.55,1.02),
+		scale 0.28s cubic-bezier(1,-0.02,.55,1.02);
+	transform-origin: left center;
 }
 
 :root {
@@ -420,6 +433,10 @@ header nav a:hover {
 }
 #welcome #toggle-popup:checked ~ .right-side .merch-div {
 	transform: rotateZ(6deg) rotateY(3deg) rotateX(1deg);
+}
+
+#welcome #toggle-popup:checked ~ .right-side div:hover {
+	scale: 1.1;
 }
 
 

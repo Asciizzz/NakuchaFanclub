@@ -1399,3 +1399,39 @@ function animateStaggeredSequence(spans, options, revealCallback) {
     syncSections();
 })();
 
+
+// Custom floaters (context + tooltip)
+
+(function() {
+    if (!window.EzFloater) return;
+
+    const floater = window.welcomeFloater instanceof window.EzFloater
+        ? window.welcomeFloater
+        : new window.EzFloater();
+    window.welcomeFloater = floater;
+
+    const readLabelText = (labelElement) => {
+        const inner = labelElement.querySelector("div");
+        const text = inner?.textContent?.trim() || labelElement.textContent?.trim() || "";
+        return text;
+    };
+
+    floater.addDisplay("welcomeRightLabel", {
+        tooltip(element) {
+            return readLabelText(element);
+        },
+        context(element) {
+            return readLabelText(element);
+        },
+    });
+
+    floater.addQuery("#welcome .right-side label", {
+        delegate: true,
+        display: "welcomeRightLabel",
+    });
+
+
+    const
+
+
+})();
