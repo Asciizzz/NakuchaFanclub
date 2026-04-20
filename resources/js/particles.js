@@ -1,206 +1,234 @@
-const elements = [
-    { queries: ["body"], cfg: {
-        size: { min: 10, max: 20 },
-        speed: { min: 20, max: 40 },
-        lifetime: { min: 200, max: 600 },
-        opacity: { min: 0.3, max: 0.8 },
-        color: [ "#fff" ],
+(function() {
+    if (!window.EzLivecanvas) return;
 
-        burst: {
-            count: 20,
-            color: [],
-            multiplier: 3.5
-        }
-    }}, // 0
-    { queries: ["header"], cfg: {
-        size: { min: 10, max: 20 },
-        speed: { min: 20, max: 40 },
-        lifetime: { min: 200, max: 600 },
-        opacity: { min: 0.3, max: 0.8 },
-        color: []
-    }}, // 1
-        { queries: ["label", "button", "a"], cfg: {
-        size: { min: 10, max: 20 },
-        speed: { min: 20, max: 40 },
-        lifetime: { min: 100, max: 300 },
-        opacity: { min: 0.8, max: 1.0 },
-        color: [],
+    const PARTICLE_HOST_ID = "global-particle-layer";
 
-        burst: {
-            count: 10,
-            color: [], // Leave empty to use base array
-            multiplier: 2
-        }
-    }}, // 2
-    { queries: ["#welcome"], cfg: {
-        size: { min: 5, max: 10 },
-        speed: { min: 15, max: 30 },
-        lifetime: { min: 600, max: 900 },
-        opacity: { min: 0.3, max: 0.8 },
-        color: []
+    const createParticleHost = () => {
+        let host = document.getElementById(PARTICLE_HOST_ID);
+        if (host) return host;
 
-        // Leave burst empty = no burst on click
-    }}// 3
-];
+        host = document.createElement("div");
+        host.id = PARTICLE_HOST_ID;
+        host.style.position = "fixed";
+        host.style.inset = "0";
+        host.style.pointerEvents = "none";
+        host.style.overflow = "hidden";
+        host.style.zIndex = "2147483647";
+        document.body.appendChild(host);
 
-const rainbowColors = [];
-for (let i = 0; i < 360; i += 10) {
-    elements[1].cfg.color.push(`hsl(${i}, 100%, 40%)`);
-    elements[2].cfg.color.push(`hsl(${i}, 100%, 60%)`);
-    elements[3].cfg.color.push(`hsl(${i}, 80%, 40%)`);
-}
-
-const PARTICLE_LAYER_ID = "global-particle-layer";
-
-function getParticleLayer() {
-    let layer = document.getElementById(PARTICLE_LAYER_ID);
-    if (layer) return layer;
-
-    layer = document.createElement("div");
-    layer.id = PARTICLE_LAYER_ID;
-    layer.style.position = "fixed";
-    layer.style.inset = "0";
-    layer.style.pointerEvents = "none";
-    layer.style.overflow = "visible";
-    layer.style.zIndex = "2147483647";
-    document.body.appendChild(layer);
-    return layer;
-}
-
-function getEventPoint(event) {
-    if (!event) return null;
-    if (typeof event.clientX === "number" && typeof event.clientY === "number") {
-        return { clientX: event.clientX, clientY: event.clientY };
-    }
-
-    if (event.touches && event.touches.length > 0) {
-        const touch = event.touches[0];
-        return { clientX: touch.clientX, clientY: touch.clientY };
-    }
-
-    return null;
-}
-
-function getFrontmostelementAtPoint(event) {
-    const point = getEventPoint(event);
-    if (!point) return null;
-
-    const topElement = document.elementFromPoint(point.clientX, point.clientY);
-    if (!topElement) return null;
-
-    let current = topElement;
-    while (current) {
-        for (const entry of elements) {
-            if (Array.isArray(entry.queries) && entry.queries.some((query) => current.matches?.(query))) {
-                return { element: current, cfg: entry.cfg };
-            }
-        }
-        current = current.parentElement;
-    }
-
-    return null;
-}
-
-function getBurstSettings(cfg) {
-    const burst = cfg.burst;
-    if (!burst) {
-        return null;
-    }
-
-    return {
-        count: Number.isFinite(burst.count) ? burst.count : 1,
-        multiplier: Number.isFinite(burst.multiplier) ? burst.multiplier : 1,
-        colors: Array.isArray(burst.color) && burst.color.length > 0 ? burst.color : cfg.color,
+        return host;
     };
-}
 
-function spawnParticles(div, e, cfg, type="move") {
-    const rect = div.getBoundingClientRect();
-    const localX = e.clientX - rect.left;
-    const localY = e.clientY - rect.top;
-    if (!rect) return; 
+    const toRange = (min, max) => min + Math.random() * (max - min);
+    const clamp01 = (v) => Math.max(0, Math.min(1, v));
+    const easeOut = (t) => 1 - (1 - t) * (1 - t);
 
-    // If outside element element local bounds, return
-    if (localX < 0 || localX > rect.width || localY < 0 || localY > rect.height) {
-        return;
-    }
+    const resolveHitPreset = (point, presets) => {
+        const topElement = document.elementFromPoint(point.clientX, point.clientY);
+        if (!topElement) return null;
 
-    const layer = getParticleLayer();
-    const burstSettings = type === "click" ? getBurstSettings(cfg) : null;
-    const burstCount = burstSettings?.count ?? 1;
-    const burstMultiplier = burstSettings?.multiplier ?? 1;
-    const colors = burstSettings?.colors ?? cfg.color;
+        let current = topElement;
+        while (current) {
+            for (const preset of presets) {
+                if (Array.isArray(preset.queries) && preset.queries.some((query) => current.matches?.(query))) {
+                    return { element: current, cfg: preset.cfg };
+                }
+            }
+            current = current.parentElement;
+        }
 
-    for (let i = 0; i < burstCount; i += 1) {
-        const particle = document.createElement("div");
-        particle.classList.add("particle");
-        
-        let speed = Math.random() * (cfg.speed.max - cfg.speed.min) + cfg.speed.min;
-        speed *= burstMultiplier;
-        let moveX = (Math.random() - 0.5) * speed * 2;
-        let moveY = (Math.random() - 0.5) * speed * 2;
-        particle.style.setProperty("--move-x", `${moveX}px`);
-        particle.style.setProperty("--move-y", `${moveY}px`);
+        return null;
+    };
 
-        let size = Math.random() * (cfg.size.max - cfg.size.min) + cfg.size.min;
-        particle.style.width = `${size}px`;
-        particle.style.height = `${size}px`;
+    const burstSettings = (cfg) => {
+        if (!cfg.burst) return null;
 
-        // Position in viewport space so the particle layer can sit above all elements.
-        const viewportX = rect.left + localX;
-        const viewportY = rect.top + localY;
-        particle.style.position = "fixed";
-        particle.style.left = `${viewportX - size / 2}px`;
-        particle.style.top = `${viewportY - size / 2}px`;
-        particle.style.zIndex = "1";
-
-        let color = colors[Math.floor(Math.random() * colors.length)] ?? "#fff";
-        particle.style.border = `3px solid ${color}`;
-
-        layer.appendChild(particle);
-
-        const duration = Math.random() * (cfg.lifetime.max - cfg.lifetime.min) + cfg.lifetime.min;
-        const opacity = Math.random() * (cfg.opacity.max - cfg.opacity.min) + cfg.opacity.min;
-
-        const animation = particle.animate(
-            [
-                { transform: "translate(0, 0)", opacity: opacity },
-                { transform: `translate(${moveX}px, ${moveY}px)`, opacity: 0 },
-            ],
-            {
-                duration,
-                easing: "ease-out",
-                fill: "forwards",
-            },
-        );
-
-        animation.onfinish = () => {
-            particle.remove();
+        return {
+            count: Number.isFinite(cfg.burst.count) ? cfg.burst.count : 1,
+            multiplier: Number.isFinite(cfg.burst.multiplier) ? cfg.burst.multiplier : 1,
+            colors: Array.isArray(cfg.burst.color) && cfg.burst.color.length > 0 ? cfg.burst.color : cfg.color,
         };
-    }
-}
+    };
 
-document.addEventListener("mousemove", (e) => {
-    const hit = getFrontmostelementAtPoint(e);
-    if (hit) spawnParticles(hit.element, e, hit.cfg, "move");
-});
+    const spawnFromPoint = (attrs, point, hit, type = "move") => {
+        const rect = hit.element.getBoundingClientRect();
+        const localX = point.clientX - rect.left;
+        const localY = point.clientY - rect.top;
 
-document.addEventListener("touchmove", (e) => {
-    const point = e.touches && e.touches.length > 0 ? e.touches[0] : null;
-    if (!point) return;
+        if (localX < 0 || localX > rect.width || localY < 0 || localY > rect.height) {
+            return;
+        }
 
-    const hit = getFrontmostelementAtPoint(point);
-    if (hit) spawnParticles(hit.element, point, hit.cfg, "move");
-});
+        const burst = type === "click" ? burstSettings(hit.cfg) : null;
+        const spawnCount = burst?.count ?? 1;
+        const speedMultiplier = burst?.multiplier ?? 1;
+        const colors = burst?.colors ?? hit.cfg.color;
 
-document.addEventListener("click", (e) => {
-    const hit = getFrontmostelementAtPoint(e);
-    if (hit) spawnParticles(hit.element, e, hit.cfg, "click");
-});
-document.addEventListener("touchstart", (e) => {
-    const point = e.touches && e.touches.length > 0 ? e.touches[0] : null;
-    if (!point) return;
-    
-    const hit = getFrontmostelementAtPoint(point);
-    if (hit) spawnParticles(hit.element, point, hit.cfg, "click");
-});
+        for (let i = 0; i < spawnCount; i += 1) {
+            if (attrs.particles.length >= attrs.maxParticles) {
+                attrs.particles.shift();
+            }
+
+            const speed = toRange(hit.cfg.speed.min, hit.cfg.speed.max) * speedMultiplier;
+            const driftX = (Math.random() - 0.5) * speed * 2;
+            const driftY = (Math.random() - 0.5) * speed * 2;
+            const size = toRange(hit.cfg.size.min, hit.cfg.size.max);
+            const lifeMs = toRange(hit.cfg.lifetime.min, hit.cfg.lifetime.max);
+            const opacity = toRange(hit.cfg.opacity.min, hit.cfg.opacity.max);
+
+            attrs.particles.push({
+                x: point.clientX,
+                y: point.clientY,
+                moveX: driftX,
+                moveY: driftY,
+                size,
+                lifeMs,
+                ageMs: 0,
+                opacity,
+                color: colors[Math.floor(Math.random() * colors.length)] ?? "#fff",
+                strokeWidth: 3,
+            });
+        }
+    };
+
+    const createPresets = () => {
+        const presets = [
+            {
+                queries: ["body"],
+                cfg: {
+                    size: { min: 10, max: 20 },
+                    speed: { min: 20, max: 40 },
+                    lifetime: { min: 200, max: 600 },
+                    opacity: { min: 0.3, max: 0.8 },
+                    color: ["#fff"],
+                    burst: {
+                        count: 20,
+                        color: [],
+                        multiplier: 3.5,
+                    },
+                },
+            },
+            {
+                queries: ["header"],
+                cfg: {
+                    size: { min: 10, max: 20 },
+                    speed: { min: 20, max: 40 },
+                    lifetime: { min: 200, max: 600 },
+                    opacity: { min: 0.3, max: 0.8 },
+                    color: [],
+                },
+            },
+            {
+                queries: ["label", "button", "a"],
+                cfg: {
+                    size: { min: 10, max: 20 },
+                    speed: { min: 20, max: 40 },
+                    lifetime: { min: 100, max: 300 },
+                    opacity: { min: 0.8, max: 1.0 },
+                    color: [],
+                    burst: {
+                        count: 10,
+                        color: [],
+                        multiplier: 2,
+                    },
+                },
+            },
+            {
+                queries: ["#welcome"],
+                cfg: {
+                    size: { min: 5, max: 10 },
+                    speed: { min: 15, max: 30 },
+                    lifetime: { min: 600, max: 900 },
+                    opacity: { min: 0.3, max: 0.8 },
+                    color: [],
+                },
+            },
+        ];
+
+        for (let i = 0; i < 360; i += 10) {
+            presets[1].cfg.color.push(`hsl(${i}, 100%, 40%)`);
+            presets[2].cfg.color.push(`hsl(${i}, 100%, 60%)`);
+            presets[3].cfg.color.push(`hsl(${i}, 80%, 40%)`);
+        }
+
+        return presets;
+    };
+
+    const host = createParticleHost();
+    const particleCanv = new window.EzLivecanvas({ passthrough: true });
+
+    particleCanv.addAction("particles", {
+        attrs: {
+            presets: createPresets(),
+            particles: [],
+            maxParticles: 1200,
+        },
+        update(self, runtime) {
+            const dtMs = runtime.deltatime * 1000;
+            if (dtMs <= 0) return;
+
+            const nextParticles = [];
+            for (const particle of self.attrs.particles) {
+                particle.ageMs += dtMs;
+                const t = clamp01(particle.ageMs / particle.lifeMs);
+                if (t >= 1) continue;
+
+                const eased = easeOut(t);
+                const px = particle.x + particle.moveX * eased;
+                const py = particle.y + particle.moveY * eased;
+                const alpha = particle.opacity * (1 - t);
+                if (alpha <= 0) continue;
+
+                runtime.ctx.save();
+                runtime.ctx.globalAlpha = alpha;
+                runtime.ctx.lineWidth = particle.strokeWidth;
+                runtime.ctx.strokeStyle = particle.color;
+                runtime.ctx.beginPath();
+                runtime.ctx.arc(px, py, particle.size / 2, 0, Math.PI * 2);
+                runtime.ctx.stroke();
+                runtime.ctx.restore();
+
+                nextParticles.push(particle);
+            }
+
+            self.attrs.particles = nextParticles;
+        },
+        events: {
+            mousemove(self, runtime) {
+                const point = runtime.mouse.viewport;
+                if (!point) return;
+
+                const hit = resolveHitPreset(point, self.attrs.presets);
+                if (!hit) return;
+                spawnFromPoint(self.attrs, point, hit, "move");
+            },
+            click(self, runtime) {
+                const point = runtime.mouse.viewport;
+                if (!point) return;
+
+                const hit = resolveHitPreset(point, self.attrs.presets);
+                if (!hit) return;
+                spawnFromPoint(self.attrs, point, hit, "click");
+            },
+            touchmove(self, runtime) {
+                const point = runtime.mouse.viewport;
+                if (!point) return;
+
+                const hit = resolveHitPreset(point, self.attrs.presets);
+                if (!hit) return;
+                spawnFromPoint(self.attrs, point, hit, "move");
+            },
+            touchstart(self, runtime) {
+                const point = runtime.mouse.viewport;
+                if (!point) return;
+
+                const hit = resolveHitPreset(point, self.attrs.presets);
+                if (!hit) return;
+                spawnFromPoint(self.attrs, point, hit, "click");
+            },
+        },
+    });
+
+    particleCanv.mount(host);
+    window.globalParticleCanv = particleCanv;
+})();

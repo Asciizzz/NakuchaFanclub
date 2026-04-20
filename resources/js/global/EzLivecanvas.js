@@ -14,9 +14,9 @@ go wild and make custom terrain or something, that would genuinely be cool)
         + addAsset(key, value): store any shared value/function
         + addImage(key, url): preload image asset as { type: "img", img }
         + addAudio(key, url): preload audio asset as { type: "audio", audio }
-        + exec(key, ...params): execute a function asset
+        + execFn(key, ...params): execute a function asset
 
-    + Action system (main thing)
+    + Action system (the bread and butter)
         + addAction(key, cfg)
             + cfg = {
                 attrs: {},
@@ -34,8 +34,14 @@ go wild and make custom terrain or something, that would genuinely be cool)
         + when event fires, it loops all actions and runs self.events[event](self, canv, e)
         + canvas pointer-events becomes auto only when at least one action event exists
 
+    + Other
+        + drawImage(assetKey, rect, style) accepts normal ctx style keys directly
+        + mousepos(ndc=false) returns the latest pointer/touch position in canvas space
+            + mousepos(true) returns NDC coords in range [-1, 1]
+
+
 # Notes:
-    + drawImage(assetKey, rect, style) accepts normal ctx style keys directly
+
     + reserved style keys:
         + angleRad, pivotX, pivotY: control image rotation around pivot
     + deltatime is in seconds
@@ -49,24 +55,33 @@ class EzLivecanvas {
         this.cfg = {
             width: Number.isFinite(cfg.width) ? cfg.width : 0,
             height: Number.isFinite(cfg.height) ? cfg.height : 0,
+            passthrough: cfg.passthrough === true, // In case you pull some crazy stupid shi up
         };
 
         this.canvas = document.createElement("canvas");
         this.ctx = this.canvas.getContext("2d", { alpha: true });
 
+        this.mountHost = null;
+
         this.assets = {};
         this.shared = {};
         this.actions = {};
 
+        this.mouse = {
+            viewport: null,
+            pos: null,
+            ndc: null,
+        };
+
         this.deltatime = 0;
+
+
+        this._handleResize = this._handleResize.bind(this);
 
         this._rafId = null;
         this._lastFrameAt = null;
-        this._mountedHost = null;
-        this._canvasEventHandlers = {};
-
-        this._handleResize = this._handleResize.bind(this);
         this._loop = this._loop.bind(this);
+        this._canvasEventHandlers = {};
 
         this._applyCanvasBaseStyle();
         this._applyCanvasDimensions();
@@ -86,7 +101,7 @@ class EzLivecanvas {
         this.canvas.style.inset = "0";
         this.canvas.style.width = "100%";
         this.canvas.style.height = "100%";
-        this.canvas.style.pointerEvents = "none";
+        this.canvas.style.pointerEvents = this.cfg.passthrough ? "none" : "auto";
         this.canvas.style.display = "block";
     }
 
@@ -143,10 +158,96 @@ class EzLivecanvas {
         return false;
     }
 
+    // Convert from viewport coord to canvas coord (global to local)
+    _mouseposFromViewportPoint(viewportPoint, ndc = false) {
+        if (!viewportPoint) return null;
+
+        const rect = this.canvas.getBoundingClientRect();
+        const width = Math.max(1, rect.width || this.canvas.width || 1);
+        const height = Math.max(1, rect.height || this.canvas.height || 1);
+
+        const canvasPoint = {
+            x: viewportPoint.x - rect.left,
+            y: viewportPoint.y - rect.top,
+        };
+
+        if (!ndc) return canvasPoint;
+
+        return {
+            x: (canvasPoint.x / width) * 2 - 1,
+            y: 1 - (canvasPoint.y / height) * 2,
+        };
+    }
+
+    mousepos(ndc = false) {
+        if (ndc) { if (this.mouse.ndc) return this.mouse.ndc; }
+        else     { if (this.mouse.pos) return this.mouse.pos; }
+    }
+
+    _eventPoint(event) {
+        if (!event || typeof event !== "object") return null;
+
+        if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+            return { x: event.clientX, y: event.clientY };
+        }
+
+        if (event.touches && event.touches.length > 0) {
+            const touch = event.touches[0];
+            if (Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY)) {
+                return { x: touch.clientX, y: touch.clientY };
+            }
+        }
+
+        if (event.changedTouches && event.changedTouches.length > 0) {
+            const touch = event.changedTouches[0];
+            if (Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY)) {
+                return { x: touch.clientX, y: touch.clientY };
+            }
+        }
+
+        return null;
+    }
+
+    _isEventInsideCanvas(event) {
+        if (!this.mountHost) return false;
+
+        const point = this._eventPoint(event);
+        if (!point) {
+            return true;
+        }
+
+        const rect = this.canvas.getBoundingClientRect();
+        return point.x >= rect.left
+            && point.x <= rect.right
+            && point.y >= rect.top
+            && point.y <= rect.bottom;
+    }
+
+    _getRegisteredActionEventNames() {
+        const names = new Set();
+        for (const action of Object.values(this.actions)) {
+            for (const eventName of Object.keys(action?.events || {})) {
+                names.add(eventName);
+            }
+        }
+        return names;
+    }
+
     _ensureCanvasEventHandler(eventName) {
         if (this._canvasEventHandlers[eventName]) return;
 
         const handler = (e) => {
+            const point = this._eventPoint(e);
+            if (point) {
+                this.mouse.viewport = point;
+                this.mouse.pos = this._mouseposFromViewportPoint(point, false);
+                this.mouse.ndc = this._mouseposFromViewportPoint(point, true);
+            }
+
+            if (!this._isEventInsideCanvas(e)) {
+                return;
+            }
+
             for (const action of Object.values(this.actions)) {
                 const eventFn = action?.events?.[eventName];
                 if (typeof eventFn !== "function") continue;
@@ -160,7 +261,7 @@ class EzLivecanvas {
         };
 
         this._canvasEventHandlers[eventName] = handler;
-        this.canvas.addEventListener(eventName, handler);
+        document.addEventListener(eventName, handler, { passive: true });
     }
 
     _removeCanvasEventHandlerIfUnused(eventName) {
@@ -169,12 +270,14 @@ class EzLivecanvas {
         const handler = this._canvasEventHandlers[eventName];
         if (!handler) return;
 
-        this.canvas.removeEventListener(eventName, handler);
+        document.removeEventListener(eventName, handler);
         delete this._canvasEventHandlers[eventName];
     }
 
-    _syncCanvasInteractivity() {
-        this.canvas.style.pointerEvents = Object.keys(this._canvasEventHandlers).length > 0 ? "auto" : "none";
+    setPassthrough(value) {
+        this.cfg.passthrough = Boolean(value);
+        this.canvas.style.pointerEvents = this.cfg.passthrough ? "none" : "auto";
+        return this.cfg.passthrough;
     }
 
     addAsset(key, value) {
@@ -272,7 +375,7 @@ class EzLivecanvas {
         return true;
     }
 
-    exec(assetKey, ...params) {
+    execFn(assetKey, ...params) {
         const match = this.assets[assetKey];
         return typeof match === "function" ? match(...params) : undefined;
     }
@@ -296,8 +399,6 @@ class EzLivecanvas {
         for (const eventName of Object.keys(events)) {
             this._ensureCanvasEventHandler(eventName);
         }
-
-        this._syncCanvasInteractivity();
 
         return finalKey;
     }
@@ -323,7 +424,6 @@ class EzLivecanvas {
 
         action.events[eventName] = eventFn;
         this._ensureCanvasEventHandler(eventName);
-        this._syncCanvasInteractivity();
 
         return true;
     }
@@ -341,7 +441,6 @@ class EzLivecanvas {
             this._removeCanvasEventHandlerIfUnused(eventName);
         }
 
-        this._syncCanvasInteractivity();
         return true;
     }
 
@@ -359,9 +458,14 @@ class EzLivecanvas {
             host.appendChild(this.canvas);
         }
 
-        this._mountedHost = host;
+        this.mountHost = host;
         this._handleResize();
         window.addEventListener("resize", this._handleResize);
+
+        const registeredEventNames = this._getRegisteredActionEventNames();
+        for (const eventName of registeredEventNames) {
+            this._ensureCanvasEventHandler(eventName);
+        }
 
         if (this._rafId == null) {
             this._lastFrameAt = null;
@@ -374,6 +478,11 @@ class EzLivecanvas {
     unmount() {
         window.removeEventListener("resize", this._handleResize);
 
+        for (const [eventName, handler] of Object.entries(this._canvasEventHandlers)) {
+            document.removeEventListener(eventName, handler);
+        }
+        this._canvasEventHandlers = {};
+
         if (this._rafId != null) {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
@@ -385,14 +494,14 @@ class EzLivecanvas {
             this.canvas.parentElement.removeChild(this.canvas);
         }
 
-        this._mountedHost = null;
+        this.mountHost = null;
     }
 
     _handleResize() {
-        if (!this._mountedHost) return;
+        if (!this.mountHost) return;
 
-        const width = this._mountedHost.clientWidth || this.cfg.width || 1;
-        const height = this._mountedHost.clientHeight || this.cfg.height || 1;
+        const width = this.mountHost.clientWidth || this.cfg.width || 1;
+        const height = this.mountHost.clientHeight || this.cfg.height || 1;
         this._applyCanvasDimensions(width, height);
     }
 

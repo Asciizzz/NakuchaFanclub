@@ -171,7 +171,12 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                     nextSpawnDelay: 0,
                     bubbleSpawnTimer: 0,
                     nextBubbleSpawnDelay: 0,
-                    lastClickAt: 0,
+                    pointer: {
+                        lastX: null,
+                        lastY: null,
+                        lastMoveAt: null,
+                        speed: 0,
+                    },
                     cfg: {
                         frameCols: 5,
                         frameRows: 1,
@@ -232,13 +237,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
 
                     if (attrs.cfg.frameWidth <= 0 || attrs.cfg.frameHeight <= 0) {
                         return;
-                    }
-
-                    const pointer = runtime.shared.pointer ?? { inside: false, x: 0, y: 0, speed: 0, clickedAt: 0 };
-                    const nowClick = Number.isFinite(pointer.clickedAt) ? pointer.clickedAt : 0;
-                    const clickTriggered = nowClick > attrs.lastClickAt;
-                    if (clickTriggered) {
-                        attrs.lastClickAt = nowClick;
                     }
 
                     attrs.spawnTimer += dt;
@@ -319,38 +317,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                         entity.vx = Math.cos(nextHeading);
                         entity.vy = Math.sin(nextHeading);
 
-                        if (pointer.inside) {
-                            const cx = entity.x + entity.size / 2;
-                            const cy = entity.y + entity.size / 2;
-                            const pdx = cx - pointer.x;
-                            const pdy = cy - pointer.y;
-                            const dist = Math.hypot(pdx, pdy);
-                            const radius = entity.size / 2;
-                            const inside = dist <= radius;
-
-                            if (inside && !entity.cursorInside && pointer.speed >= attrs.cfg.scareSpeedThreshold) {
-                                const now = performance.now();
-                                if (now - entity.lastScaredAt >= attrs.cfg.scareCooldown) {
-                                    const safe = dist || 0.0001;
-                                    entity.vx = pdx / safe;
-                                    entity.vy = pdy / safe;
-                                    entity.burst = toRange(attrs.cfg.burstMin, attrs.cfg.burstMax) * 1.5;
-                                    entity.lastScaredAt = now;
-                                }
-                            }
-                            entity.cursorInside = inside;
-
-                            if (clickTriggered && dist <= radius * 1.5) {
-                                const safe = dist || 0.0001;
-                                entity.vx = pdx / safe;
-                                entity.vy = pdy / safe;
-                                entity.burst = toRange(attrs.cfg.burstMin, attrs.cfg.burstMax) * 2;
-                                entity.lastScaredAt = performance.now();
-                            }
-                        } else {
-                            entity.cursorInside = false;
-                        }
-
                         entity.x += entity.vx * entity.burst;
                         entity.y += entity.vy * entity.burst;
                         entity.burst *= toRange(attrs.cfg.decelMin, attrs.cfg.decelMax);
@@ -375,7 +341,7 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                             continue;
                         }
 
-                        const srcRect = runtime.exec("jellySpriteRect", entity.frame, attrs.cfg);
+                        const srcRect = runtime.execFn("jellySpriteRect", entity.frame, attrs.cfg);
                         const drawX = entity.x;
                         const drawY = entity.y;
                         const drawW = entity.size;
@@ -401,29 +367,12 @@ const WELCOME_LEFT_SIDE_CONFIG = {
 
                     const bubbles = [];
                     for (const bubble of attrs.bubbles) {
+                        if (bubble.popped) {
+                            continue;
+                        }
+
                         bubble.x += bubble.vx;
                         bubble.y += bubble.vy;
-
-                        if (pointer.inside) {
-                            const cx = bubble.x + bubble.size / 2;
-                            const cy = bubble.y + bubble.size / 2;
-                            const dx = cx - pointer.x;
-                            const dy = cy - pointer.y;
-                            const dist = Math.hypot(dx, dy);
-                            const radius = bubble.size / 2;
-                            const inside = dist <= radius;
-
-                            if (inside && !bubble.cursorInside && pointer.speed >= attrs.bubbleCfg.popSpeed) {
-                                continue;
-                            }
-                            bubble.cursorInside = inside;
-
-                            if (clickTriggered && dist <= radius) {
-                                continue;
-                            }
-                        } else {
-                            bubble.cursorInside = false;
-                        }
 
                         const killPadding = bubble.size * 1.3;
                         if (bubble.y < -killPadding || bubble.x < -killPadding || bubble.x > width + killPadding) {
@@ -445,25 +394,119 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                 },
 
                 events: {
-                    "click": function(self, runtime, event) {
-                        // If you click on a jelly, change its color
-                        if (!Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) {
-                            return;
+                    pointermove(self, runtime, event) {
+                        const attrs = self.attrs;
+                        const point = runtime.mousepos(false);
+                        if (!point) return;
+
+                        const now = performance.now();
+                        if (
+                            Number.isFinite(attrs.pointer.lastX)
+                            && Number.isFinite(attrs.pointer.lastY)
+                            && Number.isFinite(attrs.pointer.lastMoveAt)
+                        ) {
+                            const dx = point.x - attrs.pointer.lastX;
+                            const dy = point.y - attrs.pointer.lastY;
+                            const dtMs = Math.max(0.0001, now - attrs.pointer.lastMoveAt);
+                            attrs.pointer.speed = Math.hypot(dx, dy) / dtMs;
+                        } else {
+                            attrs.pointer.speed = 0;
                         }
 
-                        const rect = runtime.canvas.getBoundingClientRect();
-                        const x = event.clientX - rect.left;
-                        const y = event.clientY - rect.top;
+                        attrs.pointer.lastX = point.x;
+                        attrs.pointer.lastY = point.y;
+                        attrs.pointer.lastMoveAt = now;
+
+                        for (const entity of attrs.entities) {
+                            const cx = entity.x + entity.size / 2;
+                            const cy = entity.y + entity.size / 2;
+                            const dx = cx - point.x;
+                            const dy = cy - point.y;
+                            const dist = Math.hypot(dx, dy);
+                            const radius = entity.size / 2;
+                            const inside = dist <= radius;
+
+                            if (inside && !entity.cursorInside && attrs.pointer.speed >= attrs.cfg.scareSpeedThreshold) {
+                                if (now - entity.lastScaredAt >= attrs.cfg.scareCooldown) {
+                                    const safe = dist || 0.0001;
+                                    entity.vx = dx / safe;
+                                    entity.vy = dy / safe;
+                                    entity.burst = toRange(attrs.cfg.burstMin, attrs.cfg.burstMax) * 1.5;
+                                    entity.lastScaredAt = now;
+                                }
+                            }
+
+                            entity.cursorInside = inside;
+                        }
+
+                        for (const bubble of attrs.bubbles) {
+                            if (bubble.popped) continue;
+
+                            const cx = bubble.x + bubble.size / 2;
+                            const cy = bubble.y + bubble.size / 2;
+                            const dx = cx - point.x;
+                            const dy = cy - point.y;
+                            const dist = Math.hypot(dx, dy);
+                            const radius = bubble.size / 2;
+                            const inside = dist <= radius;
+
+                            if (inside && !bubble.cursorInside && attrs.pointer.speed >= attrs.bubbleCfg.popSpeed) {
+                                bubble.popped = true;
+                                continue;
+                            }
+
+                            bubble.cursorInside = inside;
+                        }
+                    },
+
+                    pointerleave(self) {
+                        const attrs = self.attrs;
+                        attrs.pointer.lastX = null;
+                        attrs.pointer.lastY = null;
+                        attrs.pointer.lastMoveAt = null;
+                        attrs.pointer.speed = 0;
+
+                        for (const entity of attrs.entities) {
+                            entity.cursorInside = false;
+                        }
+                        for (const bubble of attrs.bubbles) {
+                            bubble.cursorInside = false;
+                        }
+                    },
+
+                    "click": function(self, runtime, event) {
+                        const attrs = self.attrs;
+                        const point = runtime.mousepos(false);
+                        if (!point) return;
+
                         for (const entity of self.attrs.entities) {
                             const cx = entity.x + entity.size / 2;
                             const cy = entity.y + entity.size / 2;
-                            const dx = cx - x;
-                            const dy = cy - y;
+                            const dx = cx - point.x;
+                            const dy = cy - point.y;
                             const dist = Math.hypot(dx, dy);
                             const radius = entity.size / 2;
-                            if (dist <= radius) {
+                            if (dist <= radius * 1.5) {
+                                const safe = dist || 0.0001;
+                                entity.vx = dx / safe;
+                                entity.vy = dy / safe;
+                                entity.burst = toRange(attrs.cfg.burstMin, attrs.cfg.burstMax) * 2;
+                                entity.lastScaredAt = performance.now();
                                 entity.color = `hsl(${Math.floor(Math.random() * 36) * 10}, 70%, 80%)`;
-                                break;
+                            }
+                        }
+
+                        for (const bubble of attrs.bubbles) {
+                            if (bubble.popped) continue;
+
+                            const cx = bubble.x + bubble.size / 2;
+                            const cy = bubble.y + bubble.size / 2;
+                            const dx = cx - point.x;
+                            const dy = cy - point.y;
+                            const dist = Math.hypot(dx, dy);
+                            const radius = bubble.size / 2;
+                            if (dist <= radius) {
+                                bubble.popped = true;
                             }
                         }
                     }
@@ -553,7 +596,7 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                         const t = Math.max(0, Math.min(1, star.age / star.life));
                         const alpha = t < 0.5 ? t / 0.5 : (1 - t) / 0.5;
 
-                        const srcRect = runtime.exec("jellySpriteRect", star.frame, {
+                        const srcRect = runtime.execFn("jellySpriteRect", star.frame, {
                             frameCols: attrs.cfg.frameCols,
                             frameRows: 1,
                             frameWidth: attrs.cfg.frameWidth,
@@ -586,56 +629,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
         return canv;
     };
 
-    const bindPointerInput = (canv, host) => {
-        canv.shared.pointer = {
-            x: 0,
-            y: 0,
-            inside: false,
-            speed: 0,
-            clickedAt: 0,
-            lastMoveAt: null,
-            lastX: null,
-            lastY: null,
-        };
-
-        host.addEventListener("pointermove", (event) => {
-            const rect = host.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            const now = performance.now();
-
-            const pointer = canv.shared.pointer;
-            if (pointer.lastX != null && pointer.lastY != null && pointer.lastMoveAt != null) {
-                const dx = x - pointer.lastX;
-                const dy = y - pointer.lastY;
-                const dt = Math.max(0.0001, now - pointer.lastMoveAt);
-                pointer.speed = Math.hypot(dx, dy) / dt;
-            } else {
-                pointer.speed = 0;
-            }
-
-            pointer.x = x;
-            pointer.y = y;
-            pointer.inside = x >= 0 && y >= 0 && x <= canv.canvas.width && y <= canv.canvas.height;
-            pointer.lastX = x;
-            pointer.lastY = y;
-            pointer.lastMoveAt = now;
-        }, { passive: true });
-
-        host.addEventListener("pointerleave", () => {
-            const pointer = canv.shared.pointer;
-            pointer.inside = false;
-            pointer.speed = 0;
-            pointer.lastX = null;
-            pointer.lastY = null;
-            pointer.lastMoveAt = null;
-        }, { passive: true });
-
-        host.addEventListener("pointerdown", () => {
-            canv.shared.pointer.clickedAt = performance.now();
-        }, { passive: true });
-    };
-
     const copyJellyAttrs = (sourceCanv, targetCanv) => {
         const source = sourceCanv?.actions?.jellytank;
         const target = targetCanv?.actions?.jellytank;
@@ -645,7 +638,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
         target.attrs.bubbles = window.EzLivecanvas.cloneData(source.attrs.bubbles ?? []);
         target.attrs.spawnTimer = 0;
         target.attrs.bubbleSpawnTimer = 0;
-        target.attrs.lastClickAt = 0;
     };
 
     const clearJellyAttrs = (canv) => {
@@ -668,7 +660,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
     if (jellyHost) {
         const mainJellyCanv = createCanvRuntime({ includeJelly: true, includeStars: false });
         mainJellyCanv.mount(jellyHost);
-        bindPointerInput(mainJellyCanv, jellyHost);
         window.mainJellyCanv = mainJellyCanv;
     }
 
