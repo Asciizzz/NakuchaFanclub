@@ -19,14 +19,14 @@ go wild and make custom terrain or something, that would genuinely be cool)
     + Action system (the bread and butter)
         + addAction(key, cfg)
             + cfg = {
-                attrs: {},
+                attrs: { ... },
                 update: function(self, canv) { ... },
                 events: {
                     click: function(self, canv, e) { ... },
-                    pointermove: function(self, canv, e) { ... }
+                    pointermove: function(self, canv, e) { ... },
+                    ...
                 }
             }
-        + addActionEvent(key, event, eventFn): create/override one action event
         + removeAction(key): remove action and detach unused canvas events
 
     + Canvas event behavior
@@ -36,9 +36,14 @@ go wild and make custom terrain or something, that would genuinely be cool)
 
     + Other
         + drawImage(assetKey, rect, style) accepts normal ctx style keys directly
-        + mousepos(ndc=false) returns the latest pointer/touch position in canvas space
-            + mousepos(true) returns NDC coords in range [-1, 1]
-
+        + mouse = {
+            viewport: { x, y }, // in viewport coord (global)
+            pos: { x, y },      // in canvas coord (local)
+            ndc: { x, y },      // in canvas NDC coord [-1, 1]
+        }
+        + mousepos(ndc=false) returns the latest mouse position in canvas coord
+            + ndc=true return mouse.ndc, otherwise return mouse.pos
+        
 
 # Notes:
 
@@ -127,57 +132,7 @@ class EzLivecanvas {
         return key;
     }
 
-    _normalizeEventName(eventName) {
-        if (typeof eventName !== "string") return "";
-
-        const normalized = eventName.trim().toLowerCase();
-        if (!normalized) return "";
-        return normalized.startsWith("on") ? normalized.slice(2) : normalized;
-    }
-
-    _normalizeEvents(events) {
-        const normalizedEvents = {};
-        if (!events || typeof events !== "object") return normalizedEvents;
-
-        for (const [eventName, eventFn] of Object.entries(events)) {
-            if (typeof eventFn !== "function") continue;
-            const normalizedEventName = this._normalizeEventName(eventName);
-            if (!normalizedEventName) continue;
-            normalizedEvents[normalizedEventName] = eventFn;
-        }
-
-        return normalizedEvents;
-    }
-
-    _hasEventInAnyAction(eventName) {
-        for (const action of Object.values(this.actions)) {
-            if (typeof action?.events?.[eventName] === "function") {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // Convert from viewport coord to canvas coord (global to local)
-    _mouseposFromViewportPoint(viewportPoint, ndc = false) {
-        if (!viewportPoint) return null;
-
-        const rect = this.canvas.getBoundingClientRect();
-        const width = Math.max(1, rect.width || this.canvas.width || 1);
-        const height = Math.max(1, rect.height || this.canvas.height || 1);
-
-        const canvasPoint = {
-            x: viewportPoint.x - rect.left,
-            y: viewportPoint.y - rect.top,
-        };
-
-        if (!ndc) return canvasPoint;
-
-        return {
-            x: (canvasPoint.x / width) * 2 - 1,
-            y: 1 - (canvasPoint.y / height) * 2,
-        };
-    }
+    
 
     mousepos(ndc = false) {
         if (ndc) { if (this.mouse.ndc) return this.mouse.ndc; }
@@ -233,6 +188,27 @@ class EzLivecanvas {
         return names;
     }
 
+    // Convert from viewport coord to canvas coord (global to local)
+    _mouseposFromViewportPoint(viewportPoint, ndc = false) {
+        if (!viewportPoint) return null;
+
+        const rect = this.canvas.getBoundingClientRect();
+        const width = Math.max(1, rect.width || this.canvas.width || 1);
+        const height = Math.max(1, rect.height || this.canvas.height || 1);
+
+        const canvasPoint = {
+            x: viewportPoint.x - rect.left,
+            y: viewportPoint.y - rect.top,
+        };
+
+        if (!ndc) return canvasPoint;
+
+        return {
+            x: (canvasPoint.x / width) * 2 - 1,
+            y: 1 - (canvasPoint.y / height) * 2,
+        };
+    }
+
     _ensureCanvasEventHandler(eventName) {
         if (this._canvasEventHandlers[eventName]) return;
 
@@ -264,21 +240,13 @@ class EzLivecanvas {
         document.addEventListener(eventName, handler, { passive: true });
     }
 
-    _removeCanvasEventHandlerIfUnused(eventName) {
-        if (this._hasEventInAnyAction(eventName)) return;
-
-        const handler = this._canvasEventHandlers[eventName];
-        if (!handler) return;
-
-        document.removeEventListener(eventName, handler);
-        delete this._canvasEventHandlers[eventName];
-    }
-
     setPassthrough(value) {
         this.cfg.passthrough = Boolean(value);
         this.canvas.style.pointerEvents = this.cfg.passthrough ? "none" : "auto";
         return this.cfg.passthrough;
     }
+
+// Assets stuff
 
     addAsset(key, value) {
         const safeKey = String(key || "asset");
@@ -375,9 +343,38 @@ class EzLivecanvas {
         return true;
     }
 
+    playAudio(assetKey, options = {}) {
+        // Do nothing for now
+        return false;
+    }
+
     execFn(assetKey, ...params) {
         const match = this.assets[assetKey];
         return typeof match === "function" ? match(...params) : undefined;
+    }
+
+// Actions and events
+
+    _normalizeEventName(eventName) {
+        if (typeof eventName !== "string") return "";
+
+        const normalized = eventName.trim().toLowerCase();
+        if (!normalized) return "";
+        return normalized.startsWith("on") ? normalized.slice(2) : normalized;
+    }
+
+    _normalizeEvents(events) {
+        const normalizedEvents = {};
+        if (!events || typeof events !== "object") return normalizedEvents;
+
+        for (const [eventName, eventFn] of Object.entries(events)) {
+            if (typeof eventFn !== "function") continue;
+            const normalizedEventName = this._normalizeEventName(eventName);
+            if (!normalizedEventName) continue;
+            normalizedEvents[normalizedEventName] = eventFn;
+        }
+
+        return normalizedEvents;
     }
 
     addAction(key, cfg) {
@@ -403,29 +400,17 @@ class EzLivecanvas {
         return finalKey;
     }
 
-    addActionEvent(key, event, eventFn) {
-        if (!Object.prototype.hasOwnProperty.call(this.actions, key)) {
-            return false;
+    _removeUnusedCanvasEventHandler(eventName) {
+        // If any action still uses this event, don't remove the handler
+        for (const action of Object.values(this.actions)) {
+            if (typeof action?.events?.[eventName] === "function") return;
         }
 
-        if (typeof eventFn !== "function") {
-            return false;
-        }
+        const handler = this._canvasEventHandlers[eventName];
+        if (!handler) return;
 
-        const eventName = this._normalizeEventName(event);
-        if (!eventName) {
-            return false;
-        }
-
-        const action = this.actions[key];
-        if (!action.events || typeof action.events !== "object") {
-            action.events = {};
-        }
-
-        action.events[eventName] = eventFn;
-        this._ensureCanvasEventHandler(eventName);
-
-        return true;
+        document.removeEventListener(eventName, handler);
+        delete this._canvasEventHandlers[eventName];
     }
 
     removeAction(key) {
@@ -437,12 +422,24 @@ class EzLivecanvas {
 
         delete this.actions[key];
 
+        // Remove unused canvas event handlers after action removal
         for (const eventName of eventNames) {
-            this._removeCanvasEventHandlerIfUnused(eventName);
+            // If any action still uses this event, don't remove the handler
+            for (const action of Object.values(this.actions)) {
+                if (typeof action?.events?.[eventName] === "function") return;
+            }
+
+            const handler = this._canvasEventHandlers[eventName];
+            if (!handler) continue; // Handler is schizophrenic
+
+            // Remove event listener and handler reference
+            document.removeEventListener(eventName, handler);
+            delete this._canvasEventHandlers[eventName];
         }
 
         return true;
     }
+
 
     mount(query) {
         const host = typeof query === "string" ? document.querySelector(query) : query;
@@ -496,6 +493,7 @@ class EzLivecanvas {
 
         this.mountHost = null;
     }
+
 
     _handleResize() {
         if (!this.mountHost) return;
