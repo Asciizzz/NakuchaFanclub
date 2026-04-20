@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nakuru Fanclub</title>
+    <script>
+        window.nakuchaAssets = {
+            ...(window.nakuchaAssets ?? {}),
+            images: {
+                ...(window.nakuchaAssets?.images ?? {}),
+                jellyfish: @json(asset('assets/images/jellyfish.png')),
+                starglitter: @json(asset('assets/images/starglitter.png')),
+                welcomeBackground: @json(asset('assets/images/welcome_background.png')),
+                welcomeNakuru: @json(asset('assets/images/welcome_nakuru.png')),
+                welcomeForeground: @json(asset('assets/images/welcome_foreground.png')),
+            },
+        };
+    </script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 
@@ -34,10 +47,10 @@
         <input type="checkbox" id="toggle-popup" hidden>
 
         <div class="scene" aria-hidden="true">
-            <img class="background" src="{{ Vite::asset('resources/assets/images/welcome_background.png') }}" alt="">
+            <img class="background" src="{{ asset('assets/images/welcome_background.png') }}" alt="">
             <div id="starglitter"></div>
-            <img class="nakuru" src="{{ Vite::asset('resources/assets/images/welcome_nakuru.png') }}" alt="">
-            <img class="foreground" src="{{ Vite::asset('resources/assets/images/welcome_foreground.png') }}" alt="">
+            <img class="nakuru" src="{{ asset('assets/images/welcome_nakuru.png') }}" alt="">
+            <img class="foreground" src="{{ asset('assets/images/welcome_foreground.png') }}" alt="">
         </div>
 
         <div class="left-side">

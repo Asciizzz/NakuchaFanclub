@@ -1,5 +1,5 @@
 const DEFAULT_JELLY_CONFIG = {
-    src: window.nakuriteAssets?.images?.jellyfish ?? "/assets/images/jellyfish.png",
+    src: window.nakuchaAssets?.images?.jellyfish ?? "/assets/images/jellyfish.png",
     frameRows: 1,
     frameCols: 5,
     frameSpeedMin: 100,

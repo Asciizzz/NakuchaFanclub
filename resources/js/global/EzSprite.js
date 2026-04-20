@@ -17,7 +17,7 @@ Retrievable value:
 - data-anime-frame : current 1-based frame number in row-major order
 
 Usage example:
-<div data-anime-src="assets/jellyfish.png" data-anime-rows="1" data-anime-cols="5" data-anime-interval="100" data-anime-offset="3" data-anime-tintfill="#ffffff"></div>
+<div data-anime-src="/assets/images/jellyfish.png" data-anime-rows="1" data-anime-cols="5" data-anime-interval="100" data-anime-offset="3" data-anime-tintfill="#ffffff"></div>
 
 I remember trying to create more or less the same thing in like 2024 lmao
 But I didn't know jacksht about OOP back then
