@@ -8,7 +8,7 @@
     }
 
     const STARGLITTER_CONFIG = {
-        src: "/assets/images/starglitter.png",
+        src: window.nakuriteAssets?.images?.starglitter ?? "/assets/images/starglitter.png",
         colors: rainbowColors,
         spawnInterval: { min: 30, max: 80 },
         maxCount: 70,

@@ -1,6 +1,6 @@
 @font-face {
 	font-family: 'Outfit';
-	src: url('/assets/nakurite/fonts/Outfit-VariableFont_wght.ttf') format('truetype');
+	src: url('../assets/fonts/Outfit-VariableFont_wght.ttf') format('truetype');
 }
 
 :root {
@@ -383,7 +383,10 @@ header nav a:hover {
 	display: inline-block;
 
 	transition:
-		transform 0.28s cubic-bezier(1,-0.02,.55,1.02)
+		transform 0.28s cubic-bezier(1,-0.02,.55,1.02);
+
+	
+	border: 1px solid red;
 }
 
 #welcome .right-side div {
@@ -396,22 +399,22 @@ header nav a:hover {
 }
 
 #welcome .right-side .introduction-div {
-	transform: rotateZ(-10deg) translateX(-10vw) scale(0.4) ;
+	transform: translateX(-20vw) rotateZ(-10deg) scale(0.4) ;
 	transition-duration: 0.26s;
 	transition-delay: 0.04s;
 }
 #welcome .right-side .news-div {
-	transform: rotateZ(-3deg) translateX(-10vw) scale(0.4);
+	transform: rotateZ(-3deg) scale(0.4) translateX(-20vw);
 	transition-duration: 0.22s;
 	transition-delay: 0.05s;
 }
 #welcome .right-side .discography-div {
-	transform: rotateZ(3deg) translateX(-10vw) scale(0.4);
+	transform: rotateZ(3deg) scale(0.4) translateX(-20vw);
 	transition-duration: 0.24s;
 	transition-delay: 0.06s;
 }
 #welcome .right-side .merch-div {
-	transform: rotateZ(10deg) translateX(-10vw) scale(0.4);
+	transform: rotateZ(10deg) scale(0.4) translateX(-20vw);
 	transition-duration: 0.21s;
 	transition-delay: 0.03s;
 }
@@ -421,16 +424,16 @@ header nav a:hover {
 	pointer-events: auto;
 }
 #welcome #toggle-popup:checked ~ .right-side .introduction-div {
-	transform: translateX(0) rotateZ(-10deg) rotateY(4deg) rotateX(-3deg);
+	transform: rotateZ(-10deg) rotateY(4deg) rotateX(-3deg);
 }
 #welcome #toggle-popup:checked ~ .right-side .news-div {
-	transform: translateX(0) rotateZ(-3deg) rotateY(6deg) rotateX(-3deg);
+	transform: rotateZ(-3deg) rotateY(6deg) rotateX(-3deg);
 }
 #welcome #toggle-popup:checked ~ .right-side .discography-div {
-	transform: translateX(0) rotateZ(3deg) rotateY(5deg);
+	transform: rotateZ(3deg) rotateY(5deg);
 }
 #welcome #toggle-popup:checked ~ .right-side .merch-div {
-	transform: translateX(0) rotateZ(10deg) rotateY(3deg) rotateX(3deg);
+	transform: rotateZ(10deg) rotateY(3deg) rotateX(3deg);
 }
 
 

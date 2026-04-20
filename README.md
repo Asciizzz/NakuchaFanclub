@@ -16,7 +16,7 @@ Then open `http://127.0.0.1:8000`.
 
 - Blade page: `resources/views/nakuru/index.blade.php`
 - Main CSS: `resources/css/index.css`
-- Public images/fonts/scripts: `public/assets/nakurite/`
+- Public images/fonts/scripts: `public/assets/`
 
 ## Notes
 

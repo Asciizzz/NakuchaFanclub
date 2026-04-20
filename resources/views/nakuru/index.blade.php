@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nakuru Fanclub</title>
-    @vite(['resources/css/app.css'])
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 
 <body>
@@ -34,10 +34,10 @@
         <input type="checkbox" id="toggle-popup" hidden>
 
         <div class="scene" aria-hidden="true">
-            <img class="background" src="{{ asset('assets/nakurite/images/welcome_background.png') }}" alt="">
+            <img class="background" src="{{ Vite::asset('resources/assets/images/welcome_background.png') }}" alt="">
             <div id="starglitter"></div>
-            <img class="nakuru" src="{{ asset('assets/nakurite/images/welcome_nakuru.png') }}" alt="">
-            <img class="foreground" src="{{ asset('assets/nakurite/images/welcome_foreground.png') }}" alt="">
+            <img class="nakuru" src="{{ Vite::asset('resources/assets/images/welcome_nakuru.png') }}" alt="">
+            <img class="foreground" src="{{ Vite::asset('resources/assets/images/welcome_foreground.png') }}" alt="">
         </div>
 
         <div class="left-side">
@@ -104,13 +104,5 @@
         </div>
     </div>
 
-    <script src="{{ asset('assets/nakurite/scripts/global/EzSprite.js') }}"></script>
-    <script src="{{ asset('assets/nakurite/scripts/global/glitchAnimation.js') }}"></script>
-    <script src="{{ asset('assets/nakurite/scripts/global/EzParallax.js') }}"></script>
-
-    <script src="{{ asset('assets/nakurite/scripts/particles.js') }}"></script>
-    <script src="{{ asset('assets/nakurite/scripts/jellytank.js') }}"></script>
-    <script src="{{ asset('assets/nakurite/scripts/starglitter.js') }}"></script>
-    <script src="{{ asset('assets/nakurite/scripts/various.js') }}"></script>
 </body>
 </html>
