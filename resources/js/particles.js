@@ -24,7 +24,7 @@
     const easeOut = (t) => 1 - (1 - t) * (1 - t);
 
     const resolveHitPreset = (point, presets) => {
-        const topElement = document.elementFromPoint(point.clientX, point.clientY);
+        const topElement = document.elementFromPoint(point.x, point.y);
         if (!topElement) return null;
 
         let current = topElement;
@@ -52,8 +52,8 @@
 
     const spawnFromPoint = (attrs, point, hit, type = "move") => {
         const rect = hit.element.getBoundingClientRect();
-        const localX = point.clientX - rect.left;
-        const localY = point.clientY - rect.top;
+        const localX = point.x - rect.left;
+        const localY = point.y - rect.top;
 
         if (localX < 0 || localX > rect.width || localY < 0 || localY > rect.height) {
             return;
@@ -77,8 +77,8 @@
             const opacity = toRange(hit.cfg.opacity.min, hit.cfg.opacity.max);
 
             attrs.particles.push({
-                x: point.clientX,
-                y: point.clientY,
+                x: point.x,
+                y: point.y,
                 moveX: driftX,
                 moveY: driftY,
                 size,

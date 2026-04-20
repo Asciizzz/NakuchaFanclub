@@ -26,6 +26,11 @@ By Asciiz
     });
 
     floater.addQuery(".needs-menu", { delegate: true, display: "menu" });
+
+# You can freely customize the style of the floater in css:
+    #ez-floater
+    #ez-floater.ez-floater-active
+
 */
 
 (function() {

@@ -1431,7 +1431,5 @@ function animateStaggeredSequence(spans, options, revealCallback) {
     });
 
 
-    const
-
 
 })();

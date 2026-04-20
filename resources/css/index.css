@@ -124,15 +124,6 @@ header nav a:hover {
 	overflow: hidden;
 }
 
-.particle {
-	position: absolute;
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: transparent;
-}
-
-
 
 #welcome {
 	position: absolute;
@@ -170,12 +161,6 @@ header nav a:hover {
 	inset: 0;
 	pointer-events: none;
 	overflow: hidden;
-}
-
-#welcome #starglitter .star {
-	position: absolute;
-	opacity: 0;
-	pointer-events: none;
 }
 
 #welcome .scene {
@@ -385,10 +370,12 @@ header nav a:hover {
 	color: #fff;
 	padding: 0.3rem 3rem;
 	border: #fff 2px solid;
+	opacity: 0.8;
 
 	transition: 
 		transform 0.28s cubic-bezier(1,-0.02,.55,1.02),
-		scale 0.28s cubic-bezier(1,-0.02,.55,1.02);
+		scale 0.28s cubic-bezier(1,-0.02,.55,1.02),
+		opacity 0.1s ease-out;
 	transform-origin: left center;
 }
 
@@ -437,6 +424,7 @@ header nav a:hover {
 
 #welcome #toggle-popup:checked ~ .right-side div:hover {
 	scale: 1.1;
+	opacity: 1.0;
 }
 
 
