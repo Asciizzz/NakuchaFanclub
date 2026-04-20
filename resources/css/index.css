@@ -165,37 +165,44 @@ header nav a:hover {
 
 #welcome .scene {
 	position: absolute;
-	inset: 0;
+	width: 100%;
+	height: 100%;
 	z-index: 0;
 	overflow: hidden;
 	pointer-events: none;
 	perspective: 1000px;
+
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 
 #welcome .scene img {
 	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
 	object-fit: cover;
 	object-position: bottom center;
 }
 
 #welcome .scene .background {
+	width: 100vw;
+	/* height: 100%; */
 	z-index: 0;
 	object-position: center;
 	filter: blur(2px);
 }
 
 #welcome .scene .nakuru {
+	bottom: 0;
 	z-index: 1;
+	height: 80%;
 	transition: transform 0.38s ease-out;
 }
 
 #welcome .scene .foreground {
+	bottom: 0;
 	z-index: 2;
-	transition: transform 0.38s ease-out;
 	transform: scale(1.07);
+	transition: transform 0.38s ease-out;
 }
 
 
