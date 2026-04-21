@@ -2,7 +2,7 @@
 EzLivecanvas 
 By Asciiz
 
-Lightweight canvas action engine for dynamic visual shi (jellytank, starglitter, heck,
+Lightweight canvas action engine for dynamic visual shi (jellytank, starglitter,
 go wild and make custom terrain or something, that would genuinely be cool)
 
 # Guide:
@@ -14,7 +14,7 @@ go wild and make custom terrain or something, that would genuinely be cool)
         + addAsset(key, value): store any shared value/function
         + addImage(key, url): preload image asset as { type: "img", img }
         + addAudio(key, url): preload audio asset as { type: "audio", audio }
-        + execFn(key, ...params): execute a function asset
+        + runFn(key, ...params): execute a function asset
 
     + Action system (the bread and butter)
         + addAction(key, cfg)
@@ -43,7 +43,6 @@ go wild and make custom terrain or something, that would genuinely be cool)
         }
         + mousepos(ndc=false) returns the latest mouse position in canvas coord
             + ndc=true return mouse.ndc, otherwise return mouse.pos
-        
 
 # Notes:
 
@@ -120,19 +119,7 @@ class EzLivecanvas {
         this.cfg.height = h;
     }
 
-    _buildUniqueKey(baseKey, collection) {
-        if (!Object.prototype.hasOwnProperty.call(collection, baseKey)) {
-            return baseKey;
-        }
-
-        let key = `${baseKey}_1`;
-        while (Object.prototype.hasOwnProperty.call(collection, key)) {
-            key = `${key}_1`;
-        }
-        return key;
-    }
-
-    
+// Event handling (ft. mouse)
 
     mousepos(ndc = false) {
         if (ndc) { if (this.mouse.ndc) return this.mouse.ndc; }
@@ -248,6 +235,18 @@ class EzLivecanvas {
 
 // Assets stuff
 
+    _buildUniqueKey(baseKey, collection) {
+        if (!Object.prototype.hasOwnProperty.call(collection, baseKey)) {
+            return baseKey;
+        }
+
+        let key = `${baseKey}_1`;
+        while (Object.prototype.hasOwnProperty.call(collection, key)) {
+            key = `${key}_1`;
+        }
+        return key;
+    }
+
     addAsset(key, value) {
         const safeKey = String(key || "asset");
         const finalKey = this._buildUniqueKey(safeKey, this.assets);
@@ -335,7 +334,7 @@ class EzLivecanvas {
             const sx = Number.isFinite(src.sx) ? src.sx : 0;
             const sy = Number.isFinite(src.sy) ? src.sy : 0;
             this.ctx.drawImage(asset.img, sx, sy, src.sw, src.sh, dx, dy, dw, dh);
-        } else {      // No source cropping (source 3 coming)
+        } else {      // No source cropping (hl3 coming)
             this.ctx.drawImage(asset.img, dx, dy, dw, dh);
         }
 
@@ -348,9 +347,9 @@ class EzLivecanvas {
         return false;
     }
 
-    execFn(assetKey, ...params) {
-        const match = this.assets[assetKey];
-        return typeof match === "function" ? match(...params) : undefined;
+    runFn(assetKey, ...params) {
+        const matchFn = this.assets[assetKey];
+        return typeof matchFn === "function" ? matchFn(...params) : undefined;
     }
 
 // Actions and events
@@ -400,19 +399,6 @@ class EzLivecanvas {
         return finalKey;
     }
 
-    _removeUnusedCanvasEventHandler(eventName) {
-        // If any action still uses this event, don't remove the handler
-        for (const action of Object.values(this.actions)) {
-            if (typeof action?.events?.[eventName] === "function") return;
-        }
-
-        const handler = this._canvasEventHandlers[eventName];
-        if (!handler) return;
-
-        document.removeEventListener(eventName, handler);
-        delete this._canvasEventHandlers[eventName];
-    }
-
     removeAction(key) {
         if (!Object.prototype.hasOwnProperty.call(this.actions, key)) {
             return false;
@@ -440,6 +426,17 @@ class EzLivecanvas {
         return true;
     }
 
+
+
+// Mounting logic
+
+    _handleResize() {
+        if (!this.mountHost) return;
+
+        const width = this.mountHost.clientWidth || this.cfg.width || 1;
+        const height = this.mountHost.clientHeight || this.cfg.height || 1;
+        this._applyCanvasDimensions(width, height);
+    }
 
     mount(query) {
         const host = typeof query === "string" ? document.querySelector(query) : query;
@@ -495,13 +492,7 @@ class EzLivecanvas {
     }
 
 
-    _handleResize() {
-        if (!this.mountHost) return;
-
-        const width = this.mountHost.clientWidth || this.cfg.width || 1;
-        const height = this.mountHost.clientHeight || this.cfg.height || 1;
-        this._applyCanvasDimensions(width, height);
-    }
+// Main loop
 
     _loop(now) {
         if (this._rafId == null) return;

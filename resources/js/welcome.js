@@ -341,7 +341,7 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                             continue;
                         }
 
-                        const srcRect = runtime.execFn("jellySpriteRect", entity.frame, attrs.cfg);
+                        const srcRect = runtime.runFn("jellySpriteRect", entity.frame, attrs.cfg);
                         const drawX = entity.x;
                         const drawY = entity.y;
                         const drawW = entity.size;
@@ -596,7 +596,7 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                         const t = Math.max(0, Math.min(1, star.age / star.life));
                         const alpha = t < 0.5 ? t / 0.5 : (1 - t) / 0.5;
 
-                        const srcRect = runtime.execFn("jellySpriteRect", star.frame, {
+                        const srcRect = runtime.runFn("jellySpriteRect", star.frame, {
                             frameCols: attrs.cfg.frameCols,
                             frameRows: 1,
                             frameWidth: attrs.cfg.frameWidth,
