@@ -1426,7 +1426,6 @@ function animateStaggeredSequence(spans, options, revealCallback) {
     });
 
     floater.addQuery("#welcome .right-side label", {
-        delegate: true,
         display: "welcomeRightLabel",
     });
 
