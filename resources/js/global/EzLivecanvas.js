@@ -55,11 +55,11 @@ go wild and make custom terrain or something, that would genuinely be cool)
 */
 
 class EzLivecanvas {
-    constructor(cfg = {width: 300, height: 150}) {
+    constructor(cfg = {width: 300, height: 150, passthrough: true}) {
         this.cfg = {
             width: Number.isFinite(cfg.width) ? cfg.width : 0,
             height: Number.isFinite(cfg.height) ? cfg.height : 0,
-            passthrough: cfg.passthrough === true, // In case you pull some crazy stupid shi up
+            passthrough: cfg.passthrough === true
         };
 
         this.canvas = document.createElement("canvas");
@@ -120,11 +120,6 @@ class EzLivecanvas {
     }
 
 // Event handling (ft. mouse)
-
-    mousepos(ndc = false) {
-        if (ndc) { if (this.mouse.ndc) return this.mouse.ndc; }
-        else     { if (this.mouse.pos) return this.mouse.pos; }
-    }
 
     _eventPoint(event) {
         if (!event || typeof event !== "object") return null;
@@ -231,6 +226,43 @@ class EzLivecanvas {
         this.cfg.passthrough = Boolean(value);
         this.canvas.style.pointerEvents = this.cfg.passthrough ? "none" : "auto";
         return this.cfg.passthrough;
+    }
+
+    mousepos(ndc = false) {
+        return ndc ? this.mouse.ndc : this.mouse.pos;
+    }
+
+    mouseviewport() {
+        return this.mouse.viewport;
+    }
+
+    // The current element under the mouse cursor (DOM stack based)
+    mousetarget() {
+        if (!this.mouse.pos) return null;
+
+        const elements = document.elementsFromPoint(this.mouse.viewport.x, this.mouse.viewport.y);
+        return elements.length > 0 ? elements[0] : null;
+    }
+
+    // Check if element is currently under mouse (DOM stack based)
+    isMouseover(element) {
+        if (!(element instanceof Element) || !this.mouse.pos) return false;
+
+        const elements = document.elementsFromPoint(this.mouse.viewport.x, this.mouse.viewport.y);
+        return elements.includes(element);
+    }
+
+    // Mouse-Element hitbox collision (ignore any stack)
+    hitTest(element) {
+        if (!(element instanceof Element) || !this.mouse.viewport) return false;
+
+        const rect = element.getBoundingClientRect();
+        const point = this.mouse.viewport;
+
+        return point.x >= rect.left
+            && point.x <= rect.right
+            && point.y >= rect.top
+            && point.y <= rect.bottom;
     }
 
 // Assets stuff

@@ -59,7 +59,7 @@ const WELCOME_LEFT_SIDE_CONFIG = {
     const toRange = (min, max) => min + Math.random() * (max - min);
 
     const createCanvRuntime = ({ includeJelly, includeStars }) => {
-        const canv = new window.EzLivecanvas({ width: 1, height: 1 });
+        const canv = new window.EzLivecanvas({ width: 1, height: 1, passthrough: true });
 
         const tintSurface = typeof OffscreenCanvas === "function"
             ? new OffscreenCanvas(1, 1)

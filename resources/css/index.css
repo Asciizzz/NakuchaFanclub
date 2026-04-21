@@ -392,23 +392,19 @@ header nav a:hover {
 
 #welcome .right-side .introduction-div {
 	transform: rotateZ(-6deg) translateX(var(--welcome-translate-x)) scale(0.4) ;
-	transition-duration: 0.26s;
-	transition-delay: 0.04s;
+	transition-duration: 0.22s;
 }
 #welcome .right-side .news-div {
 	transform: rotateZ(-3deg) translateX(var(--welcome-translate-x)) scale(0.4);
-	transition-duration: 0.22s;
-	transition-delay: 0.05s;
+	transition-duration: 0.26s;
 }
 #welcome .right-side .discography-div {
 	transform: rotateZ(3deg) translateX(var(--welcome-translate-x)) scale(0.4);
-	transition-duration: 0.24s;
-	transition-delay: 0.06s;
+	transition-duration: 0.25s;
 }
 #welcome .right-side .merch-div {
 	transform: rotateZ(6deg) translateX(var(--welcome-translate-x)) scale(0.4);
-	transition-duration: 0.21s;
-	transition-delay: 0.03s;
+	transition-duration: 0.23s;
 }
 
 /* Popup upon toggle */
