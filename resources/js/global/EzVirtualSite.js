@@ -1,495 +1,387 @@
 /*
-EzVirtualSite
+EzVirtualSite 
 By Asciiz
 
 # Lightweight virtual multi-page runtime using iframe rendering.
 
-# What tf is this
-    + Converts structured JSON into isolated iframe-based pages
-    + Each page renders into its own iframe
-    + Focused on rendering + data management (no heavy editor logic)
+# Pages and data:
+    setGlobalStyle(styleElement|cssString)
+    setHost(containerElement)
+    setData(dataObject)
+    init()
+    getDataJSON()
+    getPageData(id?)  getPageFrame(id?)  getActiveID()
+    changePage(id)    load(id?)          reload(id?)
+    listPages()       addPage({title,slug})
+    removePage(id)    updatePage(id, {title?,slug?})
 
-# Stuff to be aware of
-    + pages: map of iframe elements (id -> iframe)
-    + activePage: current visible page id
-    + data: project JSON (pages, nodes, assets)
-    + host: container element
-    + no implicit auto-reload on mutation
+# Nodes (operate on active page):
+    addNode({tag,parent?,attrs?,text?,graph?}) -> id
+    readNode(id) -> {page_id,node_id,tag,parent,children,attrs,text,graph}
+    writeNode(id, {attrs?,text?,graph?})
+    reparentNode(childId, newParentId)
+    deleteNode(id, reparentChildren=false)
 
-# Functions and stuff
+# Scripts:
+    addScript(name, scriptData)   removeScript(name)   getScript(name)
 
-    ## Pages and data related
-        builder: 
-            setGlobalStyle(styleElement)
-            setHost(containerElement)
-            setData(dataObject)
-            init()
-
-        getDataJSON()
-
-        getPage(id)
-        getActiveID()/getActivePage()
-        changePage(pageId)
-        load(pageId)/reload(pageId)
-        listPages()
-        addPage({ title, slug })
-        removePage(pageId)
-
-    ## Node operations
-        addNode(nodeData) -> adds node and return its id
-        readNode(nodeId)  -> returns a node object {
-                                id, tag, parent, children, attrs, text, graph 
-                            }
-        writeNode(nodeId, { attrs, text, graph })
-        reparentNode(childId, newParentId)
-        deleteNode(nodeId)
-
-# Data rules:
-    + page ids: p<counter>
-    + node ids: n<counter>
-    + page/node counter will always increment by 1 for new page/node
-        + I believe 2^53 pages/nodes should be sufficient
-    + nodes form a tree (go back to comp-sci nerd)
-    + _prefixed attrs are engine-reserved, not HTML attributes
+# Script data shape:
+    { 
+        variables:{}, actions:{ name:"code with `variables` + `event`" },
+        events: { type:[ {selector, action}, ... ] } 
+    }
+    Listeners attach once per (iframe x type) and never re-add.
+    `onload` fires immediately on each load. selector "window" targets contentWindow.
 */
 
-(function() {
+(function () {
 
-const isObj = v => v && typeof v === "object";
-const isStr = v => typeof v === "string" && v.trim();
+    const isObj = v => v !== null && typeof v === "object";
+    const isStr = v => typeof v === "string" && v.trim() !== "";
+    const clone = v => typeof structuredClone === "function"
+        ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+    const filterKids = (arr, id) => (arr || []).filter(c => c !== id);
 
-class EzVirtualSite {
-    #pages = {}; // id -> iframe
-    #active = null; // ID
-    #data = null; // JSON
-    #host = null; // container element
+    class EzVirtualSite {
+        #frames = {};       // key -> iframe
+        #active = null;     // active page id
+        #data = null;     // project JSON
+        #host = null;     // container element
+        #rt = {};       // key -> script runtime
+        #gstyle = "";       // global CSS text
 
-    #global = {
-        style: null // Global <style> for every iframe
-    }
+        /* -- setup -- */
 
-    static clone(v) {
-        return typeof structuredClone === "function"
-            ? structuredClone(v)
-            : JSON.parse(JSON.stringify(v));
-    }
-
-    /* ---------- Some ops ---------- */
-
-    setGlobalStyle(style) {
-        this.#global.style = style;
-        return this;
-    }
-
-    setHost(el) {
-        if(!(el instanceof Element)) return null;
-
-        // Move existing iframes to new host
-        if (this.#host && this.#host !== el) {
-            for (const iframe of Object.values(this.#pages)) {
-                el.appendChild(iframe);
+        setGlobalStyle(s) {
+            this.#gstyle = s instanceof HTMLStyleElement ? s.textContent || "" : (typeof s === "string" ? s : "");
+            return this;
+        }
+        setHost(el) {
+            if (!(el instanceof Element)) return null;
+            if (this.#host && this.#host !== el) {
+                Object.values(this.#frames).forEach(f => el.appendChild(f));
+                this.#host.innerHTML = "";
             }
-
-            // Clear old host
-            this.#host.innerHTML = "";
+            this.#host = el;
+            return this;
+        }
+        setData(d) {
+            if (!isObj(d)) return null;
+            this.#data = clone(d);
+            this.#data.scripts ||= {};
+            return this;
+        }
+        init() {
+            if (!(this.#host instanceof Element)) throw new Error("EzVirtualSite: invalid host");
+            this.#data ||= this.#emptyData();
+            this.#frames = {};
+            this.#rt = {};
+            this.#host.replaceChildren();
+            for (const id in this.#data.pages.page_data) this.#buildFrame(id);
+            const start = this.#data.pages.page_start || this.#firstPage();
+            if (start) this.changePage(start);
+            return this;
         }
 
-        // Set new host
-        this.#host = el;
-        return this;
-    }
+        /* -- page API -- */
 
-    setData(dataObject) {
-        if (!isObj(dataObject)) return null;
-        this.#data = dataObject;
-        return this;
-    }
+        load(id = this.#active) {
+            const page = this.getPageData(id), frame = this.#frames[this.#key(id)];
+            if (!page || !frame) return false;
+            const doc = frame.contentDocument;
+            if (!doc) return false;
+            doc.title = page.title || "";
+            this.#styleEl(doc, "ez-vs-global-style").textContent = this.#gstyle;
+            this.#styleEl(doc, "ez-vs-style").textContent = (page.include?.css || [])
+                .map(n => { const a = this.#data.stylesheets?.[n]; return a ? `/* ${n} */\n${typeof a === "string" ? a : this.#css(a)}` : ""; })
+                .filter(Boolean).join("\n\n");
+            this.#renderNodes(doc, page);
+            this.#applyScripts(frame, id, page);
+            return true;
+        }
+        reload(id = this.#active) { return this.load(id); }
 
-    init() {
-        this.#data = this.#data || this.#emptyData();
+        getDataJSON() { return clone(this.#data); }
 
-        for(const id in this.#data.pages.page_data) {
+        changePage(id = this.#active) {
+            if (!this.getPageData(id)) return false;
+            const next = this.#frames[this.#key(id)];
+            if (!next) return false;
+            this.load(id);
+            if (this.#active) { const p = this.#frames[this.#key(this.#active)]; if (p) p.style.display = "none"; }
+            next.style.display = "block";
+            this.#data.pages.page_start = this.#active = id;
+            return true;
+        }
+
+        addPage({ title, slug } = {}) {
+            const id = `p${this.#data.pages.page_counter++}`;
+            this.#data.pages.page_data[id] = {
+                title: isStr(title) ? title : "New Page",
+                slug: isStr(slug) ? slug : `new-page-${id}`,
+                node_counter: 0, nodes: {}, include: { css: [], js: [] }
+            };
             this.#buildFrame(id);
             this.load(id);
+            return id;
         }
 
-        const start = this.#data.pages.page_start || this.#firstPage();
-        if(start) this.changePage(start);
-
-        return this;
-    }
-
-    /* ---------- Core ---------- */
-
-    load(pageId) {
-        const page = this.getPage(pageId);
-        const iframe = this.#pages[`ez-virtualsite-${pageId}`];
-        if(!page || !iframe) return false;
-
-        const doc = iframe.contentDocument;
-        if(!doc) return false;
-
-        doc.open();
-        doc.write("<!DOCTYPE html><html><head></head><body></body></html>");
-        doc.close();
-
-        this.#renderPage(doc, page);
-        return true;
-    }
-    reload(pageId) {
-        load(pageId || this.#active);
-    } // Alias for load
-
-    changePage(id) {
-        if(!this.getPage(id)) return false;
-
-        const next = this.#pages[`ez-virtualsite-${id}`];
-        if(!next) return false;
-
-        this.load(id);
-
-        if(this.#active) {
-            const prev = this.#pages[`ez-virtualsite-${this.#active}`];
-            if(prev) prev.style.display = "none";
-        }
-
-        next.style.display = "block";
-        this.#active = id;
-        this.#data.pages.page_start = id;
-        return true;
-    }
-
-    listPages() {
-        return Object.entries(this.#data.pages.page_data).map(([id, p])=>({
-            id,
-            title: p.title,
-            slug: p.slug
-        }));
-    }
-
-    addPage({ title, slug }) {
-        const id = `p${this.#data.pages.page_counter++}`;
-        this.#data.pages.page_data[id] = {
-            title: isStr(title) ? title : "New Page",
-            slug: isStr(slug) ? slug : `new-page-${id}`,
-
-            // Starter pack
-            node_root: "n0",
-            node_counter: 1,
-            nodes: { n0:{ tag:"body", parent:null, children:[] } },
-            include:{ css:[], js:[] }
-        };
-
-        this.#buildFrame(id);
-
-        return id;
-    }
-
-    removePage(id) {
-        if(!this.getPage(id)) return false;
-        delete this.#data.pages.page_data[id];
-        const iframe = this.#pages[`ez-virtualsite-${id}`];
-
-        if(iframe) {
-            iframe.remove();
-            delete this.#pages[`ez-virtualsite-${id}`];
-        }
-
-        if(this.#active === id) {
-            const next = this.#firstPage();
-
-            if(next) this.changePage(next);
-            else     this.#active = null;
-        }
-        return true;
-    }
-
-    getPage(id) { return this.#data.pages.page_data[id] || null; }
-
-    getActiveID() { return this.#active; }
-    getActivePage() { return this.getPage(this.#active); }
-
-    /* ---------- Node Ops ---------- */
-
-    addNode(data={}) {
-        const page = this.getPage(this.#active);
-        if(!page) return null;
-
-        const parent = data.parent || page.node_root;
-        if(!page.nodes[parent]) return null;
-
-        const id = this.#nextNodeId(page);
-
-        page.nodes[id] = {
-            tag: data.tag || "div",
-            parent,
-            attrs: data.attrs,
-            text: data.text,
-            graph: data.graph || null
-        };
-
-        (page.nodes[parent].children ||= []).push(id);
-        return id;
-    }
-
-    readNode(id) {
-        const pageId = this.#active;
-        const page = this.getPage(pageId);
-        if(!page) return null;
-
-        const n = page.nodes[id];
-        if(!n) return null;
-
-        return {
-            page_id: pageId,
-            node_id: id,
-            tag: n.tag,
-            parent: n.parent,
-            children: n.children || [],
-            text: n.text || null,
-            attrs: n.attrs || null,
-            graph: n.graph || null
-        };
-    }
-
-    writeNode(id, { attrs, text, graph }) {
-        const page = this.getPage(this.#active);
-        if(!page) return false;
-
-        const node = page.nodes[id];
-        if(!node) return false;
-
-        if (attrs !== undefined) node.attrs = attrs;
-        if (text  !== undefined) node.text  = text;
-        if (graph !== undefined) node.graph = graph;
-        return true;
-    }
-
-    reparentNode(childId, newParentId) {
-        const page = this.getPage(this.#active);
-        if (!page) return false;
-        const nodes = page.nodes;
-
-        const child = nodes[childId];
-        const newParent = nodes[newParentId];
-
-        if (!child || !newParent) return false;
-
-        // Prevent moving root
-        if (childId === page.node_root) return false;
-
-        const oldParentId = child.parent;
-        const oldParent = nodes[oldParentId];
-        if (!oldParent) return false;
-
-        // Prevent cycles
-        let current = newParentId;
-        while (current) {
-            if (current === childId) return false;
-            current = nodes[current]?.parent;
-        }
-
-        // Remove from old parent
-        oldParent.children = (oldParent.children || []).filter(cid => cid !== childId);
-        // Add to new parent
-        (newParent.children ||= []).push(childId);
-        // Update parent ref
-        child.parent = newParentId;
-
-        return true;
-    }
-
-    deleteNode(id, reparentChildren = false) {
-        const page = this.getPage(this.#active);
-        if (!page) return false;
-        const nodes = page.nodes;
-
-        const node = nodes[id];
-        if (!node) return false;
-
-        // Prevent deleting root
-        if (id === page.node_root) return false;
-
-        const parent = nodes[node.parent];
-        if (!parent) return false;
-
-        const children = node.children || [];
-
-        if (reparentChildren) {
-            // Move children to rescue parent
-            parent.children = parent.children.filter(cid => cid !== id);
-
-            for (const childId of children) {
-                reparentNode(childId, parent.id);
+        removePage(id) {
+            if (!this.getPageData(id)) return false;
+            delete this.#data.pages.page_data[id];
+            const k = this.#key(id);
+            this.#frames[k]?.remove();
+            delete this.#frames[k];
+            delete this.#rt[k];
+            if (this.#active === id) {
+                const next = this.#firstPage();
+                this.#active = next ? (this.changePage(next), next) : null;
             }
-        } else {
-            // Recursive delete
-            const walkDelete = (nid) => {
-                const n = nodes[nid];
-                if (!n) return;
+            return true;
+        }
 
-                (n.children || []).forEach(walkDelete);
-                delete nodes[nid];
+        updatePage(id, u = {}) {
+            const p = this.getPageData(id);
+            if (!p) return false;
+            if ("title" in u) p.title = isStr(u.title) ? u.title : "New Page";
+            if ("slug" in u) p.slug = isStr(u.slug) ? u.slug : p.slug;
+            return true;
+        }
+
+        getPageFrame(id = this.#active) { return this.#frames[this.#key(id)] || null; }
+        getPageData(id = this.#active) { return this.#data?.pages.page_data[id] || null; }
+        getActiveID() { return this.#active; }
+        listPages() {
+            return Object.entries(this.#data.pages.page_data).map(([id, p]) => ({
+                id, title: p.title, slug: p.slug
+            }));
+        }
+
+
+        /* -- node API -- */
+
+        addNode(d = {}) {
+            const page = this.getPageData(this.#active);
+            if (!page) return null;
+            const parent = isStr(d.parent) ? d.parent : null;
+            if (parent && !page.nodes[parent]) return null;
+            const id = this.#nextNodeId(page);
+            page.nodes[id] = {
+                tag: d.tag || "div", parent,
+                attrs: isObj(d.attrs) ? clone(d.attrs) : undefined,
+                text: typeof d.text === "string" ? d.text : undefined,
+                graph: d.graph || null
             };
-
-            walkDelete(id);
-
-            // Remove reference from parent
-            parent.children = parent.children.filter(cid => cid !== id);
+            if (parent) (page.nodes[parent].children ||= []).push(id);
+            return id;
         }
 
-        // Finally delete the node itself
-        delete nodes[id];
+        readNode(id) {
+            const page = this.getPageData(this.#active);
+            if (!page) return null;
+            const n = page.nodes[id]; if (!n) return null;
+            return {
+                page_id: this.#active, node_id: id, tag: n.tag, parent: n.parent,
+                children: n.children || [], text: n.text ?? null, attrs: n.attrs ?? null, graph: n.graph ?? null
+            };
+        }
 
-        return true;
-    }
+        writeNode(id, { attrs, text, graph } = {}) {
+            const page = this.getPageData(this.#active);
+            if (!page) return false;
+            const n = page.nodes[id]; if (!n) return false;
+            if (attrs !== undefined) n.attrs = attrs;
+            if (text !== undefined) n.text = text;
+            if (graph !== undefined) n.graph = graph;
+            return true;
+        }
 
-    /* ---------- Rendering ---------- */
+        reparentNode(childId, newParentId) {
+            const page = this.getPageData(this.#active); if (!page) return false;
+            const { nodes } = page;
+            const child = nodes[childId], pid = isStr(newParentId) ? newParentId : null, np = pid ? nodes[pid] : null;
+            if (!child || (pid && !np)) return false;
+            for (let c = pid; c; c = nodes[c]?.parent) if (c === childId) return false; // cycle guard
+            const op = child.parent ? nodes[child.parent] : null;
+            if (op) op.children = filterKids(op.children, childId);
+            if (np) (np.children ||= []).push(childId);
+            child.parent = pid;
+            return true;
+        }
 
-    #renderPage(doc, page) {
-        doc.title = page.title;
-
-        this.#renderGlobalStyle(doc);
-        this.#renderNodes(doc, page);
-        this.#injectCSS(doc, page);
-        this.#injectJS(doc, page);
-    }
-
-    #renderNodes(doc, page) {
-        const nodes = page.nodes;
-
-        const build = (id)=>{
-            const n = nodes[id];
-            if(!n) return null;
-
-            const el = id===page.node_root
-                ? doc.body
-                : doc.createElement(n.tag || "div");
-
-            this.#applyAttrs(el, n.attrs);
-            el.dataset.vsNodeId = id;
-
-            if(n.text && !(n.children?.length)) {
-                el.textContent = n.text;
-            }
-
-            (n.children||[]).forEach(cid=>{
-                const c = build(cid);
-                if(c && c!==doc.body) el.appendChild(c);
-            });
-
-            return el;
-        };
-
-        build(page.node_root);
-    }
-
-    /* ---------- Assets ---------- */
-
-    #renderGlobalStyle(doc) {
-        // If null or not a style element, skip
-        if(!(this.#global.style instanceof HTMLStyleElement)) return;
-
-        doc.head.appendChild(this.#global.style);
-        return true;
-    }
-
-    #injectCSS(doc, page) {
-        (page.include?.css || []).forEach(name=>{
-            const asset = this.#data.stylesheets[name];
-            if(!asset) return;
-
-            const style = doc.createElement("style");
-            style.textContent = typeof asset === "string"
-                ? asset
-                : this.#compileCSS(asset);
-
-            doc.head.appendChild(style);
-        });
-    }
-
-    #injectJS(doc, page) {
-        (page.include?.js || []).forEach(name=>{
-            const txt = this.#data.scripts[name];
-            if(!txt) return;
-
-            const s = doc.createElement("script");
-            s.textContent = txt;
-            doc.body.appendChild(s);
-        });
-    }
-
-    #compileCSS(obj) {
-        return Object.entries(obj).map(([sel, rules])=>{
-            const body = Object.entries(rules)
-                .map(([k,v])=>`${this.#kebab(k)}:${v}`)
-                .join(";");
-            return `${sel}{${body}}`;
-        }).join("");
-    }
-
-    #kebab(str) {
-        return str.replace(/[A-Z]/g,m=>"-"+m.toLowerCase());
-    }
-
-    #applyAttrs(el, attrs={}) {
-        for(const [k,v] of Object.entries(attrs||{})) {
-            if(k === "_href_id") {
-                el.dataset.hrefId = v;
-                if(el.tagName === "A") {
-                    const p = this.getPage(v);
-                    if(p) el.href = "/"+p.slug;
+        deleteNode(id, reparentChildren = false) {
+            const page = this.getPageData(this.#active); if (!page) return false;
+            const { nodes } = page;
+            const node = nodes[id]; if (!node) return false;
+            const parent = node.parent ? nodes[node.parent] : null;
+            const children = node.children || [];
+            if (reparentChildren) {
+                if (parent) parent.children = filterKids(parent.children, id);
+                for (const cid of children) {
+                    const child = nodes[cid]; if (!child) continue;
+                    child.parent = node.parent ?? null;
+                    if (parent) (parent.children ||= []).push(cid);
                 }
-                continue;
+            } else {
+                const cascade = nid => { const n = nodes[nid]; if (!n) return; (n.children || []).forEach(cascade); delete nodes[nid]; };
+                cascade(id);
+                if (parent) parent.children = filterKids(parent.children, id);
+                return true;
             }
-            if(k.startsWith("_")) continue;
-            el.setAttribute(k,v);
+            delete nodes[id];
+            return true;
         }
-    }
 
-    /* ---------- Utils ---------- */
+        /* -- script API -- */
 
-    #nextNodeId(page) {
-        let i = page.node_counter || 0;
-        while(page.nodes[`n${i}`]) i++;
-        page.node_counter = i+1;
-        return `n${i}`;
-    }
+        addScript(name, data) {
+            if (!isStr(name) || !isObj(data)) return false;
+            this.#data.scripts[name] = clone(data);
+            return true;
+        }
 
-    #buildFrame(id) {
-        const f = document.createElement("iframe");
-        f.id = `ez-virtualsite-${id}`;
-        f.style.cssText = "width:100%;height:100%;border:0;display:none;";
-        this.#host.appendChild(f);
-        this.#pages[f.id] = f;
-    }
+        removeScript(name) {
+            if (!this.#data.scripts[name]) return false;
+            delete this.#data.scripts[name]; return true;
+        }
 
-    #firstPage() {
-        return Object.keys(this.#data.pages.page_data)[0] || null;
-    }
+        getScript(name) { return this.#data.scripts[name] ? clone(this.#data.scripts[name]) : null; }
 
-    #emptyData() {
-        return {
-            pages:{
-                page_start: "p0",
-                page_counter:1,
-                page_data:{
-                    p0:{
-                        title:"New Page",
-                        slug:"new-page",
-                        node_root:"n0",
-                        node_counter:1,
-                        nodes:{ n0:{ tag:"body", parent:null, children:[] } },
-                        include:{css:[],js:[]}
+        /* -- rendering -- */
+
+        #renderNodes(doc, page) {
+            const mount = doc.getElementById("ez-vs-main") || doc.body; if (!mount) return;
+            mount.replaceChildren();
+            const { nodes } = page, cache = new Map(), visiting = new Set();
+            const build = id => {
+                if (cache.has(id)) return cache.get(id);
+                if (visiting.has(id)) return null;
+                const n = nodes[id]; if (!n) return null;
+                visiting.add(id);
+                const el = doc.createElement(n.tag || "div");
+                this.#applyAttrs(el, n.attrs);
+                el.dataset.vsNodeId = id;
+                if (typeof n.text === "string") el.appendChild(doc.createTextNode(n.text));
+                (n.children || []).forEach(cid => { const c = build(cid); if (c) el.appendChild(c); });
+                visiting.delete(id); cache.set(id, el); return el;
+            };
+            Object.keys(nodes)
+                .filter(id => { const pid = nodes[id]?.parent; return !isStr(pid) || !nodes[pid]; })
+                .forEach(rid => { const el = build(rid); if (el) mount.appendChild(el); });
+        }
+
+        /* -- script runtime --
+           One delegated listener per (iframe × eventType), attached once, never re-added.
+           On load/reload only rt.variables and rt.actions are refreshed — the listener
+           closure reads the same rt reference so it automatically sees the new data. */
+
+        #applyScripts(frame, pageId, page) {
+            const key = this.#key(pageId);
+            const doc = frame.contentDocument, win = frame.contentWindow;
+            if (!doc || !win) return;
+
+            const rt = this.#rt[key] ||= { variables: {}, actions: {}, docTypes: new Set(), winTypes: new Set() };
+
+            const merged = { variables: {}, actions: {}, events: {} };
+            for (const name of (page.include?.js || [])) {
+                const s = this.#data.scripts?.[name]; if (!isObj(s)) continue;
+                Object.assign(merged.variables, s.variables || {});
+                Object.assign(merged.actions, s.actions || {});
+                for (const [type, bindings] of Object.entries(s.events || {}))
+                    (merged.events[type] ||= []).push(...bindings);
+            }
+
+            rt.variables = merged.variables;
+            rt.actions = merged.actions;
+
+            for (const [type, bindings] of Object.entries(merged.events)) {
+                if (type === "onload") {
+                    bindings.filter(b => b.selector === "window")
+                        .forEach(b => this.#exec(rt, b.action, new Event("load")));
+                    continue;
+                }
+                if (!rt.docTypes.has(type)) { doc.addEventListener(type, e => this.#fire(rt, doc, type, e)); rt.docTypes.add(type); }
+                if (bindings.some(b => b.selector === "window") && !rt.winTypes.has(type)) {
+                    win.addEventListener(type, e => this.#fire(rt, null, type, e)); rt.winTypes.add(type);
+                }
+            }
+        }
+
+        // Unified dispatcher — doc=null means window-scoped
+        #fire(rt, doc, type, event) {
+            for (const s of Object.values(this.#data.scripts || {}))
+                for (const b of (s.events?.[type] || []))
+                    if (!doc) { if (b.selector === "window") this.#exec(rt, b.action, event); }
+                    else {
+                        if (b.selector === "window") continue;
+                        try {
+                            for (const el of doc.querySelectorAll(b.selector))
+                                if (el === event.target || el.contains(event.target)) this.#exec(rt, b.action, event);
+                        } catch (_) { }
                     }
-                }
-            },
-            stylesheets:{},
-            scripts:{}
-        };
-    }
-}
+        }
 
-window.EzVirtualSite = EzVirtualSite;
+        #exec(rt, name, event) {
+            const code = rt.actions[name]; if (typeof code !== "string") return;
+            try { new Function("variables", "event", code)(rt.variables, event); }
+            catch (e) { console.warn(`[EzVirtualSite] action "${name}" threw:`, e); }
+        }
+
+        /* -- utils -- */
+
+        #applyAttrs(el, attrs) {
+            for (const [k, v] of Object.entries(attrs || {})) {
+                if (k === "_href_id") {
+                    el.dataset.hrefId = v;
+                    if (el.tagName === "A") { const p = this.getPageData(v); if (p) el.href = "/" + p.slug; }
+                } else if (!k.startsWith("_")) { el.setAttribute(k, v); }
+            }
+        }
+
+        #css(obj) {
+            return Object.entries(obj).map(([sel, rules]) =>
+                `${sel}{${Object.entries(rules).map(([k, v]) => `${k.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}:${v}`).join(";")}}`
+            ).join("");
+        }
+
+        #styleEl(doc, id) {
+            let el = doc.getElementById(id);
+            if (!el) { el = doc.createElement("style"); el.id = id; (doc.head || doc.documentElement).appendChild(el); }
+            return el;
+        }
+
+        #key(id) { return `ez-virtualsite-${id}`; }
+
+        #nextNodeId(page) {
+            let i = page.node_counter || 0;
+            while (page.nodes[`n${i}`]) i++;
+            page.node_counter = i + 1;
+            return `n${i}`;
+        }
+
+        #buildFrame(id) {
+            const k = this.#key(id), f = document.createElement("iframe");
+            f.id = k; f.style.cssText = "width:100%;height:100%;border:0;display:none;";
+            this.#host.appendChild(f); this.#frames[k] = f;
+            const doc = f.contentDocument; if (!doc) return false;
+            doc.open();
+            doc.write(`<!DOCTYPE html><html><head><style id="ez-vs-global-style"></style><style id="ez-vs-style"></style></head><body id="ez-vs-main"></body></html>`);
+            doc.close();
+            return true;
+        }
+        #firstPage() { return Object.keys(this.#data.pages.page_data)[0] || null; }
+
+        #emptyData() {
+            return {
+                pages: {
+                    page_start: "p0", page_counter: 1, page_data: {
+                        p0: { title: "New Page", slug: "new-page", node_counter: 0, nodes: {}, include: { css: [], js: [] } }
+                    }
+                }, stylesheets: {}, scripts: {}
+            };
+        }
+    }
+
+    window.EzVirtualSite = EzVirtualSite;
 
 })();

@@ -315,14 +315,14 @@ Styling Example
         _onMove(e, doc) {
             if (this.state.mode === "context") return;
 
-            if (this.state.hoverEl && this.state.hoverEl.contains(e.target)) {
+            const res = this._match(e.target, doc, "tooltip", e);
+            if (!res) return this.hide();
+
+            if (this.state.hoverEl === res.el) {
                 const p = this._point(doc, e);
                 if (p) this.setPosition(p.x, p.y);
                 return;
             }
-
-            const res = this._match(e.target, doc, "tooltip", e);
-            if (!res) return this.hide();
 
             const p = this._point(doc, e);
             if (!p) return;
@@ -384,6 +384,7 @@ Styling Example
                 if (!f) return null;
                 try { doc = f.contentDocument; } catch { return null; }
             }
+
             return doc;
         }
 
