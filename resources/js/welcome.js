@@ -61,89 +61,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
     const createCanvRuntime = ({ includeJelly, includeStars }) => {
         const canv = new window.EzLivecanvas({ width: 1, height: 1, passthrough: true });
 
-        const tintSurface = typeof OffscreenCanvas === "function"
-            ? new OffscreenCanvas(1, 1)
-            : document.createElement("canvas");
-        const tintCtx = tintSurface.getContext("2d", { alpha: true });
-
-        const drawTintedSprite = ({
-            runtime,
-            assetKey,
-            src,
-            dx,
-            dy,
-            dw,
-            dh,
-            tint,
-            alpha = 1,
-            angleRad = 0,
-            pivotX,
-            pivotY,
-        }) => {
-            const asset = runtime.assets[assetKey];
-            const hasSrc = src && Number.isFinite(src.sw) && Number.isFinite(src.sh);
-            if (!asset?.img || !hasSrc || !Number.isFinite(dw) || !Number.isFinite(dh) || dw <= 0 || dh <= 0) {
-                return false;
-            }
-
-            const drawW = Math.max(1, Math.ceil(dw));
-            const drawH = Math.max(1, Math.ceil(dh));
-
-            if (!tintCtx) {
-                return runtime.drawImage(assetKey, {
-                    dst: { dx, dy, dw, dh },
-                    src,
-                }, {
-                    globalAlpha: alpha,
-                    angleRad,
-                    pivotX,
-                    pivotY,
-                });
-            }
-
-            if (tintSurface.width !== drawW || tintSurface.height !== drawH) {
-                tintSurface.width = drawW;
-                tintSurface.height = drawH;
-            }
-
-            tintCtx.setTransform(1, 0, 0, 1, 0, 0);
-            tintCtx.globalCompositeOperation = "source-over";
-            tintCtx.globalAlpha = 1;
-            tintCtx.clearRect(0, 0, drawW, drawH);
-
-            tintCtx.drawImage(
-                asset.img,
-                src.sx,
-                src.sy,
-                src.sw,
-                src.sh,
-                0,
-                0,
-                drawW,
-                drawH,
-            );
-
-            tintCtx.globalCompositeOperation = "source-atop";
-            tintCtx.fillStyle = tint;
-            tintCtx.fillRect(0, 0, drawW, drawH);
-
-            runtime.ctx.save();
-            runtime.ctx.globalAlpha = alpha;
-
-            const resolvedPivotX = Number.isFinite(pivotX) ? pivotX : dx + dw / 2;
-            const resolvedPivotY = Number.isFinite(pivotY) ? pivotY : dy + dh / 2;
-            if (angleRad !== 0) {
-                runtime.ctx.translate(resolvedPivotX, resolvedPivotY);
-                runtime.ctx.rotate(angleRad);
-                runtime.ctx.translate(-resolvedPivotX, -resolvedPivotY);
-            }
-
-            runtime.ctx.drawImage(tintSurface, dx, dy, dw, dh);
-            runtime.ctx.restore();
-
-            return true;
-        };
-
         canv.addImage("jellyfish", window.nakuchaAssets?.images?.jellyfish ?? "/assets/images/jellyfish.png");
         canv.addImage("starglitter", window.nakuchaAssets?.images?.starglitter ?? "/assets/images/starglitter.png");
 
@@ -348,17 +265,27 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                         const drawH = entity.size;
                         const angleRad = Math.atan2(entity.vy, entity.vx) + attrs.cfg.spriteAngleRad;
 
-                        drawTintedSprite({
-                            runtime,
-                            assetKey: "jellyfish",
+                        runtime.drawImage("jellyfish", {
+                            dst: {
+                                dx: drawX,
+                                dy: drawY,
+                                dw: drawW,
+                                dh: drawH,
+                            },
                             src: srcRect,
-                            dx: drawX,
-                            dy: drawY,
-                            dw: drawW,
-                            dh: drawH,
-                            tint: entity.color,
-                            alpha: 0.42,
-                            angleRad,
+                        }, {
+                            globalAlpha: 0.42,
+                            effects: [
+                                {
+                                    type: "tint",
+                                    color: entity.color,
+                                },
+                            ],
+                            transformation: {
+                                rotation: {
+                                    angle: angleRad
+                                },
+                            },
                         });
 
                         entities.push(entity);
@@ -396,7 +323,7 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                 events: {
                     pointermove(self, runtime, event) {
                         const attrs = self.attrs;
-                        const point = runtime.mousepos(false);
+                        const point = runtime.mouse.pos;
                         if (!point) return;
 
                         const now = performance.now();
@@ -476,7 +403,7 @@ const WELCOME_LEFT_SIDE_CONFIG = {
 
                     "click": function(self, runtime, event) {
                         const attrs = self.attrs;
-                        const point = runtime.mousepos(false);
+                        const point = runtime.mouse.pos;
                         if (!point) return;
 
                         for (const entity of self.attrs.entities) {
@@ -607,16 +534,22 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                         const drawY = star.y;
                         const drawSize = star.size;
 
-                        drawTintedSprite({
-                            runtime,
-                            assetKey: "starglitter",
+                        runtime.drawImage("starglitter", {
+                            dst: {
+                                dx: drawX,
+                                dy: drawY,
+                                dw: drawSize,
+                                dh: drawSize,
+                            },
                             src: srcRect,
-                            dx: drawX,
-                            dy: drawY,
-                            dw: drawSize,
-                            dh: drawSize,
-                            tint: star.color,
-                            alpha,
+                        }, {
+                            globalAlpha: alpha,
+                            effects: [
+                                {
+                                    type: "tint",
+                                    color: star.color,
+                                },
+                            ],
                         });
 
                         stars.push(star);
@@ -634,8 +567,8 @@ const WELCOME_LEFT_SIDE_CONFIG = {
         const target = targetCanv?.actions?.jellytank;
         if (!source || !target) return;
 
-        target.attrs.entities = window.EzLivecanvas.cloneData(source.attrs.entities ?? []);
-        target.attrs.bubbles = window.EzLivecanvas.cloneData(source.attrs.bubbles ?? []);
+        target.attrs.entities = source.attrs.entities;
+        target.attrs.bubbles = source.attrs.bubbles;
         target.attrs.spawnTimer = 0;
         target.attrs.bubbleSpawnTimer = 0;
     };

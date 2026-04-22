@@ -35,7 +35,7 @@ engine stack. Keep it simple, wire actions, let it cook.
                     ...
                 }
             }
-        + removeAction(key): remove action and detach unused global event handlers
+        + removeAction(key): remove action (event listeners are shared and auto-managed)
 
     + Canvas event behavior
         + one listener per event type on document (shared global listener)
@@ -44,19 +44,40 @@ engine stack. Keep it simple, wire actions, let it cook.
         + pointer-events comes from passthrough config (not inferred from actions)
 
     + Other
-        + drawImage(assetKey, rect, style) accepts normal ctx style keys directly
+        + drawImage(assetKey, rect, style)
+            + rect = {
+                dst:  { dx, dy, dw, dh },
+                src?: { sx, sy, sw, sh } // optional cropping
+            }
+
+            + style accepts normal ctx style keys AND:
+                transformation: {
+                    scale: { x, y },        // default 1,1 (applied from center)
+                    rotation: { 
+                        angle,              // radians
+                        px, py              // pivot (default = center of image)
+                    },
+                    translation: { x, y }  // applied last
+                }, -> order is always scale -> rotate -> translate
+
+                effects: [
+                    { type: "tint", color: "css-color", mode?: "source-atop" },
+                    ...
+                ]
+
         + mouse = {
             viewport: { x, y }, // in viewport coord (global)
             pos: { x, y },      // in canvas coord (local)
             ndc: { x, y },      // in canvas NDC coord [-1, 1]
+
+            target: () => element under mouse or null,
+            over: (el) => boolean, if mouse is over element (DOM stack aware),
+            hit: (el)  => boolean, simple AABB hit test
         }
-        + mousepos(ndc=false) returns the latest mouse position in canvas coord
-            + ndc=true return mouse.ndc, otherwise return mouse.pos
 
 # Notes:
 
-    + reserved style keys:
-        + angleRad, pivotX, pivotY: control image rotation around pivot
+    + transformation replaces older angle/pivot style keys (those are deprecated now)
     + deltatime is in seconds
     + shared is a free object for cross-action runtime state
     + It is recommended against setting custom style or attributes for the canvas, just use mount() and unmount()
@@ -67,537 +88,388 @@ engine stack. Keep it simple, wire actions, let it cook.
 */
 
 class EzLivecanvas {
-    constructor(cfg = {width: 300, height: 150, passthrough: true}) {
-        this.cfg = {
-            width: Number.isFinite(cfg.width) ? cfg.width : 0,
-            height: Number.isFinite(cfg.height) ? cfg.height : 0,
-            passthrough: cfg.passthrough === true
-        };
+    constructor(cfg = {}) {
+        const { width = 300, height = 150, passthrough = true } = cfg;
+
+        this.cfg = { width: width | 0, height: height | 0, passthrough: !!passthrough };
 
         this.canvas = document.createElement("canvas");
-        this.ctx = this.canvas.getContext("2d", { alpha: true });
+        this.ctx = this.canvas.getContext("2d");
+
+        Object.assign(this.canvas.style, {
+            position: "absolute",
+            inset: "0",
+            width: "100%",
+            height: "100%",
+            display: "block",
+            pointerEvents: this.cfg.passthrough ? "none" : "auto"
+        });
+
+        this.canvas.width = this.cfg.width || 1;
+        this.canvas.height = this.cfg.height || 1;
 
         this.mountHost = null;
 
         this.assets = {};
-        this.shared = {};
         this.actions = {};
+        this.shared = {};
+        
+        this.deltatime = 0; // For physic and stuff
 
         this.mouse = {
             viewport: null,
             pos: null,
             ndc: null,
+
+            target: () => {
+                const p = this.mouse.viewport;
+                return p ? document.elementFromPoint(p.x, p.y) : null;
+            },
+
+            over: el => {
+                const p = this.mouse.viewport;
+                return p && el instanceof Element
+                    ? document.elementsFromPoint(p.x, p.y).includes(el)
+                    : false;
+            },
+
+            hit: el => {
+                const p = this.mouse.viewport;
+                if (!p || !(el instanceof Element)) return false;
+
+                const r = el.getBoundingClientRect();
+                return p.x >= r.left && p.x <= r.right &&
+                    p.y >= r.top && p.y <= r.bottom;
+            }
         };
 
-        this.deltatime = 0;
+        this._handlers = {};
+        this._raf = null;
+        this._last = null;
 
+        // Effect surface for processing effects (fork found in kitchen)
+        this._fxSurface = null;
+        this._fxCtx = null;
 
-        this._handleResize = this._handleResize.bind(this);
-
-        this._rafId = null;
-        this._lastFrameAt = null;
         this._loop = this._loop.bind(this);
-        this._canvasEventHandlers = {};
-
-        this._applyCanvasBaseStyle();
-        this._applyCanvasDimensions();
+        this._resize = this._resize.bind(this);
     }
 
-    static cloneData(value) {
-        if (typeof structuredClone === "function") {
-            return structuredClone(value);
+    // ---------- utils ----------
+    _key(base, obj) {
+        let i = 0, k = base;
+        while (k in obj) k = `${base}_${++i}`;
+        return k;
+    }
+
+    _eventPoint(e) {
+        const p = e?.touches?.[0] || e?.changedTouches?.[0] || e;
+        return Number.isFinite(p?.clientX) ? { x: p.clientX, y: p.clientY } : null;
+    }
+
+    _inRect(p, r) {
+        return p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+    }
+
+    _toCanvas(p, ndc = false) {
+        if (!p) return null;
+        const r = this.canvas.getBoundingClientRect();
+        const x = p.x - r.left, y = p.y - r.top;
+
+        return ndc
+            ? { x: (x / r.width) * 2 - 1, y: 1 - (y / r.height) * 2 }
+            : { x, y };
+    }
+
+    _ensureEffectSurface(w, h) {
+        if (!this._fxSurface || !this._fxCtx) {
+            this._fxSurface = typeof OffscreenCanvas === "function"
+                ? new OffscreenCanvas(1, 1)
+                : document.createElement("canvas");
+            this._fxCtx = this._fxSurface.getContext("2d", { alpha: true })
+                || this._fxSurface.getContext("2d");
         }
 
-        if (value == null) return value;
-        return JSON.parse(JSON.stringify(value));
-    }
+        if (!this._fxCtx) return null;
 
-    _applyCanvasBaseStyle() {
-        this.canvas.style.position = "absolute";
-        this.canvas.style.inset = "0";
-        this.canvas.style.width = "100%";
-        this.canvas.style.height = "100%";
-        this.canvas.style.pointerEvents = this.cfg.passthrough ? "none" : "auto";
-        this.canvas.style.display = "block";
-    }
-
-    _applyCanvasDimensions(width = this.cfg.width, height = this.cfg.height) {
-        const w = Math.max(1, Math.floor(width || 1));
-        const h = Math.max(1, Math.floor(height || 1));
-
-        this.canvas.width = w;
-        this.canvas.height = h;
-        this.cfg.width = w;
-        this.cfg.height = h;
-    }
-
-// Event handling (ft. mouse)
-
-    _eventPoint(event) {
-        if (!event || typeof event !== "object") return null;
-
-        if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
-            return { x: event.clientX, y: event.clientY };
+        if (this._fxSurface.width !== w || this._fxSurface.height !== h) {
+            this._fxSurface.width = w;
+            this._fxSurface.height = h;
         }
 
-        if (event.touches && event.touches.length > 0) {
-            const touch = event.touches[0];
-            if (Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY)) {
-                return { x: touch.clientX, y: touch.clientY };
+        return this._fxCtx;
+    }
+
+    _runEffect(ctx, w, h, fx) {
+        if (!fx || typeof fx !== "object") return;
+
+        switch (fx.type) {
+            case "tint": {
+                if (typeof fx.color !== "string" || fx.color.length === 0) break;
+                ctx.globalCompositeOperation = typeof fx.mode === "string" ? fx.mode : "source-atop";
+                ctx.fillStyle = fx.color;
+                ctx.fillRect(0, 0, w, h);
+                break;
             }
+            default:
+                break;
         }
 
-        if (event.changedTouches && event.changedTouches.length > 0) {
-            const touch = event.changedTouches[0];
-            if (Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY)) {
-                return { x: touch.clientX, y: touch.clientY };
-            }
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+    }
+
+    _applyEffects(img, src, w, h, effects) {
+        const fxCtx = this._ensureEffectSurface(w, h);
+        if (!fxCtx) return img;
+
+        fxCtx.setTransform(1, 0, 0, 1, 0, 0);
+        fxCtx.globalCompositeOperation = "source-over";
+        fxCtx.globalAlpha = 1;
+        fxCtx.clearRect(0, 0, w, h);
+
+        const hasSrc = src && Number.isFinite(src.sw) && Number.isFinite(src.sh);
+        hasSrc
+            ? fxCtx.drawImage(img, src.sx || 0, src.sy || 0, src.sw, src.sh, 0, 0, w, h)
+            : fxCtx.drawImage(img, 0, 0, w, h);
+
+        for (const fx of effects) {
+            this._runEffect(fxCtx, w, h, fx);
         }
 
-        return null;
+        return this._fxSurface;
     }
 
-    _isEventInsideCanvas(event) {
-        if (!this.mountHost) return false;
+    // ---------- events ----------
+    _ensureEvent(name) {
+        if (this._handlers[name]) return;
 
-        const point = this._eventPoint(event);
-        if (!point) {
-            return true;
-        }
-
-        const rect = this.canvas.getBoundingClientRect();
-        return point.x >= rect.left
-            && point.x <= rect.right
-            && point.y >= rect.top
-            && point.y <= rect.bottom;
-    }
-
-    _getRegisteredActionEventNames() {
-        const names = new Set();
-        for (const action of Object.values(this.actions)) {
-            for (const eventName of Object.keys(action?.events || {})) {
-                names.add(eventName);
-            }
-        }
-        return names;
-    }
-
-    // Convert from viewport coord to canvas coord (global to local)
-    _mouseposFromViewportPoint(viewportPoint, ndc = false) {
-        if (!viewportPoint) return null;
-
-        const rect = this.canvas.getBoundingClientRect();
-        const width = Math.max(1, rect.width || this.canvas.width || 1);
-        const height = Math.max(1, rect.height || this.canvas.height || 1);
-
-        const canvasPoint = {
-            x: viewportPoint.x - rect.left,
-            y: viewportPoint.y - rect.top,
-        };
-
-        if (!ndc) return canvasPoint;
-
-        return {
-            x: (canvasPoint.x / width) * 2 - 1,
-            y: 1 - (canvasPoint.y / height) * 2,
-        };
-    }
-
-    _ensureCanvasEventHandler(eventName) {
-        if (this._canvasEventHandlers[eventName]) return;
-
-        const handler = (e) => {
-            const point = this._eventPoint(e);
-            if (point) {
-                this.mouse.viewport = point;
-                this.mouse.pos = this._mouseposFromViewportPoint(point, false);
-                this.mouse.ndc = this._mouseposFromViewportPoint(point, true);
+        const fn = e => {
+            const p = this._eventPoint(e);
+            if (p) {
+                this.mouse.viewport = p;
+                this.mouse.pos = this._toCanvas(p);
+                this.mouse.ndc = this._toCanvas(p, true);
             }
 
-            if (!this._isEventInsideCanvas(e)) {
-                return;
-            }
+            if (!this.mountHost) return;
+            if (p && !this._inRect(p, this.canvas.getBoundingClientRect())) return;
 
-            for (const action of Object.values(this.actions)) {
-                const eventFn = action?.events?.[eventName];
-                if (typeof eventFn !== "function") continue;
-
-                try {
-                    eventFn(action, this, e);
-                } catch (error) {
-                    console.error(`[EzLivecanvas] Action event '${eventName}' failed:`, error);
-                }
+            for (const a of Object.values(this.actions)) {
+                a.events?.[name]?.(a, this, e);
             }
         };
 
-        this._canvasEventHandlers[eventName] = handler;
-        document.addEventListener(eventName, handler, { passive: true });
+        this._handlers[name] = fn;
+        document.addEventListener(name, fn, { passive: true });
     }
 
-    setPassthrough(value) {
-        this.cfg.passthrough = Boolean(value);
-        this.canvas.style.pointerEvents = this.cfg.passthrough ? "none" : "auto";
-        return this.cfg.passthrough;
+    // ---------- assets ----------
+    addAsset(k, v) {
+        k = this._key(k || "asset", this.assets);
+        this.assets[k] = v;
+        return k;
     }
 
-    mousepos(ndc = false) {
-        return ndc ? this.mouse.ndc : this.mouse.pos;
-    }
-
-    mouseviewport() {
-        return this.mouse.viewport;
-    }
-
-    // The current element under the mouse cursor (DOM stack based)
-    mousetarget() {
-        if (!this.mouse.pos) return null;
-
-        const elements = document.elementsFromPoint(this.mouse.viewport.x, this.mouse.viewport.y);
-        return elements.length > 0 ? elements[0] : null;
-    }
-
-    // Check if element is currently under mouse (DOM stack based)
-    isMouseover(element) {
-        if (!(element instanceof Element) || !this.mouse.pos) return false;
-
-        const elements = document.elementsFromPoint(this.mouse.viewport.x, this.mouse.viewport.y);
-        return elements.includes(element);
-    }
-
-    // Mouse-Element hitbox collision (ignore any stack)
-    hitTest(element) {
-        if (!(element instanceof Element) || !this.mouse.viewport) return false;
-
-        const rect = element.getBoundingClientRect();
-        const point = this.mouse.viewport;
-
-        return point.x >= rect.left
-            && point.x <= rect.right
-            && point.y >= rect.top
-            && point.y <= rect.bottom;
-    }
-
-// Assets stuff
-
-    _buildUniqueKey(baseKey, collection) {
-        if (!Object.prototype.hasOwnProperty.call(collection, baseKey)) {
-            return baseKey;
-        }
-
-        let key = `${baseKey}_1`;
-        while (Object.prototype.hasOwnProperty.call(collection, key)) {
-            key = `${key}_1`;
-        }
-        return key;
-    }
-
-    addAsset(key, value) {
-        const safeKey = String(key || "asset");
-        const finalKey = this._buildUniqueKey(safeKey, this.assets);
-        this.assets[finalKey] = value;
-        return finalKey;
-    }
-
-    addImage(key, url) {
-        if (typeof url !== "string" || url.trim().length === 0) return null;
-
+    addImage(k, url) {
+        if (!url) return null;
         const img = new Image();
         img.src = url;
-
-        return this.addAsset(key, { type: "img", url, img });
+        return this.addAsset(k, { type: "img", img });
     }
 
-    addAudio(key, url) {
-        if (typeof url !== "string" || url.trim().length === 0) return null;
-
-        const audio = new Audio(url);
-
-        return this.addAsset(key, { type: "audio", url, audio });
+    addAudio(k, url) {
+        if (!url) return null;
+        return this.addAsset(k, { type: "audio", audio: new Audio(url) });
     }
 
-    removeAsset(key) {
-        if (!Object.prototype.hasOwnProperty.call(this.assets, key)) {
-            return false;
-        }
+    playAudio(k, opt = {}) {
+        const a = this.assets[k]?.audio;
+        if (!a) return null;
 
-        delete this.assets[key];
-        return true;
+        if (opt.currentTime != null) a.currentTime = opt.currentTime;
+        if (opt.loop != null) a.loop = opt.loop;
+        if (opt.volume != null) a.volume = Math.max(0, Math.min(1, opt.volume));
+        if (opt.rate != null) a.playbackRate = opt.rate;
+
+        a.play().catch(() => {});
+        return a;
     }
 
-    drawImage(assetKey, rect = {}, style = {}) {
-        const asset = this.assets[assetKey];
-        if (!asset || asset.type !== "img" || !asset.img) {
-            return false;
-        }
+    runFn(k, ...p) {
+        return typeof this.assets[k] === "function"
+            ? this.assets[k](...p)
+            : undefined;
+    }
 
-        const dst = rect?.dst;
-        if (!dst || !Number.isFinite(dst.dw) || !Number.isFinite(dst.dh)) {
-            return false;
-        }
+    // ---------- draw ----------
+    drawImage(k, rect = {}, style = {}) {
+        const img = this.assets[k]?.img;
+        if (!img) return false;
 
-        const dx = Number.isFinite(dst.dx) ? dst.dx : 0;
-        const dy = Number.isFinite(dst.dy) ? dst.dy : 0;
-        const dw = dst.dw;
-        const dh = dst.dh;
+        const { dx = 0, dy = 0, dw, dh } = rect.dst || {};
+        if (!dw || !dh) return false;
 
-        const src = rect?.src;
+        const t = style.transformation || {};
+        const scale = t.scale || {};
+        const rot = t.rotation || {};
+        const trans = t.translation || {};
+
+        const sx = scale.x ?? 1;
+        const sy = scale.y ?? 1;
+
+        const angle = rot.angle ?? 0;
+        const px = rot.px ?? (dx + dw / 2);
+        const py = rot.py ?? (dy + dh / 2);
+
+        const tx = trans.x ?? 0;
+        const ty = trans.y ?? 0;
+
+        const effects = Array.isArray(style.effects) ? style.effects : [];
 
         this.ctx.save();
 
-        // Special style keys with special handling
-        const specialStyleKeys = new Set([
-            "angleRad", "pivotX", "pivotY" // Control image rotation around pivot
-        ]);
-        
-        // Set ctx styles while ignoring special style keys
-        for (const [name, value] of Object.entries(style || {})) {
-            // Special style key
-            if (specialStyleKeys.has(name)) continue;
-            // Default ctx style key
-            if (name in this.ctx) this.ctx[name] = value;
+        // Apply normal styles (ignore special keys)
+
+        const specialKeys = new Set(["transformation", "effects"]);
+
+        for (const s in style) {
+            if (!specialKeys.has(s) && s in this.ctx) {
+                this.ctx[s] = style[s];
+            }
         }
 
-        // Rotation based on angleRad, pivotX and pivotY
-        const angleRad = Number.isFinite(style?.angleRad) ? style.angleRad : 0;
-        if (angleRad !== 0) {
-            // No pivot => pivot = image center
-            const pivotX = Number.isFinite(style?.pivotX) ? style.pivotX : dx + dw / 2;
-            const pivotY = Number.isFinite(style?.pivotY) ? style.pivotY : dy + dh / 2;
-            this.ctx.translate(pivotX, pivotY);
-            this.ctx.rotate(angleRad);
-            this.ctx.translate(-pivotX, -pivotY);
-        }
+        // ---- Transform order: scale -> rotation -> translation ----
 
-        // Draw the image
-        const hasSrc = src && Number.isFinite(src.sw) && Number.isFinite(src.sh);
-        if (hasSrc) { // Has source cropping
-            const sx = Number.isFinite(src.sx) ? src.sx : 0;
-            const sy = Number.isFinite(src.sy) ? src.sy : 0;
-            this.ctx.drawImage(asset.img, sx, sy, src.sw, src.sh, dx, dy, dw, dh);
-        } else {      // No source cropping (hl3 coming)
-            this.ctx.drawImage(asset.img, dx, dy, dw, dh);
+        // Move to pivot
+        this.ctx.translate(px, py);
+        this.ctx.scale(sx, sy);
+
+        // Rotate
+        if (angle) this.ctx.rotate(angle);
+
+        // Move back
+        this.ctx.translate(-px, -py);
+
+        // Final translation
+        if (tx || ty) this.ctx.translate(tx, ty);
+
+        const src = rect.src;
+        if (effects.length > 0) {
+            const drawW = Math.max(1, Math.ceil(Math.abs(dw)));
+            const drawH = Math.max(1, Math.ceil(Math.abs(dh)));
+            const processedSurface = this._applyEffects(img, src, drawW, drawH, effects);
+            this.ctx.drawImage(processedSurface, dx, dy, dw, dh);
+        } else {
+            const hasSrc = src && Number.isFinite(src.sw) && Number.isFinite(src.sh);
+            hasSrc
+                ? this.ctx.drawImage(img, src.sx || 0, src.sy || 0, src.sw, src.sh, dx, dy, dw, dh)
+                : this.ctx.drawImage(img, dx, dy, dw, dh);
         }
 
         this.ctx.restore();
         return true;
     }
 
-    playAudio(assetKey, options = {}) {
-        const asset = this.assets[assetKey];
-        if (!asset || asset.type !== "audio" || !asset.audio) {
-            return null;
+    // ---------- actions ----------
+    addAction(k, cfg) {
+        if (!cfg?.update) return null;
+
+        k = this._key(k || "action", this.actions);
+
+        const events = {};
+        for (const e in cfg.events || {}) {
+            const name = e.toLowerCase().replace(/^on/, "");
+            if (typeof cfg.events[e] === "function") {
+                events[name] = cfg.events[e];
+                this._ensureEvent(name);
+            }
         }
 
-        const audio = asset.audio;
-
-        if (Number.isFinite(options.currentTime)) {
-            audio.currentTime = Math.max(0, options.currentTime);
-        }
-
-        if (typeof options.loop === "boolean") {
-            audio.loop = options.loop;
-        }
-
-        if (Number.isFinite(options.volume)) {
-            audio.volume = Math.min(1, Math.max(0, options.volume));
-        }
-
-        if (Number.isFinite(options.rate)) {
-            audio.playbackRate = Math.max(0.25, options.rate);
-        }
-
-        const playPromise = audio.play();
-        if (playPromise && typeof playPromise.catch === "function") {
-            playPromise.catch((error) => {
-                console.error("[EzLivecanvas] Audio play failed:", error);
-            });
-        }
-
-        return audio;
-    }
-
-    runFn(assetKey, ...params) {
-        const matchFn = this.assets[assetKey];
-        return typeof matchFn === "function" ? matchFn(...params) : undefined;
-    }
-
-// Actions and events
-
-    _normalizeEventName(eventName) {
-        if (typeof eventName !== "string") return "";
-
-        const normalized = eventName.trim().toLowerCase();
-        if (!normalized) return "";
-        return normalized.startsWith("on") ? normalized.slice(2) : normalized;
-    }
-
-    _normalizeEvents(events) {
-        const normalizedEvents = {};
-        if (!events || typeof events !== "object") return normalizedEvents;
-
-        for (const [eventName, eventFn] of Object.entries(events)) {
-            if (typeof eventFn !== "function") continue;
-            const normalizedEventName = this._normalizeEventName(eventName);
-            if (!normalizedEventName) continue;
-            normalizedEvents[normalizedEventName] = eventFn;
-        }
-
-        return normalizedEvents;
-    }
-
-    addAction(key, cfg) {
-        const safeKey = String(key || "action");
-        const finalKey = this._buildUniqueKey(safeKey, this.actions);
-
-        if (!cfg || typeof cfg !== "object" || typeof cfg.update !== "function") {
-            return null;
-        }
-
-        const events = this._normalizeEvents(cfg.events);
-
-        this.actions[finalKey] = {
-            attrs: cfg.attrs && typeof cfg.attrs === "object" ? cfg.attrs : {},
-            events,
+        this.actions[k] = {
+            attrs: cfg.attrs || {},
             update: cfg.update,
+            events
         };
 
-        for (const eventName of Object.keys(events)) {
-            this._ensureCanvasEventHandler(eventName);
-        }
-
-        return finalKey;
+        return k;
     }
 
-    removeAction(key) {
-        if (!Object.prototype.hasOwnProperty.call(this.actions, key)) {
-            return false;
-        }
-
-        const eventNames = Object.keys(this.actions[key]?.events || {});
-
-        delete this.actions[key];
-
-        // Remove unused canvas event handlers after action removal
-        for (const eventName of eventNames) {
-            // If any action still uses this event, don't remove the handler
-            const eventStillUsed = Object.values(this.actions).some((action) => {
-                return typeof action?.events?.[eventName] === "function";
-            });
-            if (eventStillUsed) continue;
-
-            const handler = this._canvasEventHandlers[eventName];
-            if (!handler) continue; // Handler is schizophrenic
-
-            // Remove event listener and handler reference
-            document.removeEventListener(eventName, handler);
-            delete this._canvasEventHandlers[eventName];
-        }
-
+    removeAction(k) {
+        delete this.actions[k];
         return true;
     }
 
-
-
-// Mounting logic
-
-    _handleResize() {
+    // ---------- mount ----------
+    _resize() {
         if (!this.mountHost) return;
-
-        const width = this.mountHost.clientWidth || this.cfg.width || 1;
-        const height = this.mountHost.clientHeight || this.cfg.height || 1;
-        this._applyCanvasDimensions(width, height);
+        this.canvas.width = this.mountHost.clientWidth || 1;
+        this.canvas.height = this.mountHost.clientHeight || 1;
     }
 
-    mount(query) {
-        const host = typeof query === "string" ? document.querySelector(query) : query;
-        if (!(host instanceof Element)) {
-            return false;
-        }
+    mount(el) {
+        const host = typeof el === "string" ? document.querySelector(el) : el;
+        if (!(host instanceof Element)) return false;
 
         if (getComputedStyle(host).position === "static") {
             host.style.position = "relative";
         }
 
-        if (this.canvas.parentElement !== host) {
-            host.appendChild(this.canvas);
-        }
-
+        host.appendChild(this.canvas);
         this.mountHost = host;
-        this._handleResize();
-        window.addEventListener("resize", this._handleResize);
 
-        const registeredEventNames = this._getRegisteredActionEventNames();
-        for (const eventName of registeredEventNames) {
-            this._ensureCanvasEventHandler(eventName);
-        }
+        this._resize();
+        window.addEventListener("resize", this._resize);
 
-        if (this._rafId == null) {
-            this._lastFrameAt = null;
-            this._rafId = requestAnimationFrame(this._loop);
+        if (!this._raf) {
+            this._last = null;
+            this._raf = requestAnimationFrame(this._loop);
         }
 
         return true;
     }
 
     unmount() {
-        window.removeEventListener("resize", this._handleResize);
+        window.removeEventListener("resize", this._resize);
 
-        for (const [eventName, handler] of Object.entries(this._canvasEventHandlers)) {
-            document.removeEventListener(eventName, handler);
+        for (const e in this._handlers) {
+            document.removeEventListener(e, this._handlers[e]);
         }
-        this._canvasEventHandlers = {};
+        this._handlers = {};
 
-        if (this._rafId != null) {
-            cancelAnimationFrame(this._rafId);
-            this._rafId = null;
-        }
+        cancelAnimationFrame(this._raf);
+        this._raf = null;
 
-        this._lastFrameAt = null;
-
-        if (this.canvas.parentElement) {
-            this.canvas.parentElement.removeChild(this.canvas);
-        }
-
+        this.canvas.remove();
         this.mountHost = null;
     }
 
     destroy() {
         this.unmount();
-        this.actions = {};
         this.assets = {};
+        this.actions = {};
         this.shared = {};
-        this.mouse.viewport = null;
-        this.mouse.pos = null;
-        this.mouse.ndc = null;
-        this.deltatime = 0;
+        this.mouse = { viewport: null, pos: null, ndc: null };
+        this._fxSurface = null;
+        this._fxCtx = null;
     }
 
+    // ---------- loop ----------
+    _loop(t) {
+        if (!this._raf) return;
 
-// Main loop
-
-    _loop(now) {
-        if (this._rafId == null) return;
-
-        if (this._lastFrameAt == null) {
-            this.deltatime = 0;
-        } else {
-            this.deltatime = Math.max(0, (now - this._lastFrameAt) / 1000);
-        }
-        this._lastFrameAt = now;
+        this.deltatime = this._last ? (t - this._last) / 1000 : 0;
+        this._last = t;
 
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        for (const action of Object.values(this.actions)) {
-            try {
-                action.update(action, this);
-            } catch (error) {
-                console.error("[EzLivecanvas] Action failed:", error);
-            }
+        for (const a of Object.values(this.actions)) {
+            try { a.update(a, this); }
+            catch (e) { console.error(e); }
         }
 
-        this._rafId = requestAnimationFrame(this._loop);
+        this._raf = requestAnimationFrame(this._loop);
     }
 }
 
 window.EzLivecanvas = EzLivecanvas;
-

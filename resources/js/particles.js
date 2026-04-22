@@ -195,7 +195,7 @@
         },
         events: {
             mousemove(self, runtime) {
-                const point = runtime.mouseviewport();
+                const point = runtime.mouse.viewport;
                 if (!point) return;
 
                 const hit = resolveHitPreset(point, self.attrs.presets);
@@ -203,7 +203,7 @@
                 spawnFromPoint(self.attrs, point, hit, "move");
             },
             click(self, runtime) {
-                const point = runtime.mouseviewport();
+                const point = runtime.mouse.viewport;
                 if (!point) return;
 
                 const hit = resolveHitPreset(point, self.attrs.presets);
@@ -211,7 +211,7 @@
                 spawnFromPoint(self.attrs, point, hit, "click");
             },
             touchmove(self, runtime) {
-                const point = runtime.mouseviewport();
+                const point = runtime.mouse.viewport;
                 if (!point) return;
 
                 const hit = resolveHitPreset(point, self.attrs.presets);
@@ -219,7 +219,7 @@
                 spawnFromPoint(self.attrs, point, hit, "move");
             },
             touchstart(self, runtime) {
-                const point = runtime.mouseviewport();
+                const point = runtime.mouse.viewport;
                 if (!point) return;
 
                 const hit = resolveHitPreset(point, self.attrs.presets);
