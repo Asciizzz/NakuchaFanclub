@@ -19,33 +19,30 @@ By Asciiz
 # Functions and stuff
 
     ## Pages and data related
-        init({ host, dataJSON, interactions=false })
-        getActivePageId()
+        builder: 
+            setGlobalStyle(styleElement)
+            setHost(containerElement)
+            setData(dataObject)
+            init()
+
         getDataJSON()
-        listPages()
+
         getPage(id)
-
-    ## Page states
-        load(pageId)
+        getActiveID()/getActivePage()
         changePage(pageId)
-        syncPages()
-
-    ## Page functions
+        load(pageId)/reload(pageId)
+        listPages()
         addPage({ title, slug })
         removePage(pageId)
-        updatePage(pageId, updates)
 
     ## Node operations
-        addNode(nodeData)           -> adds node and return its id
-        writeNode(nodeId, nodeData) -> nodeData = { attrs, text, graph }
-        readNode(nodeId)            -> returns a node object {
-                                        id, tag, parent, children, attrs, text, graph 
-                                    }
+        addNode(nodeData) -> adds node and return its id
+        readNode(nodeId)  -> returns a node object {
+                                id, tag, parent, children, attrs, text, graph 
+                            }
+        writeNode(nodeId, { attrs, text, graph })
         reparentNode(childId, newParentId)
         deleteNode(nodeId)
-
-    ## Helper functions
-    static makeObjectFromJSON(path)
 
 # Data rules:
     + page ids: p<counter>
@@ -56,7 +53,7 @@ By Asciiz
     + _prefixed attrs are engine-reserved, not HTML attributes
 */
 
-(function(){
+(function() {
 
 const isObj = v => v && typeof v === "object";
 const isStr = v => typeof v === "string" && v.trim();
@@ -67,21 +64,51 @@ class EzVirtualSite {
     #data = null; // JSON
     #host = null; // container element
 
-    static clone(v){
+    #global = {
+        style: null // Global <style> for every iframe
+    }
+
+    static clone(v) {
         return typeof structuredClone === "function"
             ? structuredClone(v)
             : JSON.parse(JSON.stringify(v));
     }
 
-    init(cfg={}){
-        if(!(cfg.host instanceof Element)) throw new Error("Invalid host");
+    /* ---------- Some ops ---------- */
 
-        this.#host = cfg.host;
-        this.#data = isObj(cfg.dataJSON)
-            ? EzVirtualSite.clone(cfg.dataJSON)
-            : this.#emptyData();
+    setGlobalStyle(style) {
+        this.#global.style = style;
+        return this;
+    }
 
-        for(const id in this.#data.pages.page_data){
+    setHost(el) {
+        if(!(el instanceof Element)) return null;
+
+        // Move existing iframes to new host
+        if (this.#host && this.#host !== el) {
+            for (const iframe of Object.values(this.#pages)) {
+                el.appendChild(iframe);
+            }
+
+            // Clear old host
+            this.#host.innerHTML = "";
+        }
+
+        // Set new host
+        this.#host = el;
+        return this;
+    }
+
+    setData(dataObject) {
+        if (!isObj(dataObject)) return null;
+        this.#data = dataObject;
+        return this;
+    }
+
+    init() {
+        this.#data = this.#data || this.#emptyData();
+
+        for(const id in this.#data.pages.page_data) {
             this.#buildFrame(id);
             this.load(id);
         }
@@ -94,7 +121,7 @@ class EzVirtualSite {
 
     /* ---------- Core ---------- */
 
-    load(pageId){
+    load(pageId) {
         const page = this.getPage(pageId);
         const iframe = this.#pages[`ez-virtualsite-${pageId}`];
         if(!page || !iframe) return false;
@@ -109,11 +136,11 @@ class EzVirtualSite {
         this.#renderPage(doc, page);
         return true;
     }
-    reload(pageId){
+    reload(pageId) {
         load(pageId || this.#active);
     } // Alias for load
 
-    changePage(id){
+    changePage(id) {
         if(!this.getPage(id)) return false;
 
         const next = this.#pages[`ez-virtualsite-${id}`];
@@ -121,7 +148,7 @@ class EzVirtualSite {
 
         this.load(id);
 
-        if(this.#active){
+        if(this.#active) {
             const prev = this.#pages[`ez-virtualsite-${this.#active}`];
             if(prev) prev.style.display = "none";
         }
@@ -132,7 +159,7 @@ class EzVirtualSite {
         return true;
     }
 
-    listPages(){
+    listPages() {
         return Object.entries(this.#data.pages.page_data).map(([id, p])=>({
             id,
             title: p.title,
@@ -140,7 +167,7 @@ class EzVirtualSite {
         }));
     }
 
-    addPage({ title, slug }){
+    addPage({ title, slug }) {
         const id = `p${this.#data.pages.page_counter++}`;
         this.#data.pages.page_data[id] = {
             title: isStr(title) ? title : "New Page",
@@ -158,17 +185,17 @@ class EzVirtualSite {
         return id;
     }
 
-    removePage(id){
+    removePage(id) {
         if(!this.getPage(id)) return false;
         delete this.#data.pages.page_data[id];
         const iframe = this.#pages[`ez-virtualsite-${id}`];
 
-        if(iframe){
+        if(iframe) {
             iframe.remove();
             delete this.#pages[`ez-virtualsite-${id}`];
         }
 
-        if(this.#active === id){
+        if(this.#active === id) {
             const next = this.#firstPage();
 
             if(next) this.changePage(next);
@@ -177,14 +204,14 @@ class EzVirtualSite {
         return true;
     }
 
-    getPage(id){ return this.#data.pages.page_data[id] || null; }
+    getPage(id) { return this.#data.pages.page_data[id] || null; }
 
-    getActiveID(){ return this.#active; }
-    getActivePage(){ return this.getPage(this.#active); }
+    getActiveID() { return this.#active; }
+    getActivePage() { return this.getPage(this.#active); }
 
     /* ---------- Node Ops ---------- */
 
-    addNode(data={}){
+    addNode(data={}) {
         const page = this.getPage(this.#active);
         if(!page) return null;
 
@@ -205,7 +232,7 @@ class EzVirtualSite {
         return id;
     }
 
-    readNode(id){
+    readNode(id) {
         const pageId = this.#active;
         const page = this.getPage(pageId);
         if(!page) return null;
@@ -225,7 +252,7 @@ class EzVirtualSite {
         };
     }
 
-    writeNode(id, { attrs, text, graph }){
+    writeNode(id, { attrs, text, graph }) {
         const page = this.getPage(this.#active);
         if(!page) return false;
 
@@ -319,15 +346,16 @@ class EzVirtualSite {
 
     /* ---------- Rendering ---------- */
 
-    #renderPage(doc, page){
+    #renderPage(doc, page) {
         doc.title = page.title;
 
+        this.#renderGlobalStyle(doc);
         this.#renderNodes(doc, page);
         this.#injectCSS(doc, page);
         this.#injectJS(doc, page);
     }
 
-    #renderNodes(doc, page){
+    #renderNodes(doc, page) {
         const nodes = page.nodes;
 
         const build = (id)=>{
@@ -341,7 +369,7 @@ class EzVirtualSite {
             this.#applyAttrs(el, n.attrs);
             el.dataset.vsNodeId = id;
 
-            if(n.text && !(n.children?.length)){
+            if(n.text && !(n.children?.length)) {
                 el.textContent = n.text;
             }
 
@@ -358,7 +386,15 @@ class EzVirtualSite {
 
     /* ---------- Assets ---------- */
 
-    #injectCSS(doc, page){
+    #renderGlobalStyle(doc) {
+        // If null or not a style element, skip
+        if(!(this.#global.style instanceof HTMLStyleElement)) return;
+
+        doc.head.appendChild(this.#global.style);
+        return true;
+    }
+
+    #injectCSS(doc, page) {
         (page.include?.css || []).forEach(name=>{
             const asset = this.#data.stylesheets[name];
             if(!asset) return;
@@ -372,7 +408,7 @@ class EzVirtualSite {
         });
     }
 
-    #injectJS(doc, page){
+    #injectJS(doc, page) {
         (page.include?.js || []).forEach(name=>{
             const txt = this.#data.scripts[name];
             if(!txt) return;
@@ -383,7 +419,7 @@ class EzVirtualSite {
         });
     }
 
-    #compileCSS(obj){
+    #compileCSS(obj) {
         return Object.entries(obj).map(([sel, rules])=>{
             const body = Object.entries(rules)
                 .map(([k,v])=>`${this.#kebab(k)}:${v}`)
@@ -392,15 +428,15 @@ class EzVirtualSite {
         }).join("");
     }
 
-    #kebab(str){
+    #kebab(str) {
         return str.replace(/[A-Z]/g,m=>"-"+m.toLowerCase());
     }
 
-    #applyAttrs(el, attrs={}){
-        for(const [k,v] of Object.entries(attrs||{})){
-            if(k === "_href_id"){
+    #applyAttrs(el, attrs={}) {
+        for(const [k,v] of Object.entries(attrs||{})) {
+            if(k === "_href_id") {
                 el.dataset.hrefId = v;
-                if(el.tagName === "A"){
+                if(el.tagName === "A") {
                     const p = this.getPage(v);
                     if(p) el.href = "/"+p.slug;
                 }
@@ -413,7 +449,7 @@ class EzVirtualSite {
 
     /* ---------- Utils ---------- */
 
-    #nextNodeId(page){
+    #nextNodeId(page) {
         let i = page.node_counter || 0;
         while(page.nodes[`n${i}`]) i++;
         page.node_counter = i+1;
@@ -428,11 +464,11 @@ class EzVirtualSite {
         this.#pages[f.id] = f;
     }
 
-    #firstPage(){
+    #firstPage() {
         return Object.keys(this.#data.pages.page_data)[0] || null;
     }
 
-    #emptyData(){
+    #emptyData() {
         return {
             pages:{
                 page_start: "p0",
