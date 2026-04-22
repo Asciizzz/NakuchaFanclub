@@ -14,66 +14,66 @@ engine stack. Keep it simple, wire actions, let it cook.
     + mount it with canv.mount(host) and unmount it with canv.unmount()
     + when you are done for real, call canv.destroy() to fully clean up
 
-    + Asset helpers
-        + addAsset(key, value): store any shared value/function
-        + addImage(key, url): preload image asset as { type: "img", img }
-            -> returns the final key (string) or null
-        + addAudio(key, url): preload audio asset as { type: "audio", audio }
-            -> returns the final key (string) or null
-        + runFn(key, ...params): execute a function asset
-        + playAudio(key, options): plays a registered audio asset
-            -> returns HTMLAudioElement on success path, null on invalid key
+## Asset helpers
+    + addAsset(key, value): store any shared value/function
+    + addImage(key, url): preload image asset as { type: "img", img }
+        -> returns the final key (string) or null
+    + addAudio(key, url): preload audio asset as { type: "audio", audio }
+        -> returns the final key (string) or null
+    + runFn(key, ...params): execute a function asset
+    + playAudio(key, options): plays a registered audio asset
+        -> returns HTMLAudioElement on success path, null on invalid key
 
-    + Action system (the bread and butter)
-        + addAction(key, cfg)
-            + cfg = {
-                attrs: { ... },
-                update: function(self, canv) { ... },
-                events: {
-                    click: function(self, canv, e) { ... },
-                    pointermove: function(self, canv, e) { ... },
-                    ...
-                }
+## Action system (the bread and butter)
+    + addAction(key, cfg)
+        + cfg = {
+            attrs: { ... },
+            update: function(self, canv) { ... },
+            events: {
+                click: function(self, canv, e) { ... },
+                pointermove: function(self, canv, e) { ... },
+                ...
             }
-        + removeAction(key): remove action (event listeners are shared and auto-managed)
-
-    + Canvas event behavior
-        + one listener per event type on document (shared global listener)
-        + when event fires, it loops all actions and runs self.events[event](self, canv, e)
-        + action callback only runs when pointer is inside current canvas bounds
-        + pointer-events comes from passthrough config (not inferred from actions)
-
-    + Other
-        + drawImage(assetKey, rect, style)
-            + rect = {
-                dst:  { dx, dy, dw, dh },
-                src?: { sx, sy, sw, sh } // optional cropping
-            }
-
-            + style accepts normal ctx style keys AND:
-                transformation: {
-                    scale: { x, y },        // default 1,1 (applied from center)
-                    rotation: { 
-                        angle,              // radians
-                        px, py              // pivot (default = center of image)
-                    },
-                    translation: { x, y }  // applied last
-                }, -> order is always scale -> rotate -> translate
-
-                effects: [
-                    { type: "tint", color: "css-color", mode?: "source-atop" },
-                    ...
-                ]
-
-        + mouse = {
-            viewport: { x, y }, // in viewport coord (global)
-            pos: { x, y },      // in canvas coord (local)
-            ndc: { x, y },      // in canvas NDC coord [-1, 1]
-
-            target: () => element under mouse or null,
-            over: (el) => boolean, if mouse is over element (DOM stack aware),
-            hit: (el)  => boolean, simple AABB hit test
         }
+    + removeAction(key): remove action (event listeners are shared and auto-managed)
+
+## Canvas event behavior
+    + one listener per event type on document (shared global listener)
+    + when event fires, it loops all actions and runs self.events[event](self, canv, e)
+    + action callback only runs when pointer is inside current canvas bounds
+    + pointer-events comes from passthrough config (not inferred from actions)
+
+## Other
+    + drawImage(assetKey, rect, style)
+        + rect = {
+            dst:  { dx, dy, dw, dh },
+            src?: { sx, sy, sw, sh } // optional cropping
+        }
+
+        + style accepts normal ctx style keys AND:
+            transformation: {
+                scale: { x, y },        // default 1,1 (applied from center)
+                rotation: { 
+                    angle,              // radians
+                    px, py              // pivot (default = center of image)
+                },
+                translation: { x, y }  // applied last
+            }, -> order is always scale -> rotate -> translate
+
+            effects: [
+                { type: "tint", color: "css-color", mode?: "source-atop" },
+                ...
+            ]
+
+    ++ mouse = {
+        viewport: { x, y }, // in viewport coord (global)
+        pos: { x, y },      // in canvas coord (local)
+        ndc: { x, y },      // in canvas NDC coord [-1, 1]
+
+        target: () => element under mouse or null,
+        over: (el) => boolean, if mouse is over element (DOM stack aware),
+        hit: (el)  => boolean, simple AABB hit test
+    }
 
 # Notes:
 

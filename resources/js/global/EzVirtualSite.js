@@ -1,6 +1,6 @@
 /*
-EzVirtualSite (Optimized Rewrite)
-By Asciiz (refactored)
+EzVirtualSite
+By Asciiz
 
 # Lightweight virtual multi-page runtime using iframe rendering.
 
@@ -14,12 +14,12 @@ By Asciiz (refactored)
     + activePage: current visible page id
     + data: project JSON (pages, nodes, assets)
     + host: container element
-    + autosave: auto re-render on mutation
+    + no implicit auto-reload on mutation
 
 # Functions and stuff
 
     ## Pages and data related
-        init({ host, dataJSON, autosave=false, interactions=false })
+        init({ host, dataJSON, interactions=false })
         getActivePageId()
         getDataJSON()
         listPages()
@@ -27,7 +27,7 @@ By Asciiz (refactored)
 
     ## Page states
         load(pageId)
-        setActivePage(pageId)
+        changePage(pageId)
         syncPages()
 
     ## Page functions
@@ -41,8 +41,8 @@ By Asciiz (refactored)
         readNode(nodeId)            -> returns a node object {
                                         id, tag, parent, children, attrs, text, graph 
                                     }
-        deleteNode(nodeId)
         reparentNode(childId, newParentId)
+        deleteNode(nodeId)
 
     ## Helper functions
     static makeObjectFromJSON(path)
@@ -66,7 +66,6 @@ class EzVirtualSite {
     #active = null; // ID
     #data = null; // JSON
     #host = null; // container element
-    #autoreload = false;
 
     static clone(v){
         return typeof structuredClone === "function"
@@ -82,12 +81,10 @@ class EzVirtualSite {
             ? EzVirtualSite.clone(cfg.dataJSON)
             : this.#emptyData();
 
-        this.#autoreload = !!cfg.autoreload;
-
         this.#buildFrames();
 
         const start = this.#data.pages.page_start || this.#firstPage();
-        if(start) this.setActivePage(start);
+        if(start) this.changePage(start);
 
         return this;
     }
@@ -109,8 +106,11 @@ class EzVirtualSite {
         this.#renderPage(doc, page);
         return true;
     }
+    reload(pageId){
+        load(pageId || this.#active);
+    } // Alias for load
 
-    setActivePage(id){
+    changePage(id){
         if(!this.getPage(id)) return false;
 
         const next = this.#pages[`ez-${id}`];
@@ -160,7 +160,7 @@ class EzVirtualSite {
         if(this.#active === id){
             const next = this.#firstPage();
 
-            if(next) this.setActivePage(next);
+            if(next) this.changePage(next);
             else     this.#active = null;
         }
         return true;
@@ -191,8 +191,6 @@ class EzVirtualSite {
         };
 
         (page.nodes[parent].children ||= []).push(id);
-
-        if(this.#autoreload) this.#reloadNode(page, id);
         return id;
     }
 
@@ -226,40 +224,48 @@ class EzVirtualSite {
         if (attrs !== undefined) node.attrs = attrs;
         if (text  !== undefined) node.text  = text;
         if (graph !== undefined) node.graph = graph;
-
-        if(this.#autoreload) this.#reloadNode(page, id);
         return true;
     }
 
-    reparentNode(childId, newParentId){
+    reparentNode(childId, newParentId) {
         const page = this.getPage(this.#active);
-        if(!page) return false;
+        if (!page) return false;
+        const nodes = page.nodes;
 
-        // Reparent then reload both new and old parent
-        const child = page.nodes[childId];
-        const newParent = page.nodes[newParentId];
-        const oldParent = page.nodes[child.parent];
+        const child = nodes[childId];
+        const newParent = nodes[newParentId];
 
-        if(!child || !newParent || !oldParent) return false;
+        if (!child || !newParent) return false;
 
-        // Update child-parent relationships
-        child.parent = newParentId;
-        oldParent.children = (oldParent.children || []).filter(cid => cid !== childId);
-        newParent.children = [...(newParent.children || []), childId];
+        // Prevent moving root
+        if (childId === page.node_root) return false;
 
-        if(this.#autoreload){
-            this.#reloadNode(page, childId);
-            this.#reloadNode(page, oldParentId);
-            this.#reloadNode(page, newParentId);
+        const oldParentId = child.parent;
+        const oldParent = nodes[oldParentId];
+        if (!oldParent) return false;
+
+        // Prevent cycles
+        let current = newParentId;
+        while (current) {
+            if (current === childId) return false;
+            current = nodes[current]?.parent;
         }
+
+        // Remove from old parent
+        oldParent.children = (oldParent.children || []).filter(cid => cid !== childId);
+        // Add to new parent
+        (newParent.children ||= []).push(childId);
+        // Update parent ref
+        child.parent = newParentId;
+
         return true;
     }
 
     deleteNode(id, reparentChildren = false) {
         const page = this.getPage(this.#active);
         if (!page) return false;
-
         const nodes = page.nodes;
+
         const node = nodes[id];
         if (!node) return false;
 
@@ -272,19 +278,12 @@ class EzVirtualSite {
         const children = node.children || [];
 
         if (reparentChildren) {
-            // Move children to parent
+            // Move children to rescue parent
             parent.children = parent.children.filter(cid => cid !== id);
 
             for (const childId of children) {
-                const child = nodes[childId];
-                if (!child) continue;
-
-                child.parent = parent ? parent.children : null;
-                child.parent = node.parent;
-
-                parent.children.push(childId);
+                reparentNode(childId, parent.id);
             }
-
         } else {
             // Recursive delete
             const walkDelete = (nid) => {
@@ -303,10 +302,6 @@ class EzVirtualSite {
 
         // Finally delete the node itself
         delete nodes[id];
-
-        if (this.#autoreload) {
-            this.load(this.#active);
-        }
 
         return true;
     }
@@ -348,44 +343,6 @@ class EzVirtualSite {
         };
 
         build(page.node_root);
-    }
-
-    #reloadNode(page, nodeId){
-        const iframe = this.#pages[`ez-${this.#active}`];
-        const doc = iframe?.contentDocument;
-        if(!doc) return;
-
-        const target = doc.querySelector(`[data-vs-node-id="${nodeId}"]`);
-        if(!target) return this.load(this.#active);
-
-        const newNode = this.#buildSingleNode(doc, page, nodeId);
-        if(newNode) target.replaceWith(newNode);
-    }
-
-    #buildSingleNode(doc, page, id){
-        const nodes = page.nodes;
-
-        const build = (nid)=>{
-            const n = nodes[nid];
-            if(!n) return null;
-
-            const el = doc.createElement(n.tag || "div");
-            this.#applyAttrs(el, n.attrs);
-            el.dataset.vsNodeId = nid;
-
-            if(n.text && !(n.children?.length)){
-                el.textContent = n.text;
-            }
-
-            (n.children||[]).forEach(cid=>{
-                const c = build(cid);
-                if(c) el.appendChild(c);
-            });
-
-            return el;
-        };
-
-        return build(id);
     }
 
     /* ---------- Assets ---------- */
