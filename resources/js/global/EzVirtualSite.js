@@ -81,7 +81,10 @@ class EzVirtualSite {
             ? EzVirtualSite.clone(cfg.dataJSON)
             : this.#emptyData();
 
-        this.#buildFrames();
+        for(const id in this.#data.pages.page_data){
+            this.#buildFrame(id);
+            this.load(id);
+        }
 
         const start = this.#data.pages.page_start || this.#firstPage();
         if(start) this.changePage(start);
@@ -93,7 +96,7 @@ class EzVirtualSite {
 
     load(pageId){
         const page = this.getPage(pageId);
-        const iframe = this.#pages[`ez-${pageId}`];
+        const iframe = this.#pages[`ez-virtualsite-${pageId}`];
         if(!page || !iframe) return false;
 
         const doc = iframe.contentDocument;
@@ -113,13 +116,13 @@ class EzVirtualSite {
     changePage(id){
         if(!this.getPage(id)) return false;
 
-        const next = this.#pages[`ez-${id}`];
+        const next = this.#pages[`ez-virtualsite-${id}`];
         if(!next) return false;
 
         this.load(id);
 
         if(this.#active){
-            const prev = this.#pages[`ez-${this.#active}`];
+            const prev = this.#pages[`ez-virtualsite-${this.#active}`];
             if(prev) prev.style.display = "none";
         }
 
@@ -142,19 +145,27 @@ class EzVirtualSite {
         this.#data.pages.page_data[id] = {
             title: isStr(title) ? title : "New Page",
             slug: isStr(slug) ? slug : `new-page-${id}`,
-            node_root: "n0"
+
+            // Starter pack
+            node_root: "n0",
+            node_counter: 1,
+            nodes: { n0:{ tag:"body", parent:null, children:[] } },
+            include:{ css:[], js:[] }
         };
+
+        this.#buildFrame(id);
+
         return id;
     }
 
     removePage(id){
         if(!this.getPage(id)) return false;
         delete this.#data.pages.page_data[id];
-        const iframe = this.#pages[`ez-${id}`];
+        const iframe = this.#pages[`ez-virtualsite-${id}`];
 
         if(iframe){
             iframe.remove();
-            delete this.#pages[`ez-${id}`];
+            delete this.#pages[`ez-virtualsite-${id}`];
         }
 
         if(this.#active === id){
@@ -409,17 +420,12 @@ class EzVirtualSite {
         return `n${i}`;
     }
 
-    #buildFrames(){
-        this.#pages = {};
-        this.#host.replaceChildren();
-
-        for(const id of Object.keys(this.#data.pages.page_data)){
-            const f = document.createElement("iframe");
-            f.id = `ez-${id}`;
-            f.style.cssText = "width:100%;height:100%;border:0;display:none;";
-            this.#host.appendChild(f);
-            this.#pages[f.id] = f;
-        }
+    #buildFrame(id) {
+        const f = document.createElement("iframe");
+        f.id = `ez-virtualsite-${id}`;
+        f.style.cssText = "width:100%;height:100%;border:0;display:none;";
+        this.#host.appendChild(f);
+        this.#pages[f.id] = f;
     }
 
     #firstPage(){
@@ -429,7 +435,7 @@ class EzVirtualSite {
     #emptyData(){
         return {
             pages:{
-                page_start:"p0",
+                page_start: "p0",
                 page_counter:1,
                 page_data:{
                     p0:{
