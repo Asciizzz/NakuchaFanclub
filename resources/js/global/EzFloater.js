@@ -1,4 +1,134 @@
+/*
+EzFloater
+By Asciiz
 
+# Lightweight floating tooltip / context engine
+
+    + Single shared floater node (no duplicates)
+    + Same-origin iframe support (auto-attached)
+    + Delegated query system with @ iframe scoping
+    + Dataset-driven action system (data-click, etc)
+    + Tooltip (hover) + Context (right-click / long-press) modes
+    + CSS-driven state via configurable class names
+
+    + addAction / addDisplay / addQuery
+    + destroy() cleans up listeners/observers safely
+
+# Cool things:
+
+## Actions
+    Define behavior triggered from inside the floater.
+
+    floater.addAction(name, (element, event, ctx) => { ... });
+
+    Usage inside display:
+        element.dataset.click = "actionName"
+
+    + element -> the clicked element inside floater
+    + ctx -> { floater, mode }
+
+## Displays
+    Define how content is rendered.
+
+    floater.addDisplay(name, {
+        context(element, ctx) => Node | string,
+        tooltip(element, ctx) => Node | string
+    });
+
+    + context <- right click / long press
+    + tooltip <- hover
+    + Either can be omitted
+
+## Queries
+    Bind selectors to displays.
+
+    floater.addQuery(selector, {
+        display: "displayName",
+        delegate: true // default: true
+    });
+
+    + delegate: true  -> uses element.closest()
+    + delegate: false -> uses element.matches()
+
+## Iframe Support
+
+Use @ tokens to scope queries into nested iframes:
+
+    "@frameA @frameB .target"
+
+    -> Means:
+        scope: ["@frameA", "@frameB"] -> iframeB inside iframeA
+        selector: ".target" -> element(s) inside iframeB
+
+Notes:
+    + Only works for same-origin iframes
+    + @ is NOT CSS — it's EzFloater-specific syntax thingy
+
+## Class System (Styling)
+
+Class names are configurable:
+
+    this.class = {
+        active: "ez-floater-active",
+        context: "ez-floater-context",
+        tooltip: "ez-floater-tooltip"
+    }; -> self-explanatory
+
+Styling Example
+
+    .ez-floater {
+        position: fixed;
+        z-index: 2147483647;
+        opacity: 0;
+        transform: scale(0.95);
+        transition: opacity 0.12s ease, transform 0.12s ease;
+        pointer-events: none;
+    }
+
+    .ez-floater.ez-floater-active {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    .ez-floater.ez-floater-context {
+        pointer-events: auto;
+    }
+
+# Example
+
+    const floater = new window.EzFloater();
+
+    floater.addAction("clickForCookies", (el) => {
+        el.textContent = "No cookies for you";
+    });
+
+    floater.addDisplay("menu", {
+        context(el) {
+            const wrap = document.createElement("div");
+            const btn = document.createElement("button");
+
+            btn.textContent = "Cookie";
+            btn.dataset.click = "clickForCookies";
+
+            wrap.appendChild(btn);
+            return wrap;
+        },
+        tooltip(el) {
+            return `Hello ${el.tagName}`;
+        }
+    });
+
+    floater.addQuery(".menu-or-whatever", {
+        display: "menu"
+    });
+
+# Notes
+    + Only one floater instance is used at runtime
+    + Queries are optimized per document for performance
+    + Automatically tracks iframe lifecycle
+    + Designed to be lightweight, extensible, and CSS-driven
+
+*/
 
 (function () {
     class EzFloater {
@@ -99,6 +229,28 @@
             const q = { selector: parsed.sel, display, delegate };
             if (!this.queriesByDoc.has(doc)) this.queriesByDoc.set(doc, []);
             this.queriesByDoc.get(doc).push(q);
+        }
+
+        removeQuery(selector, { display, delegate = true } = {}) {
+            const parsed = this._parse(selector);
+            const doc = this._resolve(parsed.scope);
+            if (!doc) return;
+
+            const list = this.queriesByDoc.get(doc);
+            if (!list || list.length === 0) return;
+
+            const next = list.filter(q => {
+                if (q.selector !== parsed.sel) return true;
+                if (display != null && q.display !== display) return true;
+                if (delegate != null && q.delegate !== delegate) return true;
+                return false;
+            });
+
+            if (next.length > 0) {
+                this.queriesByDoc.set(doc, next);
+            } else {
+                this.queriesByDoc.delete(doc);
+            }
         }
 
         _attachDoc(doc, frame = null) {
