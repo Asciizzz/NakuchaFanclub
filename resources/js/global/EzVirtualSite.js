@@ -22,6 +22,15 @@ By Asciiz
     reparentNode(childId, newParentId)
     deleteNode(id, reparentChildren=false)
 
+# Stylesheets:
+    listStylesheets()   getStylesheet(name)
+    setStylesheet(name, cssData)   removeStylesheet(name)
+
+# Includes (active page by default):
+    getPageIncludes(id?)
+    addPageInclude(type, name, id?)
+    removePageInclude(type, name, id?)
+
 # Scripts:
     addScript(name, scriptData)   removeScript(name)   getScript(name)
 
@@ -50,12 +59,28 @@ By Asciiz
         #rt = {};       // key -> script runtime
         #gstyle = "";       // global CSS text
 
+        #emit(name, detail = {}) {
+            document.dispatchEvent(new CustomEvent(name, { detail }));
+        }
+
+        #emitPagesChanged() {
+            this.#emit("wc:pages-changed", {
+                pages: this.listPages(),
+                currentPageId: this.getActiveID(),
+            });
+        }
+
+        #emitPageContentChanged() {
+            this.#emit("wc:page-content-changed", { pageId: this.getActiveID() });
+        }
+
         /* -- setup -- */
 
         setGlobalStyle(s) {
             this.#gstyle = s instanceof HTMLStyleElement ? s.textContent || "" : (typeof s === "string" ? s : "");
             return this;
         }
+
         setHost(el) {
             if (!(el instanceof Element)) return null;
             if (this.#host && this.#host !== el) {
@@ -65,12 +90,15 @@ By Asciiz
             this.#host = el;
             return this;
         }
+
         setData(d) {
             if (!isObj(d)) return null;
             this.#data = clone(d);
+            this.#data.stylesheets ||= {};
             this.#data.scripts ||= {};
             return this;
         }
+
         init() {
             if (!(this.#host instanceof Element)) throw new Error("EzVirtualSite: invalid host");
             this.#data ||= this.#emptyData();
@@ -80,7 +108,17 @@ By Asciiz
             for (const id in this.#data.pages.page_data) this.#buildFrame(id);
             const start = this.#data.pages.page_start || this.#firstPage();
             if (start) this.changePage(start);
+
+            this.#emit("wc:project-ready", {
+                pages: this.listPages(),
+                currentPageId: this.getActiveID(),
+            });
+
             return this;
+        }
+
+        getDataJSON() {
+            return this.#data ? clone(this.#data) : null;
         }
 
         /* -- page API -- */
@@ -88,20 +126,17 @@ By Asciiz
         load(id = this.#active) {
             const page = this.getPageData(id), frame = this.#frames[this.#key(id)];
             if (!page || !frame) return false;
+
             const doc = frame.contentDocument;
             if (!doc) return false;
+
             doc.title = page.title || "";
-            this.#styleEl(doc, "ez-vs-global-style").textContent = this.#gstyle;
-            this.#styleEl(doc, "ez-vs-style").textContent = (page.include?.css || [])
-                .map(n => { const a = this.#data.stylesheets?.[n]; return a ? `/* ${n} */\n${typeof a === "string" ? a : this.#css(a)}` : ""; })
-                .filter(Boolean).join("\n\n");
+            this.#renderStyle(doc, page);
             this.#renderNodes(doc, page);
             this.#applyScripts(frame, id, page);
             return true;
         }
         reload(id = this.#active) { return this.load(id); }
-
-        getDataJSON() { return clone(this.#data); }
 
         changePage(id = this.#active) {
             if (!this.getPageData(id)) return false;
@@ -111,6 +146,10 @@ By Asciiz
             if (this.#active) { const p = this.#frames[this.#key(this.#active)]; if (p) p.style.display = "none"; }
             next.style.display = "block";
             this.#data.pages.page_start = this.#active = id;
+
+            this.#emit("wc:page-selected", { pageId: id });
+            this.#emitPagesChanged();
+
             return true;
         }
 
@@ -123,6 +162,9 @@ By Asciiz
             };
             this.#buildFrame(id);
             this.load(id);
+
+            this.#emitPagesChanged();
+
             return id;
         }
 
@@ -137,6 +179,9 @@ By Asciiz
                 const next = this.#firstPage();
                 this.#active = next ? (this.changePage(next), next) : null;
             }
+
+            this.#emitPagesChanged();
+
             return true;
         }
 
@@ -145,6 +190,9 @@ By Asciiz
             if (!p) return false;
             if ("title" in u) p.title = isStr(u.title) ? u.title : "New Page";
             if ("slug" in u) p.slug = isStr(u.slug) ? u.slug : p.slug;
+
+            this.#emitPagesChanged();
+
             return true;
         }
 
@@ -155,6 +203,59 @@ By Asciiz
             return Object.entries(this.#data.pages.page_data).map(([id, p]) => ({
                 id, title: p.title, slug: p.slug
             }));
+        }
+
+        getPageIncludes(id = this.#active) {
+            const page = this.getPageData(id);
+            if (!page) return null;
+            page.include ||= { css: [], js: [] };
+            page.include.css ||= [];
+            page.include.js ||= [];
+            return clone(page.include);
+        }
+
+        addPageInclude(type, name, id = this.#active) {
+            const page = this.getPageData(id);
+            if (!page || !isStr(name) || (type !== "css" && type !== "js")) return false;
+
+            page.include ||= { css: [], js: [] };
+            page.include.css ||= [];
+            page.include.js ||= [];
+
+            const list = page.include[type];
+            if (!Array.isArray(list)) return false;
+            if (list.includes(name)) return true;
+
+            list.push(name);
+
+            if (type === "css") this.#reloadMainStyle(id);
+            else this.load(id);
+
+            this.#emitPageContentChanged();
+            return true;
+        }
+
+        removePageInclude(type, name, id = this.#active) {
+            const page = this.getPageData(id);
+            if (!page || !isStr(name) || (type !== "css" && type !== "js")) return false;
+
+            page.include ||= { css: [], js: [] };
+            page.include.css ||= [];
+            page.include.js ||= [];
+
+            const list = page.include[type];
+            if (!Array.isArray(list)) return false;
+
+            const next = list.filter(n => n !== name);
+            if (next.length === list.length) return true;
+
+            page.include[type] = next;
+
+            if (type === "css") this.#reloadMainStyle(id);
+            else this.load(id);
+
+            this.#emitPageContentChanged();
+            return true;
         }
 
 
@@ -173,13 +274,19 @@ By Asciiz
                 graph: d.graph || null
             };
             if (parent) (page.nodes[parent].children ||= []).push(id);
+
+            this.#reloadMainBody(this.#active);
+            this.#emitPageContentChanged();
             return id;
         }
 
         readNode(id) {
             const page = this.getPageData(this.#active);
             if (!page) return null;
-            const n = page.nodes[id]; if (!n) return null;
+
+            const n = page.nodes[id];
+            if (!n) return null;
+
             return {
                 page_id: this.#active, node_id: id, tag: n.tag, parent: n.parent,
                 children: n.children || [], text: n.text ?? null, attrs: n.attrs ?? null, graph: n.graph ?? null
@@ -189,10 +296,14 @@ By Asciiz
         writeNode(id, { attrs, text, graph } = {}) {
             const page = this.getPageData(this.#active);
             if (!page) return false;
+
             const n = page.nodes[id]; if (!n) return false;
             if (attrs !== undefined) n.attrs = attrs;
             if (text !== undefined) n.text = text;
             if (graph !== undefined) n.graph = graph;
+
+            this.#reloadMainBody(this.#active);
+            this.#emitPageContentChanged();
             return true;
         }
 
@@ -206,6 +317,9 @@ By Asciiz
             if (op) op.children = filterKids(op.children, childId);
             if (np) (np.children ||= []).push(childId);
             child.parent = pid;
+
+            this.#reloadMainBody(this.#active);
+            this.#emitPageContentChanged();
             return true;
         }
 
@@ -223,12 +337,59 @@ By Asciiz
                     if (parent) (parent.children ||= []).push(cid);
                 }
             } else {
-                const cascade = nid => { const n = nodes[nid]; if (!n) return; (n.children || []).forEach(cascade); delete nodes[nid]; };
+                const cascade = nid => { 
+                    const n = nodes[nid];
+                    if (!n) return;
+                    (n.children || []).forEach(cascade);
+                    delete nodes[nid];
+                };
                 cascade(id);
                 if (parent) parent.children = filterKids(parent.children, id);
+
+                this.#reloadMainBody(this.#active);
+                this.#emitPageContentChanged();
                 return true;
             }
             delete nodes[id];
+
+            this.#reloadMainBody(this.#active);
+            this.#emitPageContentChanged();
+            return true;
+        }
+
+        /* -- stylesheet API -- */
+
+        listStylesheets() {
+            return Object.keys(this.#data.stylesheets || {});
+        }
+
+        getStylesheet(name) {
+            if (!isStr(name)) return null;
+            const cssData = this.#data.stylesheets?.[name];
+            return cssData === undefined ? null : clone(cssData);
+        }
+
+        setStylesheet(name, cssData) {
+            if (!isStr(name) || (!isObj(cssData) && typeof cssData !== "string")) return false;
+            this.#data.stylesheets ||= {};
+            this.#data.stylesheets[name] = clone(cssData);
+            this.#reloadMainStyle(this.#active);
+            this.#emitPageContentChanged();
+            return true;
+        }
+
+        removeStylesheet(name) {
+            if (!isStr(name) || !this.#data.stylesheets?.[name]) return false;
+            delete this.#data.stylesheets[name];
+
+            Object.values(this.#data.pages.page_data || {}).forEach(page => {
+                page.include ||= { css: [], js: [] };
+                page.include.css ||= [];
+                page.include.css = page.include.css.filter(n => n !== name);
+            });
+
+            this.#reloadMainStyle(this.#active);
+            this.#emitPageContentChanged();
             return true;
         }
 
@@ -250,7 +411,7 @@ By Asciiz
         /* -- rendering -- */
 
         #renderNodes(doc, page) {
-            const mount = doc.getElementById("ez-vs-main") || doc.body; if (!mount) return;
+            const mount = doc.getElementById("ez-virtualsite-main") || doc.body; if (!mount) return;
             mount.replaceChildren();
             const { nodes } = page, cache = new Map(), visiting = new Set();
             const build = id => {
@@ -270,8 +431,41 @@ By Asciiz
                 .forEach(rid => { const el = build(rid); if (el) mount.appendChild(el); });
         }
 
+        #renderStyle(doc, page) {
+            this.#styleEl(doc, "ez-virtualsite-global-style").textContent = this.#gstyle;
+            this.#styleEl(doc, "ez-virtualsite-style").textContent = (page.include?.css || [])
+                .map(n => { const a = this.#data.stylesheets?.[n]; return a ? 
+                        `/* ${n} */\n${typeof a === "string" ? a :
+                        this.#css(a)}` : ""; })
+                .filter(Boolean).join("\n\n");
+        }
+
+        #reloadMainBody(pageId = this.#active) {
+            const page = this.getPageData(pageId);
+            const frame = this.#frames[this.#key(pageId)];
+            if (!page || !frame) return false;
+
+            const doc = frame.contentDocument;
+            if (!doc) return false;
+
+            this.#renderNodes(doc, page);
+            return true;
+        }
+
+        #reloadMainStyle(pageId = this.#active) {
+            const page = this.getPageData(pageId);
+            const frame = this.#frames[this.#key(pageId)];
+            if (!page || !frame) return false;
+
+            const doc = frame.contentDocument;
+            if (!doc) return false;
+
+            this.#renderStyle(doc, page);
+            return true;
+        }
+
         /* -- script runtime --
-           One delegated listener per (iframe × eventType), attached once, never re-added.
+           One delegated listener per (iframe x eventType), attached once, never re-added.
            On load/reload only rt.variables and rt.actions are refreshed — the listener
            closure reads the same rt reference so it automatically sees the new data. */
 
@@ -365,7 +559,7 @@ By Asciiz
             this.#host.appendChild(f); this.#frames[k] = f;
             const doc = f.contentDocument; if (!doc) return false;
             doc.open();
-            doc.write(`<!DOCTYPE html><html><head><style id="ez-vs-global-style"></style><style id="ez-vs-style"></style></head><body id="ez-vs-main"></body></html>`);
+            doc.write(`<!DOCTYPE html><html><head><style id="ez-virtualsite-global-style"></style><style id="ez-virtualsite-style"></style></head><body id="ez-virtualsite-main"></body></html>`);
             doc.close();
             return true;
         }
