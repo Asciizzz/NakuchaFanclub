@@ -3,18 +3,26 @@ EzLivecanvas
 By Asciiz
 
 Lightweight canvas action engine for dynamic visual shi (jellytank, starglitter,
-go wild and make custom terrain or something, that would genuinely be cool)
+go wild and make custom terrain or something, that would genuinely be cool).
+
+Built for runtime overlays and gameplay-ish effects without committing to a full
+engine stack. Keep it simple, wire actions, let it cook.
 
 # Guide:
     + include EzLivecanvas.js in your page
     + create a runtime canvas with new window.EzLivecanvas({ width, height })
     + mount it with canv.mount(host) and unmount it with canv.unmount()
+    + when you are done for real, call canv.destroy() to fully clean up
 
     + Asset helpers
         + addAsset(key, value): store any shared value/function
         + addImage(key, url): preload image asset as { type: "img", img }
+            -> returns the final key (string) or null
         + addAudio(key, url): preload audio asset as { type: "audio", audio }
+            -> returns the final key (string) or null
         + runFn(key, ...params): execute a function asset
+        + playAudio(key, options): plays a registered audio asset
+            -> returns HTMLAudioElement on success path, null on invalid key
 
     + Action system (the bread and butter)
         + addAction(key, cfg)
@@ -27,12 +35,13 @@ go wild and make custom terrain or something, that would genuinely be cool)
                     ...
                 }
             }
-        + removeAction(key): remove action and detach unused canvas events
+        + removeAction(key): remove action and detach unused global event handlers
 
     + Canvas event behavior
-        + one listener per event type on the canvas
+        + one listener per event type on document (shared global listener)
         + when event fires, it loops all actions and runs self.events[event](self, canv, e)
-        + canvas pointer-events becomes auto only when at least one action event exists
+        + action callback only runs when pointer is inside current canvas bounds
+        + pointer-events comes from passthrough config (not inferred from actions)
 
     + Other
         + drawImage(assetKey, rect, style) accepts normal ctx style keys directly
@@ -51,6 +60,9 @@ go wild and make custom terrain or something, that would genuinely be cool)
     + deltatime is in seconds
     + shared is a free object for cross-action runtime state
     + It is recommended against setting custom style or attributes for the canvas, just use mount() and unmount()
+    + return-value policy is intentionally predictable:
+        + add* style methods return key or null
+        + remove* style methods return boolean
 
 */
 
@@ -287,24 +299,20 @@ class EzLivecanvas {
     }
 
     addImage(key, url) {
-        if (typeof url !== "string" || url.trim().length === 0) return false;
+        if (typeof url !== "string" || url.trim().length === 0) return null;
 
         const img = new Image();
         img.src = url;
 
-        this.addAsset(key, { type: "img", url, img });
-
-        return true;
+        return this.addAsset(key, { type: "img", url, img });
     }
 
     addAudio(key, url) {
-        if (typeof url !== "string" || url.trim().length === 0) return false;
+        if (typeof url !== "string" || url.trim().length === 0) return null;
 
         const audio = new Audio(url);
 
-        this.addAsset(key, { type: "audio", url, audio });
-
-        return true;
+        return this.addAsset(key, { type: "audio", url, audio });
     }
 
     removeAsset(key) {
@@ -375,8 +383,37 @@ class EzLivecanvas {
     }
 
     playAudio(assetKey, options = {}) {
-        // Do nothing for now
-        return false;
+        const asset = this.assets[assetKey];
+        if (!asset || asset.type !== "audio" || !asset.audio) {
+            return null;
+        }
+
+        const audio = asset.audio;
+
+        if (Number.isFinite(options.currentTime)) {
+            audio.currentTime = Math.max(0, options.currentTime);
+        }
+
+        if (typeof options.loop === "boolean") {
+            audio.loop = options.loop;
+        }
+
+        if (Number.isFinite(options.volume)) {
+            audio.volume = Math.min(1, Math.max(0, options.volume));
+        }
+
+        if (Number.isFinite(options.rate)) {
+            audio.playbackRate = Math.max(0.25, options.rate);
+        }
+
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+            playPromise.catch((error) => {
+                console.error("[EzLivecanvas] Audio play failed:", error);
+            });
+        }
+
+        return audio;
     }
 
     runFn(assetKey, ...params) {
@@ -413,7 +450,7 @@ class EzLivecanvas {
         const finalKey = this._buildUniqueKey(safeKey, this.actions);
 
         if (!cfg || typeof cfg !== "object" || typeof cfg.update !== "function") {
-            return false;
+            return null;
         }
 
         const events = this._normalizeEvents(cfg.events);
@@ -443,9 +480,10 @@ class EzLivecanvas {
         // Remove unused canvas event handlers after action removal
         for (const eventName of eventNames) {
             // If any action still uses this event, don't remove the handler
-            for (const action of Object.values(this.actions)) {
-                if (typeof action?.events?.[eventName] === "function") return;
-            }
+            const eventStillUsed = Object.values(this.actions).some((action) => {
+                return typeof action?.events?.[eventName] === "function";
+            });
+            if (eventStillUsed) continue;
 
             const handler = this._canvasEventHandlers[eventName];
             if (!handler) continue; // Handler is schizophrenic
@@ -521,6 +559,17 @@ class EzLivecanvas {
         }
 
         this.mountHost = null;
+    }
+
+    destroy() {
+        this.unmount();
+        this.actions = {};
+        this.assets = {};
+        this.shared = {};
+        this.mouse.viewport = null;
+        this.mouse.pos = null;
+        this.mouse.ndc = null;
+        this.deltatime = 0;
     }
 
 

@@ -3,7 +3,14 @@ EzFloater
 By Asciiz
 
 # Floating tooltip/context engine thingy, pretty cool
-# Supports iframes (as long as they are same-origin)
+    + Supports iframes (as long as they are same-origin)
+    + Single runtime floater node, reused for tooltip and context modes
+    + Query system supports delegated matching and iframe scoping with @token
+    + Actions are bound through dataset events on floater content (data-click, etc)
+
+    + addAction/addDisplay/addQuery -> returns created value or null
+    + removeAction/removeDisplay/removeQuery -> returns boolean
+    + destroy() clears listeners/observers/timers so re-init does not leave ghosts
 
 # Example:
     const floater = new window.EzFloater();
@@ -52,6 +59,7 @@ By Asciiz
         #ez-floater.ez-floater-mode-context
         #ez-floater.ez-floater-active
         (or even combinations of those 2 classes above)
+
 */
 
 (function() {
@@ -78,6 +86,8 @@ By Asciiz
             this._rootWindow = window;
             this._documents = new Map();
             this._iframeLoadHandlers = new Map();
+            this._floaterActionHandlers = new Map();
+            this._onWindowBlur = null;
 
             this.init();
         }
@@ -252,16 +262,19 @@ By Asciiz
 
             const actionEvents = ["click", "mousedown", "mouseup", "mouseover", "mouseout", "mouseenter", "mouseleave"];
             for (const eventName of actionEvents) {
-                this.floater.addEventListener(eventName, (event) => {
+                const handler = (event) => {
                     this._dispatchFloaterAction(eventName, event);
-                });
+                };
+                this._floaterActionHandlers.set(eventName, handler);
+                this.floater.addEventListener(eventName, handler);
             }
 
             this._attachDocument(this._rootWindow.document, null);
 
-            this._rootWindow.addEventListener("blur", () => {
+            this._onWindowBlur = () => {
                 if (this.state.mode === "tooltip") this.hideFloater();
-            });
+            };
+            this._rootWindow.addEventListener("blur", this._onWindowBlur);
         }
 
         _attachDocument(doc, ownerFrame) {
@@ -339,6 +352,19 @@ By Asciiz
 
         destroy() {
             this.hideFloater();
+
+            if (this.floater) {
+                for (const [eventName, handler] of this._floaterActionHandlers.entries()) {
+                    this.floater.removeEventListener(eventName, handler);
+                }
+            }
+            this._floaterActionHandlers.clear();
+
+            if (this._onWindowBlur) {
+                this._rootWindow.removeEventListener("blur", this._onWindowBlur);
+                this._onWindowBlur = null;
+            }
+
             for (const doc of Array.from(this._documents.keys())) {
                 this._detachDocument(doc);
             }
