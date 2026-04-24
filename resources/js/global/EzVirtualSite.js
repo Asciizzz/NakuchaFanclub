@@ -26,11 +26,11 @@ By Asciiz
     removePage(id)
     updatePage(id, {title?, slug?})
 
-# Reload policies (explicit, surgical):
-    reload()                        reloadNodes() + reloadStyles() + reloadScripts()
+# Reload policies
     reloadNodes()                   re-renders DOM from #data nodes of active page
     reloadStyles()                  re-renders styles from #data stylesheets + active page includes
-    reloadScripts()                 rebuilds #live.events/actions, reconciles #live.variables, re-fires onload
+    reloadScripts()                 rebuilds #live.events/actions, fix #live.variables, re-fires onload
+    reload()                        all of the aboves
 
 # Node API (operates on active page, call reloadNodes() to reflect):
     addNode({tag, parent?, attrs?, text?, graph?})   -> id
@@ -66,11 +66,32 @@ By Asciiz
     winTypes    Set of event types with a listener on win  — never re-added
 
 # Notes:
-    Listeners attach once per event type and are never removed or re-added.
+
+## Important
+    Document can only exist after mounting
+        - Flow: buildFrame -> mountTo -> writeFrame
+    Many operations are happening on the #active page
+        - Node or reload operations are working with the active page
     Data layer and live layer are separated, live layer will only be updated via reload policies
         - It means you have to reload() in order for the #data to apply to the live iframe
     Reload are splits, this allows external systems to call only what's needed
         - For example: a css editor only need to call reloadStyles() instead of reloading the entire iframe
+    Listeners attach once per event type and are never removed or re-added
+        - Upon reload, events that are unused will still have their listeners
+    Most modification happens on a select few elements instead of the entire iframe's document
+        - ez-virtualsite-{style, global-style, main, script}
+        - You can change the #vskey if you'd like
+
+## Cool
+
+    Global style:
+        - Is applied to every page, and overrides all their styles if there's a conflict
+        - Can be especially useful for external systems that want to inject custom styles without modifying the data layer
+        - For example:
+            Hovering over an element in a web editor will give it a red outline
+                <iframe-selector> { outline: 1px solid red !important; }
+        - "!important" is optional since global style is loaded after page styles (giving it higher priority)
+
 */
 
 (function () {
@@ -86,6 +107,7 @@ By Asciiz
         #data   = null;
         #active = null;
         #glbstyle = "";
+        #name = null;
 
         // Live content layer — persists until explicit reload policies
         #live = {
@@ -99,26 +121,50 @@ By Asciiz
         /* -- constructor -- */
 
         constructor(name) {
-            if (!isStr(name)) throw new Error("EzVirtualSite: name is required");
-            const f = document.createElement("iframe");
-            f.id = `ez-virtualsite-host-${name}`;
-            f.style.cssText = "width:100%;height:100%;border:0;";
-            const doc = f.contentDocument;
-            doc.open();
-            doc.write(`<!DOCTYPE html><html><head><style id="ez-virtualsite-global-style"></style><style id="ez-virtualsite-style"></style></head><body id="ez-virtualsite-main"></body></html>`);
-            doc.close();
-            this.#host = f;
+            this.#name = name || `vs${Math.floor(Math.random() * 10000)}`;
         }
 
-        getHost()          { return this.#host; }
-        mountTo(el)        { if (el instanceof Element) el.appendChild(this.#host); return this; }
-        unmount()          { this.#host.parentElement?.removeChild(this.#host); return this; }
+        #doc() { return this.#host?.contentDocument || null; }
+        #win() { return this.#host?.contentWindow   || null; }
+        #vskey(k) { return `ez-virtualsite-${k}`; }
+        #vselement(k) { return this.#doc()?.getElementById(this.#vskey(k)) || null; }
+
+        // buildFrame -> mountTo -> writeFrame
+
+        getHost()   { return this.#host; }
+        mountTo(el) { if (el instanceof Element) el.appendChild(this.#host); return this; }
+        unmount()   { this.#host.parentElement?.removeChild(this.#host);     return this; }
+
+        buildFrame() {
+            const iframe = document.createElement("iframe");
+            iframe.id = `ez-virtualsite-host-${this.#name}`;
+            iframe.style.cssText = "width:100%;height:100%;border:0;";
+            
+            this.#host = iframe;
+            return this;
+        }
+        writeFrame() {
+            const doc = this.#doc();
+            doc.open();
+            doc.write(`<!DOCTYPE html>
+                <html>
+                    <head>
+                        <style id="${this.#vskey("style")}"></style>
+                        <style id="${this.#vskey("global-style")}"></style>
+                    </head>
+                    <body id="${this.#vskey("main")}"></body>
+                </html>`);
+            doc.close();
+            return this;
+        }
 
         setData(d) {
             if (!isObj(d)) return null;
             this.#data = clone(d);
+            this.#data.pages ||= { page_start: null, page_counter: 0, page_data: {} };
             this.#data.stylesheets ||= {};
             this.#data.scripts     ||= {};
+
             const pages = this.#data.pages;
             this.#active = (pages.page_start && this.#pageData(pages.page_start))
                 ? pages.page_start
@@ -205,12 +251,12 @@ By Asciiz
             return { 
                 page_id: this.#active,
                 node_id: id,
-                tag: n.tag,
-                parent: n.parent,
-                children: n.children || [],
-                text:  n.text ?? null,
-                attrs: n.attrs ?? null,
-                graph: n.graph ?? null
+                tag: node.tag,
+                parent: node.parent,
+                children: node.children || [],
+                text:  node.text ?? null,
+                attrs: node.attrs ?? null,
+                graph: node.graph ?? null
             };
         }
 
@@ -335,7 +381,7 @@ By Asciiz
         reloadNodes() {
             const page = this.#pageData(this.#active), doc = this.#doc();
             if (!page || !doc) return this;
-            const mount = doc.getElementById("ez-virtualsite-main") || doc.body;
+            const mount = this.#vselement("main");
             if (!mount) return this;
             mount.replaceChildren();
             const { nodes } = page, cache = new Map(), visiting = new Set();
@@ -361,13 +407,13 @@ By Asciiz
             const page = this.#pageData(this.#active), doc = this.#doc();
             if (!page || !doc) return this;
 
-            this.#styleEl(doc, "ez-virtualsite-style").textContent = (page.include?.css || [])
+            this.#styleEl(doc, this.#vskey("style")).textContent = (page.include?.css || [])
                 .map(n => { const a = this.#data.stylesheets?.[n]; return a ?
                     `/* ${n} */\n${typeof a === "string" ? a : this.#css(a)}` : ""; })
                 .filter(Boolean).join("\n\n");
 
             // Global style overrides page styles if there's a conflict
-            this.#styleEl(doc, "ez-virtualsite-global-style").textContent = this.#glbstyle;
+            this.#styleEl(doc, this.#vskey("global-style")).textContent = this.#glbstyle;
             return this;
         }
 
@@ -448,9 +494,6 @@ By Asciiz
 
         #emit(name, detail = {}) { document.dispatchEvent(new CustomEvent(name, { detail })); }
         #emitPagesChanged()      { this.#emit("wc:pages-changed", { pages: this.listPages(), currentPageId: this.#active }); }
-
-        #doc() { return this.#host?.contentDocument || null; }
-        #win() { return this.#host?.contentWindow   || null; }
 
         #pageData(id) { return this.#data?.pages.page_data[id] || null; }
         #firstPage()  { return Object.keys(this.#data?.pages.page_data || {})[0] || null; }
