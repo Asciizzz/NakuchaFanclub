@@ -132,14 +132,13 @@ By Asciiz
         // buildFrame -> mountTo -> writeFrame
 
         getHost()   { return this.#host; }
-        mountTo(el) { if (el instanceof Element) el.appendChild(this.#host); return this; }
-        unmount()   { this.#host.parentElement?.removeChild(this.#host);     return this; }
 
+        mountTo(el) { if (el instanceof Element) el.appendChild(this.#host); return this; }
         buildFrame() {
             const iframe = document.createElement("iframe");
             iframe.id = `ez-virtualsite-host-${this.#name}`;
             iframe.style.cssText = "width:100%;height:100%;border:0;";
-            
+
             this.#host = iframe;
             return this;
         }
