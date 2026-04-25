@@ -1,4 +1,4 @@
-import './global/EzLivecanvas.js';
+import './global/EzCanvas2D.js';
 import './global/EzParallax.js';
 import './global/EzFloater.js';
 import './global/glitchAnimation.js';

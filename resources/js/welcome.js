@@ -52,14 +52,14 @@ const WELCOME_LEFT_SIDE_CONFIG = {
     },
 };
 
-// EzLivecanvas runtime (replaces old JellyTank + Starglitter scripts)
+// EzCanvas2D runtime (replaces old JellyTank + Starglitter scripts)
 (function() {
-    if (!window.EzLivecanvas) return;
+    if (!window.EzCanvas2D) return;
 
     const toRange = (min, max) => min + Math.random() * (max - min);
 
     const createCanvRuntime = ({ includeJelly, includeStars }) => {
-        const canv = new window.EzLivecanvas();
+        const canv = new window.EzCanvas2D();
         canv.setPassthrough(true);
 
         canv.addImage("jellyfish", window.nakuchaAssets?.images?.jellyfish ?? "/assets/images/jellyfish.png");

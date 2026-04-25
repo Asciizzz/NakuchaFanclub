@@ -1,5 +1,5 @@
 (function() {
-    if (!window.EzLivecanvas) return;
+    if (!window.EzCanvas2D) return;
 
     const PARTICLE_HOST_ID = "global-particle-layer";
 
@@ -155,7 +155,7 @@
     };
 
     const host = createParticleHost();
-    const particleCanv = new window.EzLivecanvas();
+    const particleCanv = new window.EzCanvas2D();
 
     particleCanv.addAction("particles", {
         attrs: {

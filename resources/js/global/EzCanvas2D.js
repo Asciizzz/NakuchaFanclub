@@ -1,5 +1,5 @@
 /*
-EzLivecanvas 
+EzCanvas2D 
 By Asciiz
 
 Lightweight canvas action engine for dynamic visual shi.
@@ -7,7 +7,7 @@ Built for runtime overlays and gameplay-ish effects without dragging in a full
 engine stack. Keep it simple, wire actions, let it cook.
 
 # Constructor:
-    new EzLivecanvas()              creates a runtime canvas instance
+    new EzCanvas2D()              creates a runtime canvas instance
 
 # Pass-through:
     getPassthrough()                returns whether pointer events are passing through
@@ -91,7 +91,7 @@ engine stack. Keep it simple, wire actions, let it cook.
 
 */
 
-class EzLivecanvas {
+class EzCanvas2D {
     constructor() {
         this.passthrough = true;
 
@@ -484,4 +484,4 @@ class EzLivecanvas {
     }
 }
 
-window.EzLivecanvas = EzLivecanvas;
+window.EzCanvas2D = EzCanvas2D;
