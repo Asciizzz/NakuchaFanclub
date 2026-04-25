@@ -50,8 +50,9 @@ Default shader: pos(3) + uv(2) + boneID(4) + boneWeight(4)
 Notes:
     -   Instance mat4 occupies the 4 attribute slots starting at the shader's `a_instanceMatrix`
         location (auto-resolved via gl.getAttribLocation). Convention name: `a_instanceMatrix`.
-    -   Built-in uniforms (auto-bound when present): u_view, u_projection, u_albedo, u_useAlbedo,
-        u_fill, u_bones[64].
+    -   Built-in uniforms (auto-bound when present): u_view, u_projection, u_albedo, u_fill, u_bones[64].
+        Material output is `texture(u_albedo) * u_fill`. When a primitive has no albedo, a 1x1 white
+        texture is bound, so `u_fill` becomes the effective RGBA (default [1,1,1,1] = white).
     -   Skinned models draw per-instance (own bone palette per instance); static models batch via
         drawElementsInstanced.
     -   renderHook(gl, program) fires once per shader batch for custom uniforms.
@@ -269,8 +270,7 @@ Notes:
     //   boneWeight = (0,0,0,0)  -> sum=0 -> skin matrix collapses to identity, no deformation.
     // Instance matrix occupies the 4 attribute slots starting after the last vertex attribute.
 
-    const MAX_BONES         = 64;
-    const _DEFAULT_SHADER_KEY = "__ez_default__";
+    const MAX_BONES = 64;
 
     const _DEFAULT_VERT = `#version 300 es
         const int MAX_BONES = ${MAX_BONES};
@@ -303,11 +303,21 @@ Notes:
         in  vec2 v_uv;
         out vec4 fragColor;
         uniform vec4      u_fill;
-        uniform int       u_useAlbedo;
         uniform sampler2D u_albedo;
         void main() {
-            fragColor = (u_useAlbedo == 1) ? texture(u_albedo, v_uv) : u_fill;
+            // Albedo is always sampled. Models with no texture get a 1x1 white pixel
+            // bound by the engine, so this collapses to u_fill in the no-texture case.
+            // u_fill doubles as RGBA tint+opacity (default [1,1,1,1] = no change).
+            fragColor = texture(u_albedo, v_uv) * u_fill;
         }`;
+
+    // Built-in default shaders. The FIRST entry is THE default - used by addModel()
+    const _DEFAULT_SHADERS = [
+        { key: "__ez_opaque_default__",      vert: _DEFAULT_VERT, frag: _DEFAULT_FRAG, transparent: false },
+        { key: "__ez_transparent_default__", vert: _DEFAULT_VERT, frag: _DEFAULT_FRAG, transparent: true  },
+    ];
+    const _DEFAULT_SHADER_KEY  = _DEFAULT_SHADERS[0].key;
+    const _DEFAULT_SHADER_KEYS = new Set(_DEFAULT_SHADERS.map(s => s.key));
 
     // Main class
 
@@ -322,6 +332,9 @@ Notes:
         #models    = new Map(); // key -> { shaderKey, vao, vbo, ebo, instanceVBO,
                                 //          indexType, primitives, _info }
         #instances = new Map(); // instanceKey -> { modelKey, transform:mat4 }
+
+        // 1x1 white texture
+        #whiteTex = null;
 
         #instanceCounter = 0;
 
@@ -376,6 +389,15 @@ Notes:
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.clearColor(0, 0, 0, 0);
 
+            // 1x1 opaque-white default texture (used as the no-albedo fallback).
+            this.#whiteTex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, this.#whiteTex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                new Uint8Array([255, 255, 255, 255]));
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+
             this.#addDefaultShader();
             this.#camUpdate();
         }
@@ -395,6 +417,15 @@ Notes:
             return this;
         }
 
+        getCanvasInfo() {
+            // Return keys
+            const modelKeys = Array.from(this.#models.keys());
+            const shaderKeys = Array.from(this.#shaders.keys());
+            const textureKeys = Array.from(this.#textures.keys());
+            const instanceKeys = Array.from(this.#instances.keys());
+            return { modelKeys, shaderKeys, textureKeys, instanceKeys };
+        }
+
         /* shaders */
 
         // attributes: [{ name, size, default?:[r,g,b,a] }, ...]
@@ -402,16 +433,18 @@ Notes:
         //   Models may provide any subset of these in their VBO; missing ones fall back
         //   to the per-attribute `default` (sent via gl.vertexAttrib4f at draw time).
         //   Defaults are extended/truncated to length 4. If omitted, falls back to (0,0,0,0).
-        addShader(key, { vert, frag, attributes }) {
+        // transparent: optional bool. If true, this shader's instances render AFTER opaque
+        //   ones with depth writes disabled (standard transparency pass).
+        addShader(key, { vert, frag, attributes, transparent = false }) {
             if (!isStr(key) || !isStr(vert) || !isStr(frag) || !Array.isArray(attributes)) return false;
-            if (key === _DEFAULT_SHADER_KEY) {
-                console.warn("[EzCanvas3D] addShader: key is reserved");
+            if (_DEFAULT_SHADER_KEYS.has(key)) {
+                console.warn(`[EzCanvas3D] addShader: key "${key}" is reserved (built-in default)`);
                 return false;
             }
-            return this.#registerShader(key, vert, frag, attributes);
+            return this.#registerShader(key, vert, frag, attributes, !!transparent);
         }
 
-        #registerShader(key, vert, frag, attributes) {
+        #registerShader(key, vert, frag, attributes, transparent = false) {
             const gl = this.#gl;
             const program = createProgram(gl, vert, frag);
             if (!program) return false;
@@ -433,7 +466,6 @@ Notes:
                 view:       gl.getUniformLocation(program, "u_view"),
                 projection: gl.getUniformLocation(program, "u_projection"),
                 albedo:     gl.getUniformLocation(program, "u_albedo"),
-                useAlbedo:  gl.getUniformLocation(program, "u_useAlbedo"),
                 fill:       gl.getUniformLocation(program, "u_fill"),
                 bones:      gl.getUniformLocation(program, "u_bones[0]")
                           ?? gl.getUniformLocation(program, "u_bones"),
@@ -444,13 +476,13 @@ Notes:
             let instanceLoc = gl.getAttribLocation(program, "a_instanceMatrix");
             if (instanceLoc < 0) instanceLoc = attrs.length;
 
-            this.#shaders.set(key, { program, attributes: attrs, locs, uloc, instanceLoc });
+            this.#shaders.set(key, { program, attributes: attrs, locs, uloc, instanceLoc, transparent });
             return true;
         }
 
         removeShader(key) {
-            if (key === _DEFAULT_SHADER_KEY) {
-                console.warn("[EzCanvas3D] removeShader: default shader cannot be removed");
+            if (_DEFAULT_SHADER_KEYS.has(key)) {
+                console.warn(`[EzCanvas3D] removeShader: built-in default "${key}" cannot be removed`);
                 return false;
             }
             const s = this.#shaders.get(key); if (!s) return false;
@@ -860,10 +892,21 @@ Notes:
                 bucket.get(inst.modelKey).push(inst);
             }
 
+            // Two passes: opaque shaders first (depth writes on), transparent last
+            // (depth writes off, depth test still on so they occlude properly).
+            this.#drawPass(batches, false);
+            gl.depthMask(false);
+            this.#drawPass(batches, true);
+            gl.depthMask(true);
+        }
+
+        #drawPass(batches, transparentPass) {
+            const gl = this.#gl;
             for (const [shaderKey, { static: staticBatch, skinned: skinnedBatch }] of batches) {
                 const shader = this.#shaders.get(shaderKey); if (!shader) continue;
-                gl.useProgram(shader.program);
+                if (!!shader.transparent !== transparentPass) continue;
 
+                gl.useProgram(shader.program);
                 if (shader.uloc.view)       gl.uniformMatrix4fv(shader.uloc.view,       false, this.#view);
                 if (shader.uloc.projection) gl.uniformMatrix4fv(shader.uloc.projection, false, this.#proj);
                 this.renderHook(gl, shader.program);
@@ -889,11 +932,9 @@ Notes:
                     this.#applyAttributeDefaults(model);
 
                     for (const inst of instList) {
-                        // Upload single-element instance transform.
                         gl.bindBuffer(gl.ARRAY_BUFFER, model.instanceVBO);
                         gl.bufferData(gl.ARRAY_BUFFER, inst.transform, gl.DYNAMIC_DRAW);
 
-                        // Compute and upload bone palette (skin matrices).
                         if (shader.uloc.bones) {
                             const palette = this.#computeBonePalette(model.skeleton, inst.bonePoses);
                             gl.uniformMatrix4fv(shader.uloc.bones, false, palette);
@@ -906,8 +947,6 @@ Notes:
             }
         }
 
-        // Apply per-attribute fallback defaults via vertexAttrib4f for attributes
-        // the model doesn't supply (set on global state, applied after VAO bind).
         #applyAttributeDefaults(model) {
             const gl = this.#gl;
             for (const d of model.defaulted) {
@@ -915,25 +954,15 @@ Notes:
             }
         }
 
-        // Issue per-primitive draw calls (material binding + drawElementsInstanced).
         #drawPrimitives(model, shader, instanceCount) {
             const gl = this.#gl;
             for (const prim of model.primitives) {
                 const { indexOffset, indexCount, material } = prim;
 
-                if (material.albedo) {
-                    const tex = this.#textures.get(material.albedo);
-                    if (tex) {
-                        gl.activeTexture(gl.TEXTURE0);
-                        gl.bindTexture(gl.TEXTURE_2D, tex.glTex);
-                        if (shader.uloc.albedo    != null) gl.uniform1i(shader.uloc.albedo,    0);
-                        if (shader.uloc.useAlbedo != null) gl.uniform1i(shader.uloc.useAlbedo, 1);
-                    } else if (shader.uloc.useAlbedo != null) {
-                        gl.uniform1i(shader.uloc.useAlbedo, 0);
-                    }
-                } else if (shader.uloc.useAlbedo != null) {
-                    gl.uniform1i(shader.uloc.useAlbedo, 0);
-                }
+                const tex = material.albedo ? this.#textures.get(material.albedo) : null;
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, tex ? tex.glTex : this.#whiteTex);
+                if (shader.uloc.albedo != null) gl.uniform1i(shader.uloc.albedo, 0);
 
                 if (shader.uloc.fill != null) gl.uniform4fv(shader.uloc.fill, material.fill);
 
@@ -964,15 +993,18 @@ Notes:
 
 
         #addDefaultShader() {
-            // Default shader's full attribute set: pos + uv + boneID + boneWeight.
+            // Default shaders share the same attribute set: pos + uv + boneID + boneWeight.
             // Models supplying any subset (e.g. only pos+uv) get auto-defaulted
             // to (uv=0,0 / boneID=0 / boneWeight=0 → identity skin).
-            this.#registerShader(_DEFAULT_SHADER_KEY, _DEFAULT_VERT, _DEFAULT_FRAG, [
+            const attrs = [
                 { name: "a_position",   size: 3, default: [0, 0, 0, 1] },
                 { name: "a_uv",         size: 2, default: [0, 0, 0, 0] },
                 { name: "a_boneID",     size: 4, default: [0, 0, 0, 0] },
                 { name: "a_boneWeight", size: 4, default: [0, 0, 0, 0] },
-            ]);
+            ];
+            for (const s of _DEFAULT_SHADERS) {
+                this.#registerShader(s.key, s.vert, s.frag, attrs, !!s.transparent);
+            }
         }
 
         #camUpdate() {
