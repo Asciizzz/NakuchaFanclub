@@ -59,7 +59,8 @@ const WELCOME_LEFT_SIDE_CONFIG = {
     const toRange = (min, max) => min + Math.random() * (max - min);
 
     const createCanvRuntime = ({ includeJelly, includeStars }) => {
-        const canv = new window.EzLivecanvas({ width: 1, height: 1, passthrough: true });
+        const canv = new window.EzLivecanvas();
+        canv.setPassthrough(true);
 
         canv.addImage("jellyfish", window.nakuchaAssets?.images?.jellyfish ?? "/assets/images/jellyfish.png");
         canv.addImage("starglitter", window.nakuchaAssets?.images?.starglitter ?? "/assets/images/starglitter.png");

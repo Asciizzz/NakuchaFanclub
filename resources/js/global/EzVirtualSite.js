@@ -10,7 +10,7 @@ By Asciiz
 
 # Host / container: the iframe element/the container (that contain the iframe)
     getHost()                       returns the iframe element
-    mountTo(containerEl)            appends iframe into a container
+    mount(containerEl)            appends iframe into a container
     unmount()                       removes iframe from its current parent
 
 # Data (json)
@@ -69,7 +69,7 @@ By Asciiz
 
 ## Important
     Document can only exist after mounting
-        - Flow: buildFrame -> mountTo -> writeFrame
+        - Flow: buildFrame -> mount -> writeFrame
     Many operations are happening on the #active page
         - Node or reload operations are working with the active page
     Data layer and live layer are separated, live layer will only be updated via reload policies
@@ -129,15 +129,21 @@ By Asciiz
         #vskey(k) { return `ez-virtualsite-${k}`; }
         #vselement(k) { return this.#doc()?.getElementById(this.#vskey(k)) || null; }
 
-        // buildFrame -> mountTo -> writeFrame
+        // buildFrame -> mount(element) -> writeFrame
 
         getHost()   { return this.#host; }
 
-        mountTo(el) { if (el instanceof Element) el.appendChild(this.#host); return this; }
+        mount(el) { if (el instanceof Element) el.appendChild(this.#host); return this; }
         buildFrame() {
             const iframe = document.createElement("iframe");
             iframe.id = `ez-virtualsite-host-${this.#name}`;
             iframe.style.cssText = "width:100%;height:100%;border:0;";
+
+            // Remove all default right-click context menu to avoid interference
+            iframe.addEventListener("load", () => {
+                const doc = this.#doc();
+                if (doc) doc.addEventListener("contextmenu", e => e.preventDefault());
+            });
 
             this.#host = iframe;
             return this;
@@ -187,7 +193,7 @@ By Asciiz
             if (!this.#pageData(id)) return false;
             this.#active = this.#data.pages.page_start = id;
             this.reload();
-            this.#emit("wc:page-selected", { pageId: id });
+            this.#emit("ezvs:page-selected", { pageId: id });
             this.#emitPagesChanged();
             return true;
         }
@@ -492,7 +498,7 @@ By Asciiz
 
 
         #emit(name, detail = {}) { document.dispatchEvent(new CustomEvent(name, { detail })); }
-        #emitPagesChanged()      { this.#emit("wc:pages-changed", { pages: this.listPages(), currentPageId: this.#active }); }
+        #emitPagesChanged()      { this.#emit("ezvs:pages-changed", { pages: this.listPages(), currentPageId: this.#active }); }
 
         #pageData(id) { return this.#data?.pages.page_data[id] || null; }
         #firstPage()  { return Object.keys(this.#data?.pages.page_data || {})[0] || null; }

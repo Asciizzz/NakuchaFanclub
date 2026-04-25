@@ -2,85 +2,89 @@
 EzLivecanvas 
 By Asciiz
 
-Lightweight canvas action engine for dynamic visual shi (jellytank, starglitter,
-go wild and make custom terrain or something, that would genuinely be cool).
-
-Built for runtime overlays and gameplay-ish effects without committing to a full
+Lightweight canvas action engine for dynamic visual shi.
+Built for runtime overlays and gameplay-ish effects without dragging in a full
 engine stack. Keep it simple, wire actions, let it cook.
 
-# Guide:
-    + include EzLivecanvas.js in your page
-    + create a runtime canvas with new window.EzLivecanvas({ width, height })
-    + mount it with canv.mount(host) and unmount it with canv.unmount()
-    + when you are done for real, call canv.destroy() to fully clean up
+# Constructor:
+    new EzLivecanvas()              creates a runtime canvas instance
 
-## Asset helpers
-    + addAsset(key, value): store any shared value/function
-    + addImage(key, url): preload image asset as { type: "img", img }
-        -> returns the final key (string) or null
-    + addAudio(key, url): preload audio asset as { type: "audio", audio }
-        -> returns the final key (string) or null
-    + runFn(key, ...params): execute a function asset
-    + playAudio(key, options): plays a registered audio asset
-        -> returns HTMLAudioElement on success path, null on invalid key
+# Pass-through:
+    getPassthrough()                returns whether pointer events are passing through
+    setPassthrough(value)           toggles pointer events and stores the flag
 
-## Action system (the bread and butter)
-    + addAction(key, cfg)
-        + cfg = {
+# Mounting:
+    mount(host)                     appends the canvas into a host element
+    unmount()                       removes the canvas and detaches runtime listeners
+    destroy()                       fully cleans up assets, actions, and runtime state
+
+# Asset helpers:
+    addAsset(key, value)            stores any shared value or function
+    addImage(key, url)              preloads an image asset as { type: "img", img }
+                                    -> returns the final key or null
+    addAudio(key, url)              preloads an audio asset as { type: "audio", audio }
+                                    -> returns the final key or null
+    runFn(key, ...params)           executes a function asset
+    playAudio(key, options)         plays a registered audio asset
+                                    -> returns HTMLAudioElement on success, null on invalid key
+
+# Action system:
+    addAction(key, cfg)
+        cfg = {
             attrs: { ... },
-            update: function(self, canv) { ... },
+            update(self, canv) { ... },
             events: {
-                click: function(self, canv, e) { ... },
-                pointermove: function(self, canv, e) { ... },
+                click(self, canv, e) { ... },
+                pointermove(self, canv, e) { ... },
                 ...
             }
         }
-    + removeAction(key): remove action (event listeners are shared and auto-managed)
+    removeAction(key)               removes an action; shared listeners are auto-managed
 
-## Canvas event behavior
-    + one listener per event type on document (shared global listener)
-    + when event fires, it loops all actions and runs self.events[event](self, canv, e)
-    + action callback only runs when pointer is inside current canvas bounds
-    + pointer-events comes from passthrough config (not inferred from actions)
+# Canvas event behavior:
+    + one listener per event type on document
+    + when an event fires, it loops all actions and runs the matching event handler
+    + action callbacks only run while the pointer is inside the current canvas bounds
+    + pointer-events comes from setPassthrough(), not from the actions themselves
 
-## Other
-    + drawImage(assetKey, rect, style)
-        + rect = {
-            dst:  { dx, dy, dw, dh },
+# Other:
+    drawImage(assetKey, rect, style)
+        rect = {
+            dst: { dx, dy, dw, dh },
             src?: { sx, sy, sw, sh } // optional cropping
         }
 
-        + style accepts normal ctx style keys AND:
+        style accepts normal ctx style keys AND:
             transformation: {
-                scale: { x, y },        // default 1,1 (applied from center)
-                rotation: { 
-                    angle,              // radians
-                    px, py              // pivot (default = center of image)
+                scale: { x, y },
+                rotation: {
+                    angle,          // radians
+                    px, py          // pivot (default = center of image)
                 },
-                translation: { x, y }  // applied last
-            }, -> order is always scale -> rotate -> translate
+                translation: { x, y }
+            }
+            // order is always scale -> rotate -> translate
 
             effects: [
                 { type: "tint", color: "css-color", mode?: "source-atop" },
                 ...
             ]
 
-    ++ mouse = {
-        viewport: { x, y }, // in viewport coord (global)
-        pos: { x, y },      // in canvas coord (local)
-        ndc: { x, y },      // in canvas NDC coord [-1, 1]
+    mouse = {
+        viewport: { x, y }, // global viewport coordinates
+        pos: { x, y },      // local canvas coordinates
+        ndc: { x, y },      // canvas NDC coordinates [-1, 1]
 
         target: () => element under mouse or null,
-        over: (el) => boolean, if mouse is over element (DOM stack aware),
-        hit: (el)  => boolean, simple AABB hit test
+        over: (el) => boolean, // true if mouse is over element, DOM stack aware
+        hit: (el) => boolean   // simple AABB hit test
     }
 
 # Notes:
-
-    + transformation replaces older angle/pivot style keys (those are deprecated now)
+    + transformation replaces the older angle/pivot style keys, which are deprecated
     + deltatime is in seconds
     + shared is a free object for cross-action runtime state
-    + It is recommended against setting custom style or attributes for the canvas, just use mount() and unmount()
+    + avoid setting custom style or attributes directly on the canvas; use mount() and unmount()
     + return-value policy is intentionally predictable:
         + add* style methods return key or null
         + remove* style methods return boolean
@@ -88,10 +92,8 @@ engine stack. Keep it simple, wire actions, let it cook.
 */
 
 class EzLivecanvas {
-    constructor(cfg = {}) {
-        const { width = 300, height = 150, passthrough = true } = cfg;
-
-        this.cfg = { width: width | 0, height: height | 0, passthrough: !!passthrough };
+    constructor() {
+        this.passthrough = true;
 
         this.canvas = document.createElement("canvas");
         this.ctx = this.canvas.getContext("2d");
@@ -102,11 +104,11 @@ class EzLivecanvas {
             width: "100%",
             height: "100%",
             display: "block",
-            pointerEvents: this.cfg.passthrough ? "none" : "auto"
+            pointerEvents: this.passthrough ? "none" : "auto"
         });
 
-        this.canvas.width = this.cfg.width || 1;
-        this.canvas.height = this.cfg.height || 1;
+        this.canvas.width = 1;
+        this.canvas.height = 1;
 
         this.mountHost = null;
 
@@ -198,6 +200,16 @@ class EzLivecanvas {
         }
 
         return this._fxCtx;
+    }
+
+    getPassthrough() {
+        return this.passthrough;
+    }
+
+    setPassthrough(value) {
+        this.passthrough = !!value;
+        this.canvas.style.pointerEvents = this.passthrough ? "none" : "auto";
+        return this.passthrough;
     }
 
     _runEffect(ctx, w, h, fx) {

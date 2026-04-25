@@ -2,132 +2,71 @@
 EzFloater
 By Asciiz
 
-# Lightweight floating tooltip / context engine
+# Lightweight shared floating UI engine (tooltip + context)
 
-    + Single shared floater node (no duplicates)
-    + Same-origin iframe support (auto-attached)
-    + Delegated query system with @ iframe scoping
-    + Dataset-driven action system (data-click, etc)
-    + Tooltip (hover) + Context (right-click / long-press) modes
-    + CSS-driven state via configurable class names
+# Constructor:
+    new EzFloater()                 creates/uses #ez-floater, binds active document, and tracks same-origin iframes
 
-    + addAction / addDisplay / addQuery
-    + destroy() cleans up listeners/observers safely
+# Core behavior:
+    show(content, x, y, mode)       renders content and shows floater at clamped viewport coordinates
+    hide()                          clears state and hides floater
+    setPosition(x, y)               positions floater with viewport bounds protection
 
-# Cool things:
+# Display API:
+    addDisplay(name, {
+        context(element, {element?, floater?, event?})?,   renderer for context mode (right-click / long-press)
+        tooltip(element, {element?, floater?, event?})?    renderer for tooltip mode (hover)
+    })
 
-## Actions
-    Define behavior triggered from inside the floater.
+# Event API:
+    addEvent(eventName, actionName, fn)
+                                    binds a floater event to a named handler
+    removeEvent(eventName, actionName)
+                                    removes a named handler for a floater event
 
-    floater.addAction(name, (element, event, ctx) => { ... });
+# Event usage inside a display:
+    button.dataset.click = "actionName"
+    button.dataset.mouseover = "previewName"
+    button.dataset.mousedown = "pressName"
 
-    Usage inside display:
-        element.dataset.click = "actionName"
+# Query API:
+    addQuery(selector, { display, delegate=true })
+                                    binds selector to a display in the resolved document scope
+    removeQuery(selector, opts?)    removes matching query bindings from the resolved scope
 
-    + element -> the clicked element inside floater
-    + ctx -> { floater, mode }
+# Scope syntax for selectors:
+    ".target"                      current document
+    "@frameA .target"              inside iframe#frameA
+    "@frameA @frameB .target"      nested iframe chain then selector
 
-## Displays
-    Define how content is rendered.
+# Matching mode:
+    delegate=true                   uses target.closest(selector)
+    delegate=false                  uses target.matches(selector)
 
-    floater.addDisplay(name, {
-        context(element, ctx) => Node | string,
-        tooltip(element, ctx) => Node | string
-    });
-
-    + context <- right click / long press
-    + tooltip <- hover
-    + Either can be omitted
-
-## Queries
-    Bind selectors to displays.
-
-    floater.addQuery(selector, {
-        display: "displayName",
-        delegate: true // default: true
-    });
-
-    + delegate: true  -> uses element.closest()
-    + delegate: false -> uses element.matches()
-
-## Iframe Support
-
-Use @ tokens to scope queries into nested iframes:
-
-    "@frameA @frameB .target"
-
-    -> Means:
-        scope: ["@frameA", "@frameB"] -> iframeB inside iframeA
-        selector: ".target" -> element(s) inside iframeB
-
-Notes:
-    + Only works for same-origin iframes
-    + @ is NOT CSS — it's EzFloater-specific syntax thingy
-
-## Class System (Styling)
-
-Class names are configurable:
-
-    this.class = {
-        active: "ez-floater-active",
-        context: "ez-floater-context",
-        tooltip: "ez-floater-tooltip"
-    }; -> self-explanatory
-
-Styling Example
-
-    .ez-floater {
-        position: fixed;
-        z-index: 2147483647;
-        opacity: 0;
-        transform: scale(0.95);
-        transition: opacity 0.12s ease, transform 0.12s ease;
-        pointer-events: none;
+# Display callback context:
+    {
+        element?,                   element that matched the query and triggered the display
+        floater?,                   EzFloater instance
+        event?                      originating DOM event
     }
 
-    .ez-floater.ez-floater-active {
-        opacity: 1;
-        transform: scale(1);
+# Event callback context:
+    {
+        element,                    element with matching data-<eventName>
+        floater,                    EzFloater instance
+        event                       triggering DOM event
     }
 
-    .ez-floater.ez-floater-context {
-        pointer-events: auto;
-    }
+# CSS state classes (configurable via this.class):
+    active:  ez-floater-active
+    context: ez-floater-context
+    tooltip: ez-floater-tooltip
 
-# Example
-
-    const floater = new window.EzFloater();
-
-    floater.addAction("clickForCookies", (el) => {
-        el.textContent = "No cookies for you";
-    });
-
-    floater.addDisplay("menu", {
-        context(el) {
-            const wrap = document.createElement("div");
-            const btn = document.createElement("button");
-
-            btn.textContent = "Cookie";
-            btn.dataset.click = "clickForCookies";
-
-            wrap.appendChild(btn);
-            return wrap;
-        },
-        tooltip(el) {
-            return `Hello ${el.tagName}`;
-        }
-    });
-
-    floater.addQuery(".menu-or-whatever", {
-        display: "menu"
-    });
-
-# Notes
-    + Only one floater instance is used at runtime
-    + Queries are optimized per document for performance
-    + Automatically tracks iframe lifecycle
-    + Designed to be lightweight, extensible, and CSS-driven
-
+# Notes:
+    - Single floater node is shared at runtime
+    - Only same-origin iframe documents are attachable
+    - Content may be string or Node
+    - If a display callback returns falsy, nothing is shown
 */
 
 (function () {
@@ -142,8 +81,9 @@ Styling Example
 
             this.LONG_PRESS = 450;
 
-            this.actions = new Map();
             this.displays = new Map();
+            this.events = new Map();
+            this.eventListeners = new Map();
             this.queriesByDoc = new Map();
 
             this.state = { mode: null, hoverEl: null, hoverQuery: null, touchTimer: null };
@@ -157,7 +97,6 @@ Styling Example
 
         _init() {
             this._ensureNode();
-            this._bindFloaterEvents();
             this._attachDoc(document);
             this.root.addEventListener("blur", () => {
                 if (this.state.mode === "tooltip") this.hide();
@@ -172,10 +111,6 @@ Styling Example
                 Object.assign(this.node.style, { position: "fixed", top: 0, left: 0, zIndex: 2147483647, opacity: 0, visibility: "hidden" });
                 document.body.appendChild(this.node);
             }
-        }
-
-        _bindFloaterEvents() {
-            this.node.addEventListener("click", e => this._dispatch("click", e));
         }
 
         setPosition(x, y) {
@@ -214,11 +149,38 @@ Styling Example
             this.node.classList.remove(this.class.context, this.class.tooltip, this.class.active);
         }
 
-        addAction(name, fn) { if (name && fn) this.actions.set(name, fn); }
-        getAction(name) { return this.actions.get(name); }
-
         addDisplay(name, cfg) {
-            this.displays.set(name, { context: cfg.context || null, tooltip: cfg.tooltip || null });
+            const next = cfg || {};
+            this.displays.set(name, { context: next.context || null, tooltip: next.tooltip || null });
+        }
+
+        addEvent(eventName, actionName, fn) {
+            if (!eventName || !actionName || typeof fn !== "function") return;
+
+            let actions = this.events.get(eventName);
+            if (!actions) {
+                actions = new Map();
+                this.events.set(eventName, actions);
+                this._bindEvent(eventName);
+            }
+
+            actions.set(actionName, fn);
+        }
+
+        removeEvent(eventName, actionName) {
+            const actions = this.events.get(eventName);
+            if (!actions) return;
+
+            actions.delete(actionName);
+            if (actions.size > 0) return;
+
+            this.events.delete(eventName);
+
+            const listener = this.eventListeners.get(eventName);
+            if (listener) {
+                this.node.removeEventListener(eventName, listener, true);
+                this.eventListeners.delete(eventName);
+            }
         }
 
         addQuery(selector, { display, delegate = true }) {
@@ -354,7 +316,7 @@ Styling Example
                 const fn = d && d[mode];
                 if (!fn) continue;
 
-                const content = fn(el, { event, mode, floater: this });
+                const content = fn(el, { element: el, floater: this, event });
                 if (!content) return null;
 
                 return { el, q, content };
@@ -362,19 +324,37 @@ Styling Example
             return null;
         }
 
-        _dispatch(type, e) {
-            const el = e.target.closest(`[data-${type}]`);
-            if (!el) return;
-
-            const fn = this.actions.get(el.dataset[type]);
-            if (fn) fn(el, e, { floater: this, mode: this.state.mode });
-        }
-
         _parse(raw) {
             const parts = raw.split(/\s+/);
             const scope = [], sel = [];
             for (const p of parts) { p.startsWith("@") ? scope.push(p) : sel.push(p); }
             return { scope, sel: sel.join(" ") };
+        }
+
+        _bindEvent(eventName) {
+            const listener = e => this._dispatchEvent(eventName, e);
+            this.eventListeners.set(eventName, listener);
+            this.node.addEventListener(eventName, listener, true);
+        }
+
+        _dispatchEvent(eventName, e) {
+            const actions = this.events.get(eventName);
+            if (!actions || actions.size === 0) return;
+
+            let target = e.target;
+            if (target?.nodeType === 3) target = target.parentElement;
+            if (!target) return;
+
+            const el = target.closest(`[data-${eventName}]`);
+            if (!el || !this.node.contains(el)) return;
+
+            const actionName = el.dataset[eventName];
+            if (!actionName) return;
+
+            const fn = actions.get(actionName);
+            if (!fn) return;
+
+            fn({ element: el, event: e, floater: this });
         }
 
         _resolve(scope) {
