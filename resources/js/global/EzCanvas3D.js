@@ -2,92 +2,59 @@
 EzCanvas3D
 By Asciiz
 
-# WebGL2 object-centric 3D canvas — glTF-style primitives, GPU instancing.
+WebGL2 object-centric 3D canvas
+Holy shi guys, I finally stopped using Canvas2D for rendering 3d stuff lmao
+No more Z-fighting or painter algorithm, goddamn
 
-# Constructor:
-    new EzCanvas3D(name)        creates <canvas id="ez-canvas3d-<n>">, GL context ready
+Constructor:    new EzCanvas3D(name)
+Config:         setCfg({ fitContainer?, ... })
+                cfg.width / cfg.height / cfg.aspectRatio (read-only getters)
+Mount:          getCanvas() / mount(el) / unmount() / resize(w,h)
 
-# Mount:
-    getCanvas()                 returns the canvas element
-    mountTo(el)                 appends canvas into element
-    unmount()                   removes canvas from parent
-    resize(w, h)                resize canvas + viewport (rebuilds projection automatically)
+Shaders:        addShader(key, { vert, frag, attributes }) / removeShader(key) / getShaderInfo(key)
+                  attributes: [{ name, size, default?:[r,g,b,a] }, ...]
+                  Declares the FULL set of per-vertex inputs the shader can consume. Any model
+                  may supply ANY SUBSET - missing attributes fall back to per-attribute defaults
+                  (sent via gl.vertexAttrib4f at draw). Defaults pad/truncate to length 4.
 
-# Shaders:
-    addShader(key, { vert, frag, attributes:[{name,size},...] })
-        -> true | false
-        attributes declares the interleaved vertex layout in order.
-        Class auto-computes stride + offsets.
+Textures:       addTexture(key, { data, width, height, channels? }) / removeTexture(key)
 
-    removeShader(key)
-    getShaderInfo(key)          -> { key, attributes, stride }
-    
-# Textures:
-    addTexture(key, { data:Uint8Array|ImageBitmap, width, height, channels? })
-        -> true | false
-        channels defaults to 4 (RGBA). Auto-generates mipmaps.
+Models:         addModel(key, { shader?, vertices, indices, attributes?, primitives?, skeleton? })
+                  attributes  declares what's IN the model's VBO, in order. Subset of shader's attrs.
+                              Default: [{name:"a_position",size:3},{name:"a_uv",size:2}]
+                  primitives  [{ indexOffset, indexCount, material? }, ...]
+                              material: { albedo?, fill?:[r,g,b,a] }
+                  skeleton    { bones: [{ parent, localBind?, inverseBind? }, ...] }
+                              parent: int (-1 root, else parent bone index < own index)
+                              localBind: mat4 OR {position,rotation,scale,euler} - bone's bind transform
+                                         relative to parent. Default identity.
+                              inverseBind: optional precomputed mat4. Auto-computed if omitted.
 
-    removeTexture(key)
-    getTextureInfo(key)         -> { key, width, height, channels }
+Instances:      addInstance(modelKey, transform?) -> instKey
+                setInstanceTransform(key, transform)        - model-space transform of this instance
+                setInstanceBonePose(key, boneIdx, transform) - per-bone local offset on top of bind pose
+                getInstanceBonePose(key, boneIdx) / getInstanceInfo(key) / removeInstance(key)
 
-# Models (glTF-style):
-    addModel(key, { shader?, vertices:Float32Array, indices:Uint16Array|Uint32Array,
-                    attributes?:[{name,size},...],
-                    primitives:[{ indexOffset, indexCount, material? }] })
-        -> true | false
+Camera:         setCamera({position?,yaw?,pitch?,roll?,orientation?,fov?,near?,far?})
+                getCamera() -> {position,yaw,pitch,roll,fov,near,far,orientation}
+                rotateCamera(pitchDelta,yawDelta,rollDelta?)   - degrees, pitch clamped ±89
+                translateCamera([dx,dy,dz])
+                resetCameraRoll() / getCameraVectors() -> {forward,up,right}
 
-        shader is optional — if omitted the built-in default shader is used (pure fill/albedo,
-        no lighting). The default shader reads a_position(loc 0) and a_uv(loc 1).
+Render:         render()  - call from your rAF loop
 
-        attributes is optional — declares the vertex layout for VAO wiring. Required when using
-        the default shader with a vertex buffer that has extra fields (e.g. position+normal+uv).
-        When omitted with a user shader, the shader's own declared layout is used.
+Default shader: pos(3) + uv(2) + boneID(4) + boneWeight(4)
+                Skinning is built in. Non-skinned models work seamlessly because the missing
+                boneWeight attribute defaults to (0,0,0,0) → shader collapses to identity skin.
 
-        Each primitive draws a sub-range of the shared index buffer.
-        material is optional per-primitive: { albedo?, fill?:[r,g,b,a] }
-            albedo: key of a previously uploaded texture (used as the albedo map)
-            fill:   [r,g,b,a] flat color sent as u_fill; if albedo is also set,
-                    the shader receives both — blend logic lives in the shader.
-        If primitives is omitted, a single primitive covering all indices is assumed.
-
-    removeModel(key)
-    getModelInfo(key)->{key, shader,
-                        primitives:[{ indexOffset, indexCount, material }],
-                        vertexCount, indexCount }
-
-# Instances:
-    addInstance(modelKey, transform?)   -> instanceKey  (e.g. "i0")
-        transform: mat4 Float32Array, or { position?, rotation?, scale? } or omitted (identity)
-
-    removeInstance(instanceKey)         -> true | false
-    setInstanceTransform(instanceKey, transform)
-        transform: mat4 Float32Array — raw, used directly
-                OR { position?:[x,y,z], rotation?:[x,y,z,w], scale?:[sx,sy,sz] } — quaternion compose
-                OR { position?:[x,y,z], euler?:[rx,ry,rz],   scale?:[sx,sy,sz] } — euler ZYX helper → quat
-    getInstanceInfo(instanceKey)        -> { key, modelKey, transform:mat4 }
-
-# Camera:
-    setCamera({ position?, yaw?, pitch?, fov?, near?, far? })
-        All fields optional — only supplied fields are updated.
-        Matrices are rebuilt immediately on every setCamera() call.
-        yaw/pitch in radians. fov in radians (vertical).
-    getCamera()                 -> { position, yaw, pitch, fov, near, far }
-
-# Rendering:
-    render()    draw one frame — call this from your own rAF/game loop.
-                No internal loop is managed by EzCanvas3D.
-
-# Notes:
-    -   Primitives within a model share one VAO / VBO / EBO and the same instance
-        transforms — only the index sub-range and material differ per primitive.
-    -   Per-instance model matrix is uploaded via a mat4 instance attribute (location 4-7).
-        Shaders must declare: layout(location=4) in mat4 a_instanceMatrix;
-    -   Built-in material uniforms set automatically before each primitive draw:
-            uniform sampler2D u_albedo;     // bound to TEXTURE0 (the albedo texture)
-            uniform int       u_useAlbedo;  // 1 if an albedo texture is bound, else 0
-            uniform vec4      u_fill;       // fill colour (default vec4(1))
-    -   Lighting or other custom uniforms: set via renderHook.
-        renderHook(gl, programHandle) is called once per shader batch before any draws.
+Notes:
+    -   Instance mat4 occupies the 4 attribute slots starting at the shader's `a_instanceMatrix`
+        location (auto-resolved via gl.getAttribLocation). Convention name: `a_instanceMatrix`.
+    -   Built-in uniforms (auto-bound when present): u_view, u_projection, u_albedo, u_useAlbedo,
+        u_fill, u_bones[64].
+    -   Skinned models draw per-instance (own bone palette per instance); static models batch via
+        drawElementsInstanced.
+    -   renderHook(gl, program) fires once per shader batch for custom uniforms.
 */
 
 (function () {
@@ -96,66 +63,90 @@ By Asciiz
     const isObj = v => v !== null && typeof v === "object";
 
     const Mat4 = {
-        identity() {
-            return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
-        },
+        identity() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
 
+        // Column-major multiply: out = a * b
         multiply(a, b) {
             const o = new Float32Array(16);
-            for (let c = 0; c < 4; c++)
-                for (let r = 0; r < 4; r++) {
-                    let s = 0;
-                    for (let k = 0; k < 4; k++) s += a[k*4+r] * b[c*4+k];
-                    o[c*4+r] = s;
-                }
+            for (let c = 0; c < 4; c++) {
+                const b0=b[c*4], b1=b[c*4+1], b2=b[c*4+2], b3=b[c*4+3];
+                o[c*4  ] = a[0]*b0 + a[4]*b1 + a[ 8]*b2 + a[12]*b3;
+                o[c*4+1] = a[1]*b0 + a[5]*b1 + a[ 9]*b2 + a[13]*b3;
+                o[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
+                o[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
+            }
             return o;
+        },
+
+        // General 4x4 inverse (gl-matrix algorithm). Returns identity if singular.
+        invert(m) {
+            const a00=m[0],  a01=m[1],  a02=m[2],  a03=m[3];
+            const a10=m[4],  a11=m[5],  a12=m[6],  a13=m[7];
+            const a20=m[8],  a21=m[9],  a22=m[10], a23=m[11];
+            const a30=m[12], a31=m[13], a32=m[14], a33=m[15];
+            const b00 = a00*a11 - a01*a10, b01 = a00*a12 - a02*a10, b02 = a00*a13 - a03*a10;
+            const b03 = a01*a12 - a02*a11, b04 = a01*a13 - a03*a11, b05 = a02*a13 - a03*a12;
+            const b06 = a20*a31 - a21*a30, b07 = a20*a32 - a22*a30, b08 = a20*a33 - a23*a30;
+            const b09 = a21*a32 - a22*a31, b10 = a21*a33 - a23*a31, b11 = a22*a33 - a23*a32;
+            const det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
+            if (!det) return Mat4.identity();
+            const id = 1 / det;
+            return new Float32Array([
+                (a11*b11 - a12*b10 + a13*b09) * id,
+                (a02*b10 - a01*b11 - a03*b09) * id,
+                (a31*b05 - a32*b04 + a33*b03) * id,
+                (a22*b04 - a21*b05 - a23*b03) * id,
+                (a12*b08 - a10*b11 - a13*b07) * id,
+                (a00*b11 - a02*b08 + a03*b07) * id,
+                (a32*b02 - a30*b05 - a33*b01) * id,
+                (a20*b05 - a22*b02 + a23*b01) * id,
+                (a10*b10 - a11*b08 + a13*b06) * id,
+                (a01*b08 - a00*b10 - a03*b06) * id,
+                (a30*b04 - a31*b02 + a33*b00) * id,
+                (a21*b02 - a20*b04 - a23*b00) * id,
+                (a11*b07 - a10*b09 - a12*b06) * id,
+                (a00*b09 - a01*b07 + a02*b06) * id,
+                (a31*b01 - a30*b03 - a32*b00) * id,
+                (a20*b03 - a21*b01 + a22*b00) * id,
+            ]);
         },
 
         perspective(fovY, aspect, near, far) {
             const f = 1.0 / Math.tan(fovY / 2), nf = 1 / (near - far);
             return new Float32Array([
-                f/aspect, 0, 0,                0,
-                0,        f, 0,                0,
-                0,        0, (far+near)*nf,    -1,
-                0,        0, (2*far*near)*nf,   0,
+                f/aspect, 0, 0,             0,
+                0,        f, 0,             0,
+                0,        0, (far+near)*nf, -1,
+                0,        0, 2*far*near*nf,  0,
             ]);
         },
 
-        fpView(pos, yaw, pitch) {
-            const cy = Math.cos(yaw),   sy = Math.sin(yaw);
-            const cp = Math.cos(pitch), sp = Math.sin(pitch);
-            const fx = sy*cp, fy = -sp, fz = -cy*cp;
-            const rl = Math.hypot(cy, sy);
-            const rx = cy/rl, ry = 0, rz = sy/rl;
-            const ux = ry*fz - rz*fy;
-            const uy = rz*fx - rx*fz;
-            const uz = rx*fy - ry*fx;
-            const [px, py, pz] = pos;
+        lookAt(eye, target, up) {
+            const [px, py, pz] = eye;
+            let fx = target[0]-px, fy = target[1]-py, fz = target[2]-pz;
+            const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
+            const [ux, uy, uz] = up;
+            let rx = fy*uz - fz*uy, ry = fz*ux - fx*uz, rz = fx*uy - fy*ux;
+            const rl = Math.hypot(rx, ry, rz) || 1; rx /= rl; ry /= rl; rz /= rl;
+            const Ux = ry*fz - rz*fy, Uy = rz*fx - rx*fz, Uz = rx*fy - ry*fx;
             return new Float32Array([
-                rx, ux, -fx, 0,
-                ry, uy, -fy, 0,
-                rz, uz, -fz, 0,
-                -(rx*px+ry*py+rz*pz),
-                -(ux*px+uy*py+uz*pz),
-                 (fx*px+fy*py+fz*pz),
-                1,
+                rx,                   Ux,                   -fx, 0,
+                ry,                   Uy,                   -fy, 0,
+                rz,                   Uz,                   -fz, 0,
+                -(rx*px+ry*py+rz*pz), -(Ux*px+Uy*py+Uz*pz), fx*px+fy*py+fz*pz, 1,
             ]);
         },
 
         compose(pos = [0,0,0], quat = [0,0,0,1], scale = [1,1,1]) {
-            const [qx, qy, qz, qw] = quat;
-            const [scx, scy, scz]  = scale;
-            // Pre-compute repeated products.
+            const [qx, qy, qz, qw] = quat, [sx, sy, sz] = scale;
             const x2=qx+qx, y2=qy+qy, z2=qz+qz;
-            const xx=qx*x2, xy=qx*y2, xz=qx*z2;
-            const yy=qy*y2, yz=qy*z2, zz=qz*z2; 
+            const xx=qx*x2, xy=qx*y2, xz=qx*z2, yy=qy*y2, yz=qy*z2, zz=qz*z2;
             const wx=qw*x2, wy=qw*y2, wz=qw*z2;
-            // Rotation matrix columns (scaled):
             return new Float32Array([
-                (1-(yy+zz))*scx,  (xy+wz)*scx,      (xz-wy)*scx,      0,  // col 0
-                (xy-wz)*scy,      (1-(xx+zz))*scy,  (yz+wx)*scy,      0,  // col 1
-                (xz+wy)*scz,      (yz-wx)*scz,      (1-(xx+yy))*scz,  0,  // col 2
-                pos[0], pos[1], pos[2], 1,                                // col 3
+                (1-(yy+zz))*sx, (xy+wz)*sx,     (xz-wy)*sx,     0,
+                (xy-wz)*sy,     (1-(xx+zz))*sy, (yz+wx)*sy,     0,
+                (xz+wy)*sz,     (yz-wx)*sz,     (1-(xx+yy))*sz, 0,
+                pos[0], pos[1], pos[2], 1,
             ]);
         },
 
@@ -163,14 +154,8 @@ By Asciiz
             if (t instanceof Float32Array && t.length === 16) return t;
             if (!isObj(t)) return existing ?? Mat4.identity();
             const pos   = t.position ?? [existing?.[12]??0, existing?.[13]??0, existing?.[14]??0];
-            const scale = t.scale    ?? [1,1,1];
-            // Support euler helper: { euler:[rx,ry,rz] } → convert ZYX → quaternion.
-            let quat;
-            if (t.euler) {
-                quat = Quat.fromEulerZYX(t.euler);
-            } else {
-                quat = t.rotation ?? [0,0,0,1];
-            }
+            const scale = t.scale ?? [1,1,1];
+            const quat  = t.euler ? Quat.fromEulerZYX(t.euler) : (t.rotation ?? [0,0,0,1]);
             return Mat4.compose(pos, quat, scale);
         },
     };
@@ -178,8 +163,16 @@ By Asciiz
     const Quat = {
         identity() { return [0, 0, 0, 1]; },
 
-        multiply(a, b) {
-            const [ax,ay,az,aw] = a, [bx,by,bz,bw] = b;
+        rotateVec([qx, qy, qz, qw], [vx, vy, vz]) {
+            const tx = 2*(qy*vz - qz*vy), ty = 2*(qz*vx - qx*vz), tz = 2*(qx*vy - qy*vx);
+            return [
+                vx + qw*tx + qy*tz - qz*ty,
+                vy + qw*ty + qz*tx - qx*tz,
+                vz + qw*tz + qx*ty - qy*tx,
+            ];
+        },
+
+        multiply([ax,ay,az,aw], [bx,by,bz,bw]) {
             return [
                 aw*bx + ax*bw + ay*bz - az*by,
                 aw*by - ax*bz + ay*bw + az*bx,
@@ -188,48 +181,40 @@ By Asciiz
             ];
         },
 
-        normalize(q) {
-            const [x,y,z,w] = q;
-            const len = Math.hypot(x,y,z,w) || 1;
-            return [x/len, y/len, z/len, w/len];
+        normalize([x,y,z,w]) {
+            const l = Math.hypot(x,y,z,w) || 1;
+            return [x/l, y/l, z/l, w/l];
         },
 
-        fromAxisAngle(axis, angle) {
-            const len = Math.hypot(...axis) || 1;
-            const [ax,ay,az] = axis.map(v => v/len);
-            const s = Math.sin(angle / 2);
-            return [ax*s, ay*s, az*s, Math.cos(angle / 2)];
+        fromAxisAngle([ax,ay,az], angle) {
+            const l = Math.hypot(ax,ay,az) || 1, s = Math.sin(angle/2);
+            return [ax/l*s, ay/l*s, az/l*s, Math.cos(angle/2)];
+        },
+
+        // yaw=0,pitch=0 → looking down -Z. Angles in degrees.
+        fromEulerYPR(yawDeg, pitchDeg, rollDeg) {
+            const d2r = Math.PI / 180;
+            const qY = Quat.fromAxisAngle([0, 1, 0],  yawDeg   * d2r);
+            const qP = Quat.fromAxisAngle([1, 0, 0],  pitchDeg * d2r);
+            const q  = Quat.normalize(Quat.multiply(qY, qP));
+            if (!rollDeg) return q;
+            return Quat.normalize(Quat.multiply(q, Quat.fromAxisAngle([0, 0, -1], rollDeg * d2r)));
         },
 
         fromEulerZYX([ex, ey, ez]) {
-            const hx = ex*0.5, hy = ey*0.5, hz = ez*0.5;
-            const cx = Math.cos(hx), sx = Math.sin(hx);
-            const cy = Math.cos(hy), sy = Math.sin(hy);
-            const cz = Math.cos(hz), sz = Math.sin(hz);
-            return [
-                sx*cy*cz - cx*sy*sz,
-                cx*sy*cz + sx*cy*sz,
-                cx*cy*sz - sx*sy*cz,
-                cx*cy*cz + sx*sy*sz,
-            ];
+            const cx = Math.cos(ex*.5), sx = Math.sin(ex*.5);
+            const cy = Math.cos(ey*.5), sy = Math.sin(ey*.5);
+            const cz = Math.cos(ez*.5), sz = Math.sin(ez*.5);
+            return [sx*cy*cz-cx*sy*sz, cx*sy*cz+sx*cy*sz, cx*cy*sz-sx*sy*cz, cx*cy*cz+sx*sy*sz];
         },
 
         slerp(a, b, t) {
-            let [ax,ay,az,aw] = a;
-            let [bx,by,bz,bw] = b;
+            let [ax,ay,az,aw] = a, [bx,by,bz,bw] = b;
             let dot = ax*bx + ay*by + az*bz + aw*bw;
-
-            // Choose shortest path.
             if (dot < 0) { bx=-bx; by=-by; bz=-bz; bw=-bw; dot=-dot; }
-            if (dot > 0.9995) {
-                // Linear fallback for nearly identical quaternions.
-                return Quat.normalize([ax+t*(bx-ax), ay+t*(by-ay), az+t*(bz-az), aw+t*(bw-aw)]);
-            }
-
-            const theta0 = Math.acos(dot);
-            const theta  = theta0 * t;
-            const s0 = Math.cos(theta) - dot * Math.sin(theta) / Math.sin(theta0);
-            const s1 = Math.sin(theta) / Math.sin(theta0);
+            if (dot > 0.9995) return Quat.normalize([ax+t*(bx-ax), ay+t*(by-ay), az+t*(bz-az), aw+t*(bw-aw)]);
+            const th0 = Math.acos(dot), th = th0*t;
+            const s0 = Math.cos(th) - dot*Math.sin(th)/Math.sin(th0), s1 = Math.sin(th)/Math.sin(th0);
             return [s0*ax+s1*bx, s0*ay+s1*by, s0*az+s1*bz, s0*aw+s1*bw];
         },
     };
@@ -276,23 +261,41 @@ By Asciiz
 
 
     // Default shader
-    // Pure flat colour with no lighting at all
-    // Supports the same built-in uniforms as user shaders so the engine's
-    // material pipeline works identically (u_fill, u_useAlbedo, u_albedo,
-    // u_view, u_projection).  Instance matrix at locations 4-7
+    // Skin-capable. Vertex layout (any subset valid):
+    //   pos(3) + uv(2) + boneID(4) + boneWeight(4)
+    // Missing attributes default via gl.vertexAttrib4f to:
+    //   uv         = (0,0)
+    //   boneID     = (0,0,0,0)
+    //   boneWeight = (0,0,0,0)  -> sum=0 -> skin matrix collapses to identity, no deformation.
+    // Instance matrix occupies the 4 attribute slots starting after the last vertex attribute.
 
+    const MAX_BONES         = 64;
     const _DEFAULT_SHADER_KEY = "__ez_default__";
 
     const _DEFAULT_VERT = `#version 300 es
+        const int MAX_BONES = ${MAX_BONES};
         layout(location=0) in vec3 a_position;
         layout(location=1) in vec2 a_uv;
+        layout(location=2) in vec4 a_boneID;
+        layout(location=3) in vec4 a_boneWeight;
         layout(location=4) in mat4 a_instanceMatrix;
         uniform mat4 u_view;
         uniform mat4 u_projection;
+        uniform mat4 u_bones[MAX_BONES];
         out vec2 v_uv;
         void main() {
             v_uv = a_uv;
-            gl_Position = u_projection * u_view * a_instanceMatrix * vec4(a_position, 1.0);
+            float wsum = a_boneWeight.x + a_boneWeight.y + a_boneWeight.z + a_boneWeight.w;
+            mat4 skin;
+            if (wsum < 0.0001) {
+                skin = mat4(1.0);
+            } else {
+                skin = a_boneWeight.x * u_bones[int(a_boneID.x)]
+                     + a_boneWeight.y * u_bones[int(a_boneID.y)]
+                     + a_boneWeight.z * u_bones[int(a_boneID.z)]
+                     + a_boneWeight.w * u_bones[int(a_boneID.w)];
+            }
+            gl_Position = u_projection * u_view * a_instanceMatrix * skin * vec4(a_position, 1.0);
         }`;
 
     const _DEFAULT_FRAG = `#version 300 es
@@ -323,15 +326,31 @@ By Asciiz
         #instanceCounter = 0;
 
         #cam = {
-            position: [0, 0, 3],
-            yaw:      0,
-            pitch:    0,
-            fov:      Math.PI / 4,
-            near:     0.1,
-            far:      1000,
+            pos:         [0, 0, 3],
+            orientation: [0, 0, 0, 1], // quaternion [x,y,z,w]
+            pitch:       0,            // degrees, cached
+            yaw:         0,            // degrees, cached
+            roll:        0,            // degrees, cached
+            forward:     [0, 0, -1],   // derived, kept in sync
+            up:          [0, 1,  0],   // derived, kept in sync
+            right:       [1, 0,  0],   // derived, kept in sync
+            fov:         45,           // degrees
+            near:        0.1,
+            far:         1000,
         };
         #proj = null;
         #view = null;
+
+        settings = {
+            width: () => this.#canvas.width,
+            height: () => this.#canvas.height,
+            fitContainer: () => {
+                const parent = this.#canvas.parentElement;
+                if (!parent) return;
+                const rect = parent.getBoundingClientRect();
+                this.resize(rect.width, rect.height);
+            }
+        };
 
         // Override to set custom uniforms once per shader batch before draws.
         renderHook = (gl, program) => {};
@@ -343,71 +362,89 @@ By Asciiz
             c.id     = `ez-canvas3d-${name}`;
             c.width  = 800;
             c.height = 600;
+            c.style.background = "transparent";
             this.#canvas = c;
 
-            const gl = c.getContext("webgl2");
+            const gl = c.getContext("webgl2", { alpha: true });
             if (!gl) throw new Error("EzCanvas3D: WebGL2 not supported");
             this.#gl = gl;
 
             gl.enable(gl.DEPTH_TEST);
             gl.enable(gl.CULL_FACE);
-            gl.clearColor(0, 0, 0, 1);
+            // Make canvas background transparent and blend fragment alpha into the page.
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.clearColor(0, 0, 0, 0);
 
             this.#addDefaultShader();
-            this.#rebuildMatrices();
+            this.#camUpdate();
         }
 
-        /* mount */
-
         getCanvas() { return this.#canvas; }
-        mount(el)   { if (el instanceof Element) el.appendChild(this.#canvas); return this; }
+        mount(el)   { 
+            if (el instanceof Element) el.appendChild(this.#canvas); 
+            return this; 
+        }
         unmount()   { this.#canvas.parentElement?.removeChild(this.#canvas);   return this; }
 
         resize(w, h) {
             this.#canvas.width  = w;
             this.#canvas.height = h;
             this.#gl.viewport(0, 0, w, h);
-            this.#rebuildMatrices(); // aspect ratio changed
+            this.#camUpdate(); // aspect ratio changed
             return this;
         }
 
         /* shaders */
 
+        // attributes: [{ name, size, default?:[r,g,b,a] }, ...]
+        //   Declares the FULL set of per-vertex attributes the shader can consume.
+        //   Models may provide any subset of these in their VBO; missing ones fall back
+        //   to the per-attribute `default` (sent via gl.vertexAttrib4f at draw time).
+        //   Defaults are extended/truncated to length 4. If omitted, falls back to (0,0,0,0).
         addShader(key, { vert, frag, attributes }) {
             if (!isStr(key) || !isStr(vert) || !isStr(frag) || !Array.isArray(attributes)) return false;
             if (key === _DEFAULT_SHADER_KEY) {
                 console.warn("[EzCanvas3D] addShader: key is reserved");
                 return false;
             }
-            const gl = this.#gl;
+            return this.#registerShader(key, vert, frag, attributes);
+        }
 
+        #registerShader(key, vert, frag, attributes) {
+            const gl = this.#gl;
             const program = createProgram(gl, vert, frag);
             if (!program) return false;
 
-            // Compute stride + per-attribute byte offsets.
-            // All vertex attributes are assumed to be gl.FLOAT.
-            let offset = 0;
             const attrs = attributes.map(a => {
-                const entry = { name: a.name, size: a.size, offset };
-                offset += a.size * 4; // 4 bytes per float
-                return entry;
+                const def = Array.isArray(a.default) ? a.default : [0, 0, 0, 0];
+                return {
+                    name: a.name,
+                    size: a.size,
+                    default: [def[0]??0, def[1]??0, def[2]??0, def[3]??0],
+                    loc: gl.getAttribLocation(program, a.name),
+                };
             });
-            const stride = offset;
 
-            // Cache attribute locations.
             const locs = {};
-            for (const a of attrs) locs[a.name] = gl.getAttribLocation(program, a.name);
+            for (const a of attrs) locs[a.name] = a.loc;
 
-            // Built-in uniform locations — non-fatal if absent in a shader.
             const uloc = {
                 view:       gl.getUniformLocation(program, "u_view"),
                 projection: gl.getUniformLocation(program, "u_projection"),
                 albedo:     gl.getUniformLocation(program, "u_albedo"),
                 useAlbedo:  gl.getUniformLocation(program, "u_useAlbedo"),
                 fill:       gl.getUniformLocation(program, "u_fill"),
+                bones:      gl.getUniformLocation(program, "u_bones[0]")
+                          ?? gl.getUniformLocation(program, "u_bones"),
             };
 
-            this.#shaders.set(key, { program, attributes: attrs, stride, locs, uloc });
+            // Resolve instance-matrix location. Conventional name "a_instanceMatrix";
+            // falls back to "right after the last vertex attribute" when not declared.
+            let instanceLoc = gl.getAttribLocation(program, "a_instanceMatrix");
+            if (instanceLoc < 0) instanceLoc = attrs.length;
+
+            this.#shaders.set(key, { program, attributes: attrs, locs, uloc, instanceLoc });
             return true;
         }
 
@@ -424,7 +461,10 @@ By Asciiz
 
         getShaderInfo(key) {
             const s = this.#shaders.get(key); if (!s) return null;
-            return { key, attributes: s.attributes.map(a => ({ name: a.name, size: a.size })), stride: s.stride };
+            return {
+                key,
+                attributes: s.attributes.map(a => ({ name: a.name, size: a.size, default: [...a.default] })),
+            };
         }
 
         /* textures */
@@ -486,29 +526,67 @@ By Asciiz
         }
 
 
-        // primitives:  [{ indexOffset, indexCount, material? }]
-        // material:    { albedo?: key, fill?: [r,g,b,a] }
-        // attributes:  optional [{name, size}] vertex layout override — required when using the
-        //   default shader with a non-standard layout (e.g. position+normal+uv).
-        //   When omitted with a user shader, the shader's own declared layout is used.
-        addModel(key, { shader: shaderKey, vertices, indices, primitives, attributes: layoutOverride }) {
-            if (!isStr(key) || !vertices || !indices) return false;
+        // addModel(key, opts?)
+        //   key         (required) string id for this model
+        //   opts.shader      shader key (defaults to built-in)
+        //   opts.vertices    Float32Array
+        //   opts.indices     Uint16Array | Uint32Array
+        //   opts.attributes  [{name,size}, ...] - what's actually present in vertices, in order.
+        //                    Must be a subset of the shader's declared attributes (by name).
+        //                    Missing shader attrs auto-fall-back to per-attribute defaults.
+        //                    When omitted, defaults to [{name:"a_position",size:3},{name:"a_uv",size:2}].
+        //   opts.primitives  [{indexOffset,indexCount,material?}, ...] - defaults to one whole-buffer primitive.
+        //   opts.skeleton    { bones:[{parent, localBind?, inverseBind?}, ...] }
+        //                    parent: int (-1 = root, otherwise index of parent bone - must be < own index)
+        //                    localBind: bone bind transform relative to parent (mat4 or {position,rotation,scale,euler}).
+        //                               Defaults to identity.
+        //                    inverseBind: optional precomputed mat4. If omitted, computed from the
+        //                                 localBind chain via Mat4.invert(globalBind).
+        //   Per-instance transformation lives on instances (not the model).
+        addModel(key, opts = {}) {
+            if (!isStr(key)) return false;
+            const { shader: shaderKeyIn, vertices, indices, attributes, primitives, skeleton } = opts;
 
-            // Fall back to the built-in default shader when none is specified.
-            shaderKey = isStr(shaderKey) ? shaderKey : _DEFAULT_SHADER_KEY;
-
+            const shaderKey = isStr(shaderKeyIn) ? shaderKeyIn : _DEFAULT_SHADER_KEY;
             const shader = this.#shaders.get(shaderKey);
             if (!shader) {
                 console.warn(`[EzCanvas3D] addModel: shader "${shaderKey}" not found`);
                 return false;
             }
+            if (!vertices || !indices) {
+                console.warn(`[EzCanvas3D] addModel "${key}": vertices and indices required`);
+                return false;
+            }
 
             const gl = this.#gl;
-            const indexType = indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-            // Byte size of one index element — needed for the byte-offset in drawElementsInstanced.
+            const indexType  = indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
             const indexBytes = indices instanceof Uint32Array ? 4 : 2;
 
-            // Normalise primitive list — default to one covering entire index buffer.
+            // Resolve model layout: what's IN the VBO, in order.
+            const modelAttrsIn = Array.isArray(attributes) && attributes.length
+                ? attributes
+                : [{ name: "a_position", size: 3 }, { name: "a_uv", size: 2 }];
+
+            // Build VBO layout (offsets/stride).
+            let off = 0;
+            const modelAttrs = modelAttrsIn.map(a => {
+                const e = { name: a.name, size: a.size, offset: off };
+                off += a.size * 4;
+                return e;
+            });
+            const vaoStride = off;
+
+            // For each shader attribute: either bind from VBO (model has it) or record fallback default.
+            const wired   = [];   // { loc, size, offset } - wired from VBO
+            const defaulted = []; // { loc, default[4]    } - applied via vertexAttrib4f at draw time
+            for (const sa of shader.attributes) {
+                if (sa.loc < 0) continue;
+                const ma = modelAttrs.find(m => m.name === sa.name);
+                if (ma) wired.push({ loc: sa.loc, size: ma.size, offset: ma.offset });
+                else    defaulted.push({ loc: sa.loc, default: sa.default });
+            }
+
+            // Normalise primitive list.
             const primList = Array.isArray(primitives) && primitives.length > 0
                 ? primitives.map(p => ({
                     indexOffset: p.indexOffset ?? 0,
@@ -520,7 +598,6 @@ By Asciiz
                 }))
                 : [{ indexOffset: 0, indexCount: indices.length, material: { albedo: null, fill: [1,1,1,1] } }];
 
-            // Validate index ranges in dev builds.
             for (const p of primList) {
                 if (p.indexOffset < 0 || p.indexOffset + p.indexCount > indices.length) {
                     console.warn(`[EzCanvas3D] addModel "${key}": primitive index range out of bounds`);
@@ -528,55 +605,63 @@ By Asciiz
                 }
             }
 
+            // ── Skeleton: resolve localBind, compute inverseBind chain ──
+            let resolvedSkeleton = null;
+            if (skeleton && Array.isArray(skeleton.bones) && skeleton.bones.length > 0) {
+                if (skeleton.bones.length > MAX_BONES) {
+                    console.warn(`[EzCanvas3D] addModel "${key}": skeleton has ${skeleton.bones.length} bones (max ${MAX_BONES})`);
+                    return false;
+                }
+                const bones = [];
+                const globalBind = []; // accumulates world bind matrices
+                for (let i = 0; i < skeleton.bones.length; i++) {
+                    const b = skeleton.bones[i];
+                    const parent = b.parent ?? -1;
+                    if (parent >= i) {
+                        console.warn(`[EzCanvas3D] addModel "${key}": bone ${i} parent must be < self`);
+                        return false;
+                    }
+                    const localBind = Mat4.resolveTransform(b.localBind ?? null, null);
+                    const gb = parent < 0 ? localBind : Mat4.multiply(globalBind[parent], localBind);
+                    globalBind[i] = gb;
+                    const inverseBind = b.inverseBind instanceof Float32Array && b.inverseBind.length === 16
+                        ? b.inverseBind
+                        : Mat4.invert(gb);
+                    bones.push({ parent, localBind, inverseBind });
+                }
+                resolvedSkeleton = { bones };
+            }
+
+            // ── VAO setup ──
             const vao = gl.createVertexArray();
             gl.bindVertexArray(vao);
 
-            // Resolve the attribute layout used to wire this VAO.
-            // Priority: explicit layoutOverride on the model > shader's own declared layout.
-            // An override is necessary when using the default shader with a vertex buffer
-            // that has a different layout (e.g. position+normal+uv vs the default's position+uv).
-            let vaoAttrs = shader.attributes; // default: use shader's own layout
-            if (Array.isArray(layoutOverride) && layoutOverride.length > 0) {
-                let offset = 0;
-                vaoAttrs = layoutOverride.map(a => {
-                    const entry = { name: a.name, size: a.size, offset };
-                    offset += a.size * 4;
-                    return entry;
-                });
-            }
-            const vaoStride = vaoAttrs.reduce((s, a) => s + a.size * 4, 0);
-
-            // VBO
             const vbo = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
             gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-            // Wire vertex attributes from the resolved layout.
-            for (const a of vaoAttrs) {
-                const loc = gl.getAttribLocation(shader.program, a.name);
-                if (loc < 0) continue;
-                gl.enableVertexAttribArray(loc);
-                gl.vertexAttribPointer(loc, a.size, gl.FLOAT, false, vaoStride, a.offset);
-                gl.vertexAttribDivisor(loc, 0); // per-vertex
+            for (const w of wired) {
+                gl.enableVertexAttribArray(w.loc);
+                gl.vertexAttribPointer(w.loc, w.size, gl.FLOAT, false, vaoStride, w.offset);
+                gl.vertexAttribDivisor(w.loc, 0);
+            }
+            for (const d of defaulted) {
+                gl.disableVertexAttribArray(d.loc);
             }
 
-            // EBO
             const ebo = gl.createBuffer();
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
             gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
-            // Instance VBO (mat4 per instance, locations 4-7)
-            // mat4 = 4 × vec4; each vec4 occupies one attribute slot.
+            // Instance VBO - mat4 per instance starting at shader.instanceLoc.
             const instanceVBO = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(0), gl.DYNAMIC_DRAW);
-
-            const INST_LOC = 4;
             for (let col = 0; col < 4; col++) {
-                const loc = INST_LOC + col;
+                const loc = shader.instanceLoc + col;
                 gl.enableVertexAttribArray(loc);
                 gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 64, col * 16);
-                gl.vertexAttribDivisor(loc, 1); // per-instance
+                gl.vertexAttribDivisor(loc, 1);
             }
 
             gl.bindVertexArray(null);
@@ -586,10 +671,9 @@ By Asciiz
                 vao, vbo, ebo, instanceVBO,
                 indexType, indexBytes,
                 primitives: primList,
-                _info: {
-                    vertexCount: Math.floor(vertices.length / shader.stride * 4),
-                    indexCount:  indices.length,
-                },
+                defaulted, // attribute defaults to apply at draw time
+                skeleton:  resolvedSkeleton, // null for static models
+                _info: { indexCount: indices.length, boneCount: resolvedSkeleton?.bones.length ?? 0 },
             });
             return true;
         }
@@ -627,12 +711,22 @@ By Asciiz
 
 
         addInstance(modelKey, transform = null) {
-            if (!this.#models.has(modelKey)) {
+            const model = this.#models.get(modelKey);
+            if (!model) {
                 console.warn(`[EzCanvas3D] addInstance: model "${modelKey}" not found`);
                 return null;
             }
             const key = `i${this.#instanceCounter++}`;
-            this.#instances.set(key, { modelKey, transform: Mat4.resolveTransform(transform, null) });
+            // bonePoses: per-bone *additional* local transform on top of the bind pose.
+            // Identity by default → no deformation, vertices follow the bind pose exactly.
+            const bonePoses = model.skeleton
+                ? Array.from({ length: model.skeleton.bones.length }, () => Mat4.identity())
+                : null;
+            this.#instances.set(key, {
+                modelKey,
+                transform: Mat4.resolveTransform(transform, null),
+                bonePoses,
+            });
             return key;
         }
 
@@ -646,134 +740,248 @@ By Asciiz
             return true;
         }
 
+        // Per-bone additional local transform (relative to bind pose).
+        // boneIdx: 0-based index into the model's skeleton.
+        // transform: mat4 Float32Array OR {position?, rotation?, scale?, euler?} OR null (identity).
+        setInstanceBonePose(key, boneIdx, transform) {
+            const inst = this.#instances.get(key); if (!inst || !inst.bonePoses) return false;
+            if (boneIdx < 0 || boneIdx >= inst.bonePoses.length) return false;
+            inst.bonePoses[boneIdx] = Mat4.resolveTransform(transform, inst.bonePoses[boneIdx]);
+            return true;
+        }
+
+        getInstanceBonePose(key, boneIdx) {
+            const inst = this.#instances.get(key); if (!inst || !inst.bonePoses) return null;
+            if (boneIdx < 0 || boneIdx >= inst.bonePoses.length) return null;
+            return new Float32Array(inst.bonePoses[boneIdx]);
+        }
+
         getInstanceInfo(key) {
             const inst = this.#instances.get(key); if (!inst) return null;
-            return { key, modelKey: inst.modelKey, transform: new Float32Array(inst.transform) };
+            return {
+                key,
+                modelKey: inst.modelKey,
+                transform: new Float32Array(inst.transform),
+                boneCount: inst.bonePoses?.length ?? 0,
+            };
         }
 
 
         setCamera(opts = {}) {
-            if ("position" in opts) this.#cam.position = opts.position;
-            if ("yaw"      in opts) this.#cam.yaw      = opts.yaw;
-            if ("pitch"    in opts) this.#cam.pitch     = opts.pitch;
-            if ("fov"      in opts) this.#cam.fov       = opts.fov;
-            if ("near"     in opts) this.#cam.near      = opts.near;
-            if ("far"      in opts) this.#cam.far       = opts.far;
-            this.#rebuildMatrices();
+            const c = this.#cam;
+            if ("position" in opts) c.pos = opts.position;
+            if ("fov"      in opts) c.fov  = opts.fov;
+            if ("near"     in opts) c.near = opts.near;
+            if ("far"      in opts) c.far  = opts.far;
+
+            if ("orientation" in opts) {
+                c.orientation = Quat.normalize(opts.orientation);
+                // Sync cached Euler from quat so future rotateCamera deltas are correct.
+                const e = Quat.toEulerYPR(c.orientation);
+                c.pitch = Math.max(-89, Math.min(89, e.pitch));
+                c.yaw   = e.yaw;
+                c.roll  = e.roll;
+            } else if ("yaw" in opts || "pitch" in opts || "roll" in opts) {
+                if ("yaw"   in opts) c.yaw   = opts.yaw;
+                if ("pitch" in opts) c.pitch = Math.max(-89, Math.min(89, opts.pitch));
+                if ("roll"  in opts) c.roll  = opts.roll;
+                c.orientation = Quat.fromEulerYPR(c.yaw, c.pitch, c.roll);
+            }
+
+            this.#camUpdate();
             return this;
         }
 
-        getCamera() { return { ...this.#cam, position: [...this.#cam.position] }; }
+        getCamera() {
+            const c = this.#cam;
+            return {
+                position:    [...c.pos],
+                yaw:         c.yaw,
+                pitch:       c.pitch,
+                roll:        c.roll,
+                fov:         c.fov,
+                near:        c.near,
+                far:         c.far,
+                orientation: [...c.orientation],
+            };
+        }
+
+        rotateCamera(pitchDelta, yawDelta, rollDelta = 0) {
+            const c = this.#cam;
+            c.pitch = Math.max(-89, Math.min(89, c.pitch + pitchDelta));
+            c.yaw  += yawDelta;
+            c.roll += rollDelta;
+            c.orientation = Quat.fromEulerYPR(c.yaw, c.pitch, c.roll);
+            this.#camUpdate();
+            return this;
+        }
+
+        translateCamera(offset) {
+            const p = this.#cam.pos, c = this.#cam;
+            c.pos = [p[0]+offset[0], p[1]+offset[1], p[2]+offset[2]];
+            this.#view = Mat4.lookAt(c.pos, [c.pos[0]+c.forward[0], c.pos[1]+c.forward[1], c.pos[2]+c.forward[2]], c.up);
+            return this;
+        }
+
+        resetCameraRoll() {
+            const c = this.#cam;
+            c.roll = 0;
+            c.orientation = Quat.normalize(Quat.fromEulerYPR(c.yaw, c.pitch, 0));
+            this.#camUpdate();
+            return this;
+        }
+
+        getCameraVectors() {
+            const c = this.#cam;
+            return {
+                forward: [...c.forward],
+                up:      [...c.up],
+                right:   [...c.right],
+            };
+        }
 
         // Draw one frame. Call this from your own requestAnimationFrame loop.
         render() {
             const gl = this.#gl;
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            // Group instances by shader → model
-            // shaderKey -> modelKey -> [mat4, ...]
+            // Group instances by shader → model. Skinned and static instances are
+            // tracked separately because skinned ones need a per-instance draw
+            // (each has its own bone palette uniform).
+            // shaderKey -> { static:Map<modelKey,[inst]>, skinned:Map<modelKey,[inst]> }
             const batches = new Map();
             for (const [, inst] of this.#instances) {
                 const model = this.#models.get(inst.modelKey); if (!model) continue;
                 const sk = model.shaderKey;
-                if (!batches.has(sk)) batches.set(sk, new Map());
-                const mb = batches.get(sk);
-                if (!mb.has(inst.modelKey)) mb.set(inst.modelKey, []);
-                mb.get(inst.modelKey).push(inst.transform);
+                let entry = batches.get(sk);
+                if (!entry) { entry = { static: new Map(), skinned: new Map() }; batches.set(sk, entry); }
+                const bucket = model.skeleton ? entry.skinned : entry.static;
+                if (!bucket.has(inst.modelKey)) bucket.set(inst.modelKey, []);
+                bucket.get(inst.modelKey).push(inst);
             }
 
-            // Draw each shader batch
-            for (const [shaderKey, modelBatch] of batches) {
+            for (const [shaderKey, { static: staticBatch, skinned: skinnedBatch }] of batches) {
                 const shader = this.#shaders.get(shaderKey); if (!shader) continue;
                 gl.useProgram(shader.program);
 
-                // Upload camera matrices (uniform locations may be null if unused — that's fine).
                 if (shader.uloc.view)       gl.uniformMatrix4fv(shader.uloc.view,       false, this.#view);
                 if (shader.uloc.projection) gl.uniformMatrix4fv(shader.uloc.projection, false, this.#proj);
-
-                // Caller hook: lighting, fog, custom uniforms, etc.
                 this.renderHook(gl, shader.program);
 
-                // Draw each model in this shader batch
-                for (const [modelKey, transforms] of modelBatch) {
+                // ── Static path: instanced batches ──
+                for (const [modelKey, instList] of staticBatch) {
                     const model = this.#models.get(modelKey); if (!model) continue;
-
-                    // Upload all instance transforms in one buffer upload.
-                    const flat = new Float32Array(transforms.length * 16);
-                    transforms.forEach((m, i) => flat.set(m, i * 16));
+                    const flat = new Float32Array(instList.length * 16);
+                    for (let i = 0; i < instList.length; i++) flat.set(instList[i].transform, i * 16);
                     gl.bindBuffer(gl.ARRAY_BUFFER, model.instanceVBO);
                     gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
 
                     gl.bindVertexArray(model.vao);
+                    this.#applyAttributeDefaults(model);
+                    this.#drawPrimitives(model, shader, instList.length);
+                    gl.bindVertexArray(null);
+                }
 
-                    // Draw each primitive (index sub-range + material)
-                    for (const prim of model.primitives) {
-                        const { indexOffset, indexCount, material } = prim;
+                // ── Skinned path: per-instance, upload bone palette ──
+                for (const [modelKey, instList] of skinnedBatch) {
+                    const model = this.#models.get(modelKey); if (!model) continue;
+                    gl.bindVertexArray(model.vao);
+                    this.#applyAttributeDefaults(model);
 
-                        // Bind albedo texture or signal "no albedo".
-                        if (material.albedo) {
-                            const tex = this.#textures.get(material.albedo);
-                            if (tex) {
-                                gl.activeTexture(gl.TEXTURE0);
-                                gl.bindTexture(gl.TEXTURE_2D, tex.glTex);
-                                if (shader.uloc.albedo    != null) gl.uniform1i(shader.uloc.albedo,    0);
-                                if (shader.uloc.useAlbedo != null) gl.uniform1i(shader.uloc.useAlbedo, 1);
-                            } else {
-                                if (shader.uloc.useAlbedo != null) gl.uniform1i(shader.uloc.useAlbedo, 0);
-                            }
-                        } else {
-                            if (shader.uloc.useAlbedo != null) gl.uniform1i(shader.uloc.useAlbedo, 0);
+                    for (const inst of instList) {
+                        // Upload single-element instance transform.
+                        gl.bindBuffer(gl.ARRAY_BUFFER, model.instanceVBO);
+                        gl.bufferData(gl.ARRAY_BUFFER, inst.transform, gl.DYNAMIC_DRAW);
+
+                        // Compute and upload bone palette (skin matrices).
+                        if (shader.uloc.bones) {
+                            const palette = this.#computeBonePalette(model.skeleton, inst.bonePoses);
+                            gl.uniformMatrix4fv(shader.uloc.bones, false, palette);
                         }
 
-                        // Upload fill colour (always set so shaders can rely on it).
-                        if (shader.uloc.fill != null) gl.uniform4fv(shader.uloc.fill, material.fill);
-
-                        // indexOffset is in elements; convert to byte offset for the GL call.
-                        const byteOffset = indexOffset * model.indexBytes;
-                        gl.drawElementsInstanced(
-                            gl.TRIANGLES,
-                            indexCount,
-                            model.indexType,
-                            byteOffset,
-                            transforms.length,
-                        );
+                        this.#drawPrimitives(model, shader, 1);
                     }
-
                     gl.bindVertexArray(null);
                 }
             }
         }
 
-
-        #addDefaultShader() {
+        // Apply per-attribute fallback defaults via vertexAttrib4f for attributes
+        // the model doesn't supply (set on global state, applied after VAO bind).
+        #applyAttributeDefaults(model) {
             const gl = this.#gl;
-            const program = createProgram(gl, _DEFAULT_VERT, _DEFAULT_FRAG);
-            if (!program) {
-                console.error("[EzCanvas3D] failed to compile default shader");
-                return;
+            for (const d of model.defaulted) {
+                gl.vertexAttrib4f(d.loc, d.default[0], d.default[1], d.default[2], d.default[3]);
             }
-            // Default layout: position(3) + uv(2).  Normal is intentionally absent
-            const attrs = [
-                { name: "a_position", size: 3, offset: 0  },
-                { name: "a_uv",       size: 2, offset: 12 },
-            ];
-            const stride = 20; // (3+2)*4 bytes
-            const locs = {};
-            for (const a of attrs) locs[a.name] = gl.getAttribLocation(program, a.name);
-            const uloc = {
-                view:       gl.getUniformLocation(program, "u_view"),
-                projection: gl.getUniformLocation(program, "u_projection"),
-                albedo:     gl.getUniformLocation(program, "u_albedo"),
-                useAlbedo:  gl.getUniformLocation(program, "u_useAlbedo"),
-                fill:       gl.getUniformLocation(program, "u_fill"),
-            };
-            this.#shaders.set(_DEFAULT_SHADER_KEY, { program, attributes: attrs, stride, locs, uloc });
         }
 
-        #rebuildMatrices() {
-            const { fov, near, far, position, yaw, pitch } = this.#cam;
-            this.#proj = Mat4.perspective(fov, this.#canvas.width / this.#canvas.height, near, far);
-            this.#view = Mat4.fpView(position, yaw, pitch);
+        // Issue per-primitive draw calls (material binding + drawElementsInstanced).
+        #drawPrimitives(model, shader, instanceCount) {
+            const gl = this.#gl;
+            for (const prim of model.primitives) {
+                const { indexOffset, indexCount, material } = prim;
+
+                if (material.albedo) {
+                    const tex = this.#textures.get(material.albedo);
+                    if (tex) {
+                        gl.activeTexture(gl.TEXTURE0);
+                        gl.bindTexture(gl.TEXTURE_2D, tex.glTex);
+                        if (shader.uloc.albedo    != null) gl.uniform1i(shader.uloc.albedo,    0);
+                        if (shader.uloc.useAlbedo != null) gl.uniform1i(shader.uloc.useAlbedo, 1);
+                    } else if (shader.uloc.useAlbedo != null) {
+                        gl.uniform1i(shader.uloc.useAlbedo, 0);
+                    }
+                } else if (shader.uloc.useAlbedo != null) {
+                    gl.uniform1i(shader.uloc.useAlbedo, 0);
+                }
+
+                if (shader.uloc.fill != null) gl.uniform4fv(shader.uloc.fill, material.fill);
+
+                gl.drawElementsInstanced(
+                    gl.TRIANGLES, indexCount, model.indexType,
+                    indexOffset * model.indexBytes, instanceCount,
+                );
+            }
+        }
+
+        // Build the bone-palette Float32Array (N*16 floats) for one instance.
+        // skin[i] = currentGlobal[i] * inverseBind[i]
+        // currentGlobal[i] = (parent<0 ? I : currentGlobal[parent]) * localBind[i] * localOffset[i]
+        #computeBonePalette(skeleton, bonePoses) {
+            const bones = skeleton.bones;
+            const n = bones.length;
+            const globalCurrent = new Array(n);
+            const palette = new Float32Array(n * 16);
+            for (let i = 0; i < n; i++) {
+                const b = bones[i];
+                const local = Mat4.multiply(b.localBind, bonePoses[i]);
+                globalCurrent[i] = b.parent < 0 ? local : Mat4.multiply(globalCurrent[b.parent], local);
+                const skin = Mat4.multiply(globalCurrent[i], b.inverseBind);
+                palette.set(skin, i * 16);
+            }
+            return palette;
+        }
+
+
+        #addDefaultShader() {
+            // Default shader's full attribute set: pos + uv + boneID + boneWeight.
+            // Models supplying any subset (e.g. only pos+uv) get auto-defaulted
+            // to (uv=0,0 / boneID=0 / boneWeight=0 → identity skin).
+            this.#registerShader(_DEFAULT_SHADER_KEY, _DEFAULT_VERT, _DEFAULT_FRAG, [
+                { name: "a_position",   size: 3, default: [0, 0, 0, 1] },
+                { name: "a_uv",         size: 2, default: [0, 0, 0, 0] },
+                { name: "a_boneID",     size: 4, default: [0, 0, 0, 0] },
+                { name: "a_boneWeight", size: 4, default: [0, 0, 0, 0] },
+            ]);
+        }
+
+        #camUpdate() {
+            const c = this.#cam;
+            c.forward = Quat.rotateVec(c.orientation, [0, 0, -1]);
+            c.right   = Quat.rotateVec(c.orientation, [1, 0,  0]);
+            c.up      = Quat.rotateVec(c.orientation, [0, 1,  0]);
+            this.#view = Mat4.lookAt(c.pos, [c.pos[0]+c.forward[0], c.pos[1]+c.forward[1], c.pos[2]+c.forward[2]], c.up);
+            this.#proj = Mat4.perspective(c.fov * Math.PI / 180, this.#canvas.width / this.#canvas.height, c.near, c.far);
         }
     }
 
