@@ -7,8 +7,9 @@ Holy shi guys, I finally stopped using Canvas2D for rendering 3d stuff lmao
 No more Z-fighting or painter algorithm, goddamn
 
 Constructor:    new EzCanvas3D(name)
-Config:         setCfg({ fitContainer?, ... })
-                cfg.width / cfg.height / cfg.aspectRatio (read-only getters)
+.settings       width()/height() getters
+                fitContainer() resize the canvas to the container size
+
 Mount:          getCanvas() / mount(el) / unmount() / resize(w,h)
 
 Shaders:        addShader(key, { vert, frag, attributes }) / removeShader(key) / getShaderInfo(key)
@@ -45,7 +46,7 @@ Render:         render()  - call from your rAF loop
 
 Default shader: pos(3) + uv(2) + boneID(4) + boneWeight(4)
                 Skinning is built in. Non-skinned models work seamlessly because the missing
-                boneWeight attribute defaults to (0,0,0,0) → shader collapses to identity skin.
+                boneWeight attribute defaults to (0,0,0,0) -> shader collapses to identity skin.
 
 Notes:
     -   Instance mat4 occupies the 4 attribute slots starting at the shader's `a_instanceMatrix`
@@ -192,7 +193,7 @@ Notes:
             return [ax/l*s, ay/l*s, az/l*s, Math.cos(angle/2)];
         },
 
-        // yaw=0,pitch=0 → looking down -Z. Angles in degrees.
+        // yaw=0,pitch=0 -> looking down -Z. Angles in degrees.
         fromEulerYPR(yawDeg, pitchDeg, rollDeg) {
             const d2r = Math.PI / 180;
             const qY = Quat.fromAxisAngle([0, 1, 0],  yawDeg   * d2r);
@@ -750,7 +751,7 @@ Notes:
             }
             const key = `i${this.#instanceCounter++}`;
             // bonePoses: per-bone *additional* local transform on top of the bind pose.
-            // Identity by default → no deformation, vertices follow the bind pose exactly.
+            // Identity by default -> no deformation, vertices follow the bind pose exactly.
             const bonePoses = model.skeleton
                 ? Array.from({ length: model.skeleton.bones.length }, () => Mat4.identity())
                 : null;
@@ -877,7 +878,7 @@ Notes:
             const gl = this.#gl;
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            // Group instances by shader → model. Skinned and static instances are
+            // Group instances by shader -> model. Skinned and static instances are
             // tracked separately because skinned ones need a per-instance draw
             // (each has its own bone palette uniform).
             // shaderKey -> { static:Map<modelKey,[inst]>, skinned:Map<modelKey,[inst]> }
@@ -995,7 +996,7 @@ Notes:
         #addDefaultShader() {
             // Default shaders share the same attribute set: pos + uv + boneID + boneWeight.
             // Models supplying any subset (e.g. only pos+uv) get auto-defaulted
-            // to (uv=0,0 / boneID=0 / boneWeight=0 → identity skin).
+            // to (uv=0,0 / boneID=0 / boneWeight=0 -> identity skin).
             const attrs = [
                 { name: "a_position",   size: 3, default: [0, 0, 0, 1] },
                 { name: "a_uv",         size: 2, default: [0, 0, 0, 0] },
