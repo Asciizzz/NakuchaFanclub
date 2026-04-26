@@ -13,29 +13,44 @@ Constructor:    new EzCanvas3D(name)
 Mount:          getCanvas() / mount(el) / unmount() / resize(w,h) / readCanvas()
 
 Shaders:        addShader(key, { vert, frag, attributes }) / removeShader(key) / readShader(key)
-                  attributes: [{ name, size, default?:[r,g,b,a] }, ...]
-                  Declares the FULL set of per-vertex inputs the shader can consume. Any model
-                  may supply ANY SUBSET - missing attributes fall back to per-attribute defaults
-                  (sent via gl.vertexAttrib4f at draw). Defaults pad/truncate to length 4.
+                    attributes: [{ name, size, default?:[r,g,b,a] }, ...]
+                    Declares the FULL set of per-vertex inputs the shader can consume. Any model
+                    may supply ANY SUBSET - missing attributes fall back to per-attribute defaults
+                    (sent via gl.vertexAttrib4f at draw). Defaults pad/truncate to length 4.
 
 Textures:       addTexture(key, { data, width, height, channels? }) / removeTexture(key) / readTexture(key)
 
 Models:         addModel(key, { shader?, vertices, indices, attributes?, primitives?, skeleton? })
-                  attributes  declares what's IN the model's VBO, in order. Subset of shader's attrs.
-                              Default: [{name:"a_position",size:3},{name:"a_uv",size:2}]
-                  primitives  [{ indexOffset, indexCount, material? }, ...]
-                              material: { albedo?, fill?:[r,g,b,a] }
-                  skeleton    { bones: [{ parent, localBind?, inverseBind? }, ...] }
-                              parent: int (-1 root, else parent bone index < own index)
-                              localBind: mat4 OR {position,rotation,scale,euler} - bone's bind transform
-                                         relative to parent. Default identity.
-                              inverseBind: optional precomputed mat4. Auto-computed if omitted.
+                    attributes  declares what's IN the model's VBO, in order. Subset of shader's attrs.
+                                Default: [{name:"a_position",size:3},{name:"a_uv",size:2}]
+                    primitives  [{ indexOffset?, indexCount?, vertexOffset?, vertexCount?,
+                                    material?, morphTargets? }, ...]
+                                Indexed draw:    indexOffset + indexCount (into the index buffer)
+                                Non-indexed draw: vertexOffset + vertexCount (into the vertex buffer,
+                                                uses drawArraysInstanced - no index buffer needed)
+                                Both modes are mutually exclusive per primitive.
+                                material: { albedo?, fill?:[r,g,b,a] }
+                                morphTargets: [Float32Array, ...]  (shorthand for {position:[...]})
+                                                OR { position:[Float32Array,...] }   - normal/tangent later
+                                                Each delta is length vertexCount*3. Engine packs them into
+                                                an RGB32F texture per primitive per channel; weights are
+                                                per-instance (see writeInstance.morphWeights). When any
+                                                primitive has morphs and `shader` is unset, the model
+                                                auto-uses `__ez_morph_default__`.
+                    skeleton    { bones: [{ parent, localBind?, inverseBind? }, ...] }
+                                parent: int (-1 root, else parent bone index < own index)
+                                localBind: mat4 OR {position,rotation,scale,euler} - bone's bind transform
+                                            relative to parent. Default identity.
+                                inverseBind: optional precomputed mat4. Auto-computed if omitted.
                 readModel(key) / removeModel(key)
 
 Instances:      addInstance(modelKey, transform?) -> instKey
-                writeInstance(key, { transform?, boneTransform?, color?, display? })
+                writeInstance(key, { transform?, boneTransform?, morphWeights?, color?, display? })
                     transform:     mat4 OR {position,rotation,scale,euler}
                     boneTransform: { id, transform } OR an array of those (skinned only)
+                    morphWeights:  [w0, w1, ...] dense over all primitives' targets in declaration order
+                                   OR { offset, weights:[...] } to write a slice
+                                   length = sum(prim.morphTargets.length) across all primitives
                     color:         [r,g,b,a] - multiplied into texture * fill in the fragment
                     display:       bool - false skips the instance during render()
                 readInstance(key) / removeInstance(key)
@@ -48,17 +63,19 @@ Camera:         setCamera({position?,yaw?,pitch?,roll?,orientation?,fov?,near?,f
 
 Render:         render()  - call from your rAF loop
 
-Default shader: pos(3) + uv(2) + boneID(4) + boneWeight(4)
-                Skinning is built in. Non-skinned models work seamlessly because the missing
-                boneWeight attribute defaults to (0,0,0,0) -> shader collapses to identity skin.
+Bone storage:   Bone palette is uploaded per-instance as an RGBA32F texture (u_bonesTex).
+                Width = 4 texels (one per mat4 column), height = N bones. No bone count limit.
+                texelFetch(u_bonesTex, ivec2(col, boneIdx), 0) retrieves a mat4 column.
+                Custom skinned shaders should declare: uniform highp sampler2D u_bonesTex;
 
 Notes:
     -   Instance mat4 occupies the 4 attribute slots starting at the shader's `a_instanceMatrix`
         location (auto-resolved via gl.getAttribLocation). Convention name: `a_instanceMatrix`.
-    -   Built-in uniforms (auto-bound when present): u_view, u_projection, u_albedo, u_fill, u_bones[64].
-        Fragment output is `texture(u_albedo) * u_fill * v_instanceColor`. When a primitive has no
-        albedo a 1x1 white texture is bound, so `u_fill` (per-material) and `v_instanceColor`
-        (per-instance) act as RGBA tints. All three default to [1,1,1,1] = no change.
+    -   Built-in uniforms (auto-bound when present): u_view, u_projection, u_albedo, u_fill,
+        u_bonesTex (RGBA32F bone palette texture, slot 1). Fragment output is
+        `texture(u_albedo) * u_fill * v_instanceColor`. When a primitive has no albedo a 1x1
+        white texture is bound, so `u_fill` (per-material) and `v_instanceColor` (per-instance)
+        act as RGBA tints. All three default to [1,1,1,1] = no change.
     -   Per-instance attribute `a_instanceColor` (vec4) is wired alongside `a_instanceMatrix`
         on the same instance VBO (stride 80 bytes: 64 mat4 + 16 color). Custom shaders can opt-in
         by declaring `in vec4 a_instanceColor`.
@@ -270,19 +287,37 @@ Notes:
     }[ch] ?? [gl.RGBA8, gl.RGBA]);
 
 
-    // Default shader
-    // Skin-capable. Vertex layout (any subset valid):
-    //   pos(3) + uv(2) + boneID(4) + boneWeight(4)
-    // Missing attributes default via gl.vertexAttrib4f to:
-    //   uv         = (0,0)
-    //   boneID     = (0,0,0,0)
-    //   boneWeight = (0,0,0,0)  -> sum=0 -> skin matrix collapses to identity, no deformation.
-    // Instance matrix occupies the 4 attribute slots starting after the last vertex attribute.
+    function simpleTex(gl, existing, iFmt, fmt, type, w, h, data) {
+        let tex = existing;
+        if (!tex) {
+            tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
+        } else {
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+        }
+        gl.texImage2D(gl.TEXTURE_2D, 0, iFmt, w, h, 0, fmt, type, data);
+        return tex;
+    }
 
-    const MAX_BONES = 64;
+    // Pack one instance row (mat4 + RGBA color) into a Float32Array at `off`.
+    // Stride is 20 floats / 80 bytes, matching the instance VBO layout in addModel.
+    function packInstanceRow(arr, off, inst) {
+        arr.set(inst.transform, off);
+        arr[off+16] = inst.color[0];
+        arr[off+17] = inst.color[1];
+        arr[off+18] = inst.color[2];
+        arr[off+19] = inst.color[3];
+    }
+
+
+    // Default shader (has skinning)
 
     const _DEFAULT_VERT = `#version 300 es
-        const int MAX_BONES = ${MAX_BONES};
+        precision highp float;
         layout(location=0) in vec3 a_position;
         layout(location=1) in vec2 a_uv;
         layout(location=2) in vec4 a_boneID;
@@ -291,9 +326,17 @@ Notes:
         layout(location=8) in vec4 a_instanceColor;
         uniform mat4 u_view;
         uniform mat4 u_projection;
-        uniform mat4 u_bones[MAX_BONES];
+        uniform highp sampler2D u_bonesTex;
         out vec2 v_uv;
         out vec4 v_instanceColor;
+        mat4 fetchBone(int i) {
+            return mat4(
+                texelFetch(u_bonesTex, ivec2(0, i), 0),
+                texelFetch(u_bonesTex, ivec2(1, i), 0),
+                texelFetch(u_bonesTex, ivec2(2, i), 0),
+                texelFetch(u_bonesTex, ivec2(3, i), 0)
+            );
+        }
         void main() {
             v_uv = a_uv;
             v_instanceColor = a_instanceColor;
@@ -302,10 +345,10 @@ Notes:
             if (wsum < 0.0001) {
                 skin = mat4(1.0);
             } else {
-                skin = a_boneWeight.x * u_bones[int(a_boneID.x)]
-                     + a_boneWeight.y * u_bones[int(a_boneID.y)]
-                     + a_boneWeight.z * u_bones[int(a_boneID.z)]
-                     + a_boneWeight.w * u_bones[int(a_boneID.w)];
+                skin = a_boneWeight.x * fetchBone(int(a_boneID.x))
+                     + a_boneWeight.y * fetchBone(int(a_boneID.y))
+                     + a_boneWeight.z * fetchBone(int(a_boneID.z))
+                     + a_boneWeight.w * fetchBone(int(a_boneID.w));
             }
             gl_Position = u_projection * u_view * a_instanceMatrix * skin * vec4(a_position, 1.0);
         }`;
@@ -325,12 +368,68 @@ Notes:
             fragColor = texture(u_albedo, v_uv) * u_fill * v_instanceColor;
         }`;
 
+    const _MORPH_WEIGHT_TEX_UNIT = 2;     // u_morphWeightTex (single global unit)
+
+    const _MORPH_VERT = `#version 300 es
+        precision highp float;
+        layout(location=0) in vec3 a_position;
+        layout(location=1) in vec2 a_uv;
+        layout(location=2) in vec4 a_boneID;
+        layout(location=3) in vec4 a_boneWeight;
+        layout(location=4) in mat4 a_instanceMatrix;
+        layout(location=8) in vec4 a_instanceColor;
+        uniform mat4 u_view;
+        uniform mat4 u_projection;
+        uniform highp sampler2D u_bonesTex;
+        uniform highp sampler2D u_morphWeightTex;
+        uniform highp sampler2D u_morphPosTex;
+        uniform int u_morphCount;
+        uniform int u_morphWeightOffset;
+        uniform int u_morphVertexBase;
+        out vec2 v_uv;
+        out vec4 v_instanceColor;
+        mat4 fetchBone(int i) {
+            return mat4(
+                texelFetch(u_bonesTex, ivec2(0, i), 0),
+                texelFetch(u_bonesTex, ivec2(1, i), 0),
+                texelFetch(u_bonesTex, ivec2(2, i), 0),
+                texelFetch(u_bonesTex, ivec2(3, i), 0)
+            );
+        }
+        void main() {
+            v_uv = a_uv;
+            v_instanceColor = a_instanceColor;
+            // Morph (always before skin): pos = base + sum_t( w_t * delta_t )
+            vec3 pos = a_position;
+            int v = gl_VertexID - u_morphVertexBase;
+            for (int t = 0; t < u_morphCount; t++) {
+                float w = texelFetch(u_morphWeightTex,
+                                     ivec2(u_morphWeightOffset + t, gl_InstanceID), 0).r;
+                if (w != 0.0) {
+                    pos += w * texelFetch(u_morphPosTex, ivec2(t, v), 0).xyz;
+                }
+            }
+            float wsum = a_boneWeight.x + a_boneWeight.y + a_boneWeight.z + a_boneWeight.w;
+            mat4 skin;
+            if (wsum < 0.0001) {
+                skin = mat4(1.0);
+            } else {
+                skin = a_boneWeight.x * fetchBone(int(a_boneID.x))
+                     + a_boneWeight.y * fetchBone(int(a_boneID.y))
+                     + a_boneWeight.z * fetchBone(int(a_boneID.z))
+                     + a_boneWeight.w * fetchBone(int(a_boneID.w));
+            }
+            gl_Position = u_projection * u_view * a_instanceMatrix * skin * vec4(pos, 1.0);
+        }`;
+
     // Built-in default shaders. The FIRST entry is THE default - used by addModel()
     const _DEFAULT_SHADERS = [
-        { key: "__ez_opaque_default__",      vert: _DEFAULT_VERT, frag: _DEFAULT_FRAG, transparent: false },
-        { key: "__ez_transparent_default__", vert: _DEFAULT_VERT, frag: _DEFAULT_FRAG, transparent: true  },
+        { key: "__ez_opaque_default__",      vert: _DEFAULT_VERT, frag: _DEFAULT_FRAG, transparent: false, morphChannels: [] },
+        { key: "__ez_transparent_default__", vert: _DEFAULT_VERT, frag: _DEFAULT_FRAG, transparent: true,  morphChannels: [] },
+        { key: "__ez_morph_default__",       vert: _MORPH_VERT,   frag: _DEFAULT_FRAG, transparent: false, morphChannels: ["u_morphPosTex"] },
     ];
-    const _DEFAULT_SHADER_KEY  = _DEFAULT_SHADERS[0].key;
+    const _DEFAULT_OPAQUE_KEY  = _DEFAULT_SHADERS[0].key;   
+    const _DEFAULT_MORPH_KEY = _DEFAULT_SHADERS[2].key;
     const _DEFAULT_SHADER_KEYS = new Set(_DEFAULT_SHADERS.map(s => s.key));
 
     // Main class
@@ -340,27 +439,28 @@ Notes:
         #canvas = null;
         #gl     = null;
 
-        // Storage maps
         #shaders   = new Map(); // key -> { program, attributes, stride, locs, uloc }
         #textures  = new Map(); // key -> { glTex, width, height, channels }
         #models    = new Map(); // key -> { shaderKey, vao, vbo, ebo, instanceVBO,
                                 //          indexType, primitives, _info }
         #instances = new Map(); // instanceKey -> { modelKey, transform:mat4 }
 
-        // 1x1 white texture
-        #whiteTex = null;
+        // Dummy textures
+        #whiteTex         = null; // 1x1 white
+        #morphDummyDelta  = null; // RGB32F (0,0,0)
+        #morphDummyWeight = null; // R32F (0)
 
         #instanceCounter = 0;
 
         #cam = {
             pos:         [0, 0, 3],
-            orientation: [0, 0, 0, 1], // quaternion [x,y,z,w]
-            pitch:       0,            // degrees, cached
-            yaw:         0,            // degrees, cached
-            roll:        0,            // degrees, cached
-            forward:     [0, 0, -1],   // derived, kept in sync
-            up:          [0, 1,  0],   // derived, kept in sync
-            right:       [1, 0,  0],   // derived, kept in sync
+            orientation: [0, 0, 0, 1],
+            pitch:       0,
+            yaw:         0,
+            roll:        0,
+            forward:     [0, 0, -1],   // derived
+            up:          [0, 1,  0],   // derived
+            right:       [1, 0,  0],   // derived
             fov:         45,           // degrees
             near:        0.1,
             far:         1000,
@@ -398,19 +498,14 @@ Notes:
 
             gl.enable(gl.DEPTH_TEST);
             gl.enable(gl.CULL_FACE);
-            // Make canvas background transparent and blend fragment alpha into the page.
-            gl.enable(gl.BLEND);
+            gl.enable(gl.BLEND); // Canvas is transparent, cool shi
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.clearColor(0, 0, 0, 0);
 
-            // 1x1 opaque-white default texture (used as the no-albedo fallback).
-            this.#whiteTex = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, this.#whiteTex);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
-                new Uint8Array([255, 255, 255, 255]));
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            gl.bindTexture(gl.TEXTURE_2D, null);
+            // Fall back textures for: texture, morph delta and morph weight
+            this.#whiteTex         = simpleTex(gl, null, gl.RGBA8,  gl.RGBA, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array  ([255,255,255,255]));
+            this.#morphDummyDelta  = simpleTex(gl, null, gl.RGB32F, gl.RGB,  gl.FLOAT,         1, 1, new Float32Array([0,0,0]));
+            this.#morphDummyWeight = simpleTex(gl, null, gl.R32F,   gl.RED,  gl.FLOAT,         1, 1, new Float32Array([0]));
 
             this.#addDefaultShader();
             this.#camUpdate();
@@ -447,18 +542,23 @@ Notes:
         //   Models may provide any subset of these in their VBO; missing ones fall back
         //   to the per-attribute `default` (sent via gl.vertexAttrib4f at draw time).
         //   Defaults are extended/truncated to length 4. If omitted, falls back to (0,0,0,0).
+        // morphChannels: ["u_morphPosTex", ...]
+        //   Array of sampler-uniform names (must match `uniform sampler2D u_xxx;` lines
+        //   in GLSL). Each channel gets a fresh texture unit starting at 3.
+        //   Models pass `morphTargets: { u_morphPosTex: [...] }` using the same keys.
+        //   Omit or pass [] when the shader has no morph code.
         // transparent: optional bool. If true, this shader's instances render AFTER opaque
         //   ones with depth writes disabled (standard transparency pass).
-        addShader(key, { vert, frag, attributes, transparent = false }) {
+        addShader(key, { vert, frag, attributes, morphChannels, transparent = false }) {
             if (!isStr(key) || !isStr(vert) || !isStr(frag) || !Array.isArray(attributes)) return false;
             if (_DEFAULT_SHADER_KEYS.has(key)) {
                 console.warn(`[EzCanvas3D] addShader: key "${key}" is reserved (built-in default)`);
                 return false;
             }
-            return this.#registerShader(key, vert, frag, attributes, !!transparent);
+            return this.#registerShader(key, vert, frag, attributes, morphChannels, !!transparent);
         }
 
-        #registerShader(key, vert, frag, attributes, transparent = false) {
+        #registerShader(key, vert, frag, attributes, morphChannels, transparent = false) {
             const gl = this.#gl;
             const program = createProgram(gl, vert, frag);
             if (!program) return false;
@@ -476,13 +576,26 @@ Notes:
             const locs = {};
             for (const a of attrs) locs[a.name] = a.loc;
 
+            // Morph channel schema for THIS shader. Each entry { samplerName, unit, loc }
+            const channels = (Array.isArray(morphChannels) ? morphChannels : []).map((sName, i) => ({
+                samplerName: sName,
+                unit:        3 + i,
+                loc:         gl.getUniformLocation(program, sName),
+            }));
+
             const uloc = {
                 view:       gl.getUniformLocation(program, "u_view"),
                 projection: gl.getUniformLocation(program, "u_projection"),
                 albedo:     gl.getUniformLocation(program, "u_albedo"),
                 fill:       gl.getUniformLocation(program, "u_fill"),
-                bones:      gl.getUniformLocation(program, "u_bones[0]")
-                          ?? gl.getUniformLocation(program, "u_bones"),
+                bonesTex:   gl.getUniformLocation(program, "u_bonesTex"),
+                morph: {
+                    weightTex:    gl.getUniformLocation(program, "u_morphWeightTex"),
+                    count:        gl.getUniformLocation(program, "u_morphCount"),
+                    weightOffset: gl.getUniformLocation(program, "u_morphWeightOffset"),
+                    vertexBase:   gl.getUniformLocation(program, "u_morphVertexBase"),
+                    channels,
+                },
             };
 
             let instanceMat4Loc = gl.getAttribLocation(program, "a_instanceMatrix");
@@ -509,15 +622,19 @@ Notes:
             const s = this.#shaders.get(key); if (!s) return null;
             return {
                 key,
-                attributes: s.attributes.map(a => ({ name: a.name, size: a.size, default: [...a.default] })),
+                attributes:    s.attributes.map(a => ({ name: a.name, size: a.size, default: [...a.default] })),
+                morphChannels: s.uloc.morph.channels.map(c => c.samplerName),
             };
         }
 
         /* textures */
 
-        addTexture(key, { data, width, height, channels = 4 }) {
+        // filter: "linear" (default) - LINEAR + mipmaps when POT. Smooth, blurry up close.
+        //         "nearest" - NEAREST, no mipmaps. Crisp pixel-art look.
+        addTexture(key, { data, width, height, channels = 4, filter = "linear" }) {
             if (!isStr(key) || !data || !width || !height) return false;
             const gl = this.#gl;
+            const nearest = filter === "nearest";
 
             const [internalFmt, fmt] = glFormat(gl, channels);
             const glTex = gl.createTexture();
@@ -529,13 +646,13 @@ Notes:
                 gl.texImage2D(gl.TEXTURE_2D, 0, internalFmt, width, height, 0, fmt, gl.UNSIGNED_BYTE, data);
             }
 
-            if (isPOT(width) && isPOT(height)) {
+            if (!nearest && isPOT(width) && isPOT(height)) {
                 gl.generateMipmap(gl.TEXTURE_2D);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
             } else {
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST : gl.LINEAR);
             }
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
             gl.bindTexture(gl.TEXTURE_2D, null);
@@ -572,35 +689,18 @@ Notes:
         }
 
 
-        // addModel(key, opts?)
-        //   key         (required) string id for this model
-        //   opts.shader      shader key (defaults to built-in)
-        //   opts.vertices    Float32Array
-        //   opts.indices     Uint16Array | Uint32Array
-        //   opts.attributes  [{name,size}, ...] - what's actually present in vertices, in order.
-        //                    Must be a subset of the shader's declared attributes (by name).
-        //                    Missing shader attrs auto-fall-back to per-attribute defaults.
-        //                    When omitted, defaults to [{name:"a_position",size:3},{name:"a_uv",size:2}].
-        //   opts.primitives  [{indexOffset,indexCount,material?}, ...] - defaults to one whole-buffer primitive.
-        //   opts.skeleton    { bones:[{parent, localBind?, inverseBind?}, ...] }
-        //                    parent: int (-1 = root, otherwise index of parent bone - must be < own index)
-        //                    localBind: bone bind transform relative to parent (mat4 or {position,rotation,scale,euler}).
-        //                               Defaults to identity.
-        //                    inverseBind: optional precomputed mat4. If omitted, computed from the
-        //                                 localBind chain via Mat4.invert(globalBind).
-        //   Per-instance transformation lives on instances (not the model).
         addModel(key, opts = {}) {
             if (!isStr(key)) return false;
             const { shader: shaderKeyIn, vertices, indices, attributes, primitives, skeleton } = opts;
 
-            const shaderKey = isStr(shaderKeyIn) ? shaderKeyIn : _DEFAULT_SHADER_KEY;
+            const shaderKey = isStr(shaderKeyIn) ? shaderKeyIn : _DEFAULT_OPAQUE_KEY;
             const shader = this.#shaders.get(shaderKey);
             if (!shader) {
                 console.warn(`[EzCanvas3D] addModel: shader "${shaderKey}" not found`);
                 return false;
             }
-            if (!vertices || !indices) {
-                console.warn(`[EzCanvas3D] addModel "${key}": vertices and indices required`);
+            if (!vertices) {
+                console.warn(`[EzCanvas3D] addModel "${key}": vertices required`);
                 return false;
             }
 
@@ -633,31 +733,127 @@ Notes:
             }
 
             // Normalise primitive list.
+            // Each entry is one of:
+            //   Indexed:      { indexOffset, indexCount, material? }
+            //   Non-indexed:  { vertexOffset, vertexCount, material? }
+            const vertexCount = vertices.length / (vaoStride / 4); // total vertices in VBO
             const primList = Array.isArray(primitives) && primitives.length > 0
-                ? primitives.map(p => ({
-                    indexOffset: p.indexOffset ?? 0,
-                    indexCount:  p.indexCount  ?? indices.length,
-                    material: {
+                ? primitives.map(p => {
+                    const mat = {
                         albedo: p.material?.albedo ?? null,
                         fill:   p.material?.fill   ?? [1, 1, 1, 1],
-                    },
-                }))
-                : [{ indexOffset: 0, indexCount: indices.length, material: { albedo: null, fill: [1,1,1,1] } }];
+                    };
+                    const hasVertex = (p.vertexOffset != null || p.vertexCount != null) && p.indexOffset == null && p.indexCount == null;
+                    const out = hasVertex
+                        ? { vertexOffset: p.vertexOffset ?? 0, vertexCount: p.vertexCount ?? vertexCount, material: mat }
+                        : { indexOffset:  p.indexOffset  ?? 0, indexCount:  p.indexCount  ?? (indices ? indices.length : 0), material: mat };
+                    if (p.morphTargets) out._morphSrc = p.morphTargets;
+                    return out;
+                })
+                : indices
+                    ? [{ indexOffset: 0, indexCount: indices.length, material: { albedo: null, fill: [1,1,1,1] } }]
+                    : [{ vertexOffset: 0, vertexCount, material: { albedo: null, fill: [1,1,1,1] } }];
 
             for (const p of primList) {
-                if (p.indexOffset < 0 || p.indexOffset + p.indexCount > indices.length) {
-                    console.warn(`[EzCanvas3D] addModel "${key}": primitive index range out of bounds`);
-                    return false;
+                if (p.indexOffset != null) {
+                    if (p.indexOffset < 0 || p.indexOffset + p.indexCount > (indices ? indices.length : 0)) {
+                        console.warn(`[EzCanvas3D] addModel "${key}": primitive index range out of bounds`);
+                        return false;
+                    }
+                } else {
+                    if (p.vertexOffset < 0 || p.vertexOffset + p.vertexCount > vertexCount) {
+                        console.warn(`[EzCanvas3D] addModel "${key}": primitive vertex range out of bounds`);
+                        return false;
+                    }
                 }
             }
 
-            // ── Skeleton: resolve localBind, compute inverseBind chain ──
-            let resolvedSkeleton = null;
-            if (skeleton && Array.isArray(skeleton.bones) && skeleton.bones.length > 0) {
-                if (skeleton.bones.length > MAX_BONES) {
-                    console.warn(`[EzCanvas3D] addModel "${key}": skeleton has ${skeleton.bones.length} bones (max ${MAX_BONES})`);
+            // -- Morph targets: validate, pack into RGB32F textures, assign weight slots --
+            let morphTotalWeights = 0;
+            for (const p of primList) {
+                const channelsIn = p._morphSrc; delete p._morphSrc;
+                if (!channelsIn) continue;
+                if (!isObj(channelsIn) || Array.isArray(channelsIn)) {
+                    console.warn(`[EzCanvas3D] addModel "${key}": morphTargets must be an object keyed by sampler name`);
                     return false;
                 }
+
+                // Validate target count (must match across all channels in this primitive).
+                const channelNames = Object.keys(channelsIn);
+                let targetCount = -1;
+                for (const name of channelNames) {
+                    const arr = channelsIn[name];
+                    if (arr == null) continue;
+                    if (!Array.isArray(arr)) {
+                        console.warn(`[EzCanvas3D] addModel "${key}": morphTargets.${name} must be an array`);
+                        return false;
+                    }
+                    if (targetCount < 0) targetCount = arr.length;
+                    else if (arr.length !== targetCount) {
+                        console.warn(`[EzCanvas3D] addModel "${key}": morphTargets channel "${name}" has ${arr.length} targets, expected ${targetCount}`);
+                        return false;
+                    }
+                }
+                if (targetCount <= 0) continue;
+
+                // Resolve primitive-local vertex range.
+                let vBase, vCount;
+                if (p.indexOffset != null) {
+                    let lo = Infinity, hi = -Infinity;
+                    const end = p.indexOffset + p.indexCount;
+                    for (let i = p.indexOffset; i < end; i++) {
+                        const idx = indices[i];
+                        if (idx < lo) lo = idx;
+                        if (idx > hi) hi = idx;
+                    }
+                    vBase  = lo;
+                    vCount = hi - lo + 1;
+                } else {
+                    vBase  = p.vertexOffset;
+                    vCount = p.vertexCount;
+                }
+
+                p.morph = {
+                    targetCount,
+                    weightOffset: morphTotalWeights,
+                    vertexBase:   vBase,
+                    vertexCount:  vCount,
+                    channels:     new Map(),   // samplerName -> GLTexture
+                };
+
+                for (const sName of channelNames) {
+                    const arr = channelsIn[sName];
+                    if (arr == null) continue;
+
+                    // Validate morph deltas
+                    const expected = vCount * 3;
+                    for (let t = 0; t < targetCount; t++) {
+                        if (!arr[t] || arr[t].length !== expected) {
+                            console.warn(`[EzCanvas3D] addModel "${key}": morphTargets.${sName}[${t}] length must be ${expected} (vertexCount*3), got ${arr[t]?.length}`);
+                            return false;
+                        }
+                    }
+
+                    // Pack morph
+                    const packed = new Float32Array(vCount * targetCount * 3);
+                    for (let t = 0; t < targetCount; t++) {
+                        const d = arr[t];
+                        for (let v = 0; v < vCount; v++) {
+                            const dst = (v * targetCount + t) * 3;
+                            packed[dst    ] = d[v * 3    ];
+                            packed[dst + 1] = d[v * 3 + 1];
+                            packed[dst + 2] = d[v * 3 + 2];
+                        }
+                    }
+                    p.morph.channels.set(sName, simpleTex(gl, null, gl.RGB32F, gl.RGB, gl.FLOAT, targetCount, vCount, packed));
+                }
+
+                morphTotalWeights += targetCount;
+            }
+
+            // -- Skeleton: resolve localBind, compute inverseBind chain --
+            let resolvedSkeleton = null;
+            if (skeleton && Array.isArray(skeleton.bones) && skeleton.bones.length > 0) {
                 const bones = [];
                 const globalBind = []; // accumulates world bind matrices
                 for (let i = 0; i < skeleton.bones.length; i++) {
@@ -678,7 +874,7 @@ Notes:
                 resolvedSkeleton = { bones };
             }
 
-            // ── VAO setup ──
+            // -- VAO setup --
             const vao = gl.createVertexArray();
             gl.bindVertexArray(vao);
 
@@ -695,9 +891,11 @@ Notes:
                 gl.disableVertexAttribArray(d.loc);
             }
 
-            const ebo = gl.createBuffer();
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
-            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+            const ebo = indices ? gl.createBuffer() : null;
+            if (ebo) {
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+            }
 
             // Instance VBO - per-instance: mat4 (16 floats) + RGBA color (4 floats)
             //                              = 20 floats / 80 bytes, packed back-to-back.
@@ -725,7 +923,14 @@ Notes:
                 primitives: primList,
                 defaulted, // attribute defaults to apply at draw time
                 skeleton:  resolvedSkeleton, // null for static models
-                _info: { indexCount: indices.length, boneCount: resolvedSkeleton?.bones.length ?? 0 },
+                boneTex: null, // RGBA32F texture for skinned instances; (re)created at draw time
+                morphTotalWeights,            // 0 if model has no morph data
+                morphWeightTex: null,         // R32F (totalWeights x N), (re)created at draw time
+                _info: {
+                    indexCount: indices ? indices.length : 0,
+                    boneCount:  resolvedSkeleton?.bones.length ?? 0,
+                    morphTotalWeights,
+                },
             });
             return true;
         }
@@ -735,8 +940,13 @@ Notes:
             const gl = this.#gl;
             gl.deleteVertexArray(m.vao);
             gl.deleteBuffer(m.vbo);
-            gl.deleteBuffer(m.ebo);
+            if (m.ebo) gl.deleteBuffer(m.ebo);
             gl.deleteBuffer(m.instanceVBO);
+            if (m.boneTex)        gl.deleteTexture(m.boneTex);
+            if (m.morphWeightTex) gl.deleteTexture(m.morphWeightTex);
+            for (const p of m.primitives) {
+                if (p.morph) for (const t of p.morph.channels.values()) gl.deleteTexture(t);
+            }
             this.#models.delete(key);
             // Remove orphaned instances.
             for (const [ik, inst] of this.#instances)
@@ -749,14 +959,20 @@ Notes:
             return {
                 key,
                 shader: m.shaderKey,
-                primitives: m.primitives.map(p => ({
-                    indexOffset: p.indexOffset,
-                    indexCount:  p.indexCount,
-                    material: {
-                        albedo: p.material.albedo,
-                        fill:   [...p.material.fill],
-                    },
-                })),
+                primitives: m.primitives.map(p => {
+                    const out = { material: { albedo: p.material.albedo, fill: [...p.material.fill] } };
+                    if (p.indexOffset != null) { out.indexOffset = p.indexOffset; out.indexCount = p.indexCount; }
+                    else { out.vertexOffset = p.vertexOffset; out.vertexCount = p.vertexCount; }
+                    if (p.morph) {
+                        out.morph = {
+                            targetCount:  p.morph.targetCount,
+                            weightOffset: p.morph.weightOffset,
+                            vertexBase:   p.morph.vertexBase,
+                            vertexCount:  p.morph.vertexCount,
+                        };
+                    }
+                    return out;
+                }),
                 ...m._info,
             };
         }
@@ -769,17 +985,23 @@ Notes:
                 return null;
             }
             const key = `i${this.#instanceCounter++}`;
-            // bonePoses: per-bone *additional* local transform on top of the bind pose.
-            // Identity by default -> no deformation, vertices follow the bind pose exactly.
+
+            // Array of bones local transforms
             const bonePoses = model.skeleton
                 ? Array.from({ length: model.skeleton.bones.length }, () => Mat4.identity())
+                : null;
+
+            // Array of weights for all unique morph targets
+            const morphWeights = model.morphTotalWeights > 0
+                ? new Float32Array(model.morphTotalWeights)
                 : null;
             this.#instances.set(key, {
                 modelKey,
                 transform: Mat4.resolveTransform(transform, null),
                 bonePoses,
-                color:   [1, 1, 1, 1],   // multiplied with material.fill * texture in the shader
-                display: true,           // false skips the instance during render()
+                morphWeights,
+                color:   [1, 1, 1, 1],
+                display: true,
             });
             return key;
         }
@@ -788,15 +1010,14 @@ Notes:
             return this.#instances.delete(key);
         }
 
-        // Apply any subset of instance state in one call. Pass only the fields
-        // you want to change; everything else is left untouched.
+        // Apply any subset of instance state in one call.
+        //   display:       bool. False -> instance is skipped during render(). Default true.
         //   transform:     mat4 Float32Array OR {position?, rotation?, scale?, euler?}
         //   boneTransform: {id, transform} OR an array of those (skinned models only).
         //                  `id` is the 0-based bone index, `transform` follows the same
         //                  shape rules as `transform` above.
-        //   color:         [r,g,b,a] in 0..1. Multiplied with material.fill and the
-        //                  albedo texture inside the fragment shader. Default [1,1,1,1].
-        //   display:       bool. False -> instance is skipped during render(). Default true.
+        //   color:         [r,g,b,a] in [0, 1]
+        //   morphWeights:  Array | Float32Array of weights, dense across all primitives.
         writeInstance(key, opts = {}) {
             const inst = this.#instances.get(key); if (!inst) return false;
             if ("transform" in opts) {
@@ -820,6 +1041,19 @@ Notes:
                     inst.bonePoses[id] = Mat4.resolveTransform(bt.transform, inst.bonePoses[id]);
                 }
             }
+            if ("morphWeights" in opts && inst.morphWeights) {
+                const w = opts.morphWeights;
+                let offset = 0, src = w;
+                if (isObj(w) && !Array.isArray(w) && !(w instanceof Float32Array)) {
+                    offset = w.offset | 0;
+                    src    = w.weights;
+                }
+                if (Array.isArray(src) || src instanceof Float32Array) {
+                    const cap = inst.morphWeights.length;
+                    const n = Math.min(src.length, cap - offset);
+                    for (let i = 0; i < n; i++) inst.morphWeights[offset + i] = +src[i] || 0;
+                }
+            }
             return true;
         }
 
@@ -827,11 +1061,12 @@ Notes:
             const inst = this.#instances.get(key); if (!inst) return null;
             return {
                 key,
-                modelKey:  inst.modelKey,
-                transform: new Float32Array(inst.transform),
-                color:     [...inst.color],
-                display:   inst.display,
-                bonePoses: inst.bonePoses ? inst.bonePoses.map(m => new Float32Array(m)) : null,
+                modelKey:     inst.modelKey,
+                transform:    new Float32Array(inst.transform),
+                color:        [...inst.color],
+                display:      inst.display,
+                bonePoses:    inst.bonePoses    ? inst.bonePoses.map(m => new Float32Array(m)) : null,
+                morphWeights: inst.morphWeights ? new Float32Array(inst.morphWeights)         : null,
             };
         }
 
@@ -909,7 +1144,16 @@ Notes:
             };
         }
 
-        // Draw one frame. Call this from your own requestAnimationFrame loop.
+        #camUpdate() {
+            const c = this.#cam;
+            c.forward = Quat.rotateVec(c.orientation, [0, 0, -1]);
+            c.right   = Quat.rotateVec(c.orientation, [1, 0,  0]);
+            c.up      = Quat.rotateVec(c.orientation, [0, 1,  0]);
+            this.#view = Mat4.lookAt(c.pos, [c.pos[0]+c.forward[0], c.pos[1]+c.forward[1], c.pos[2]+c.forward[2]], c.up);
+            this.#proj = Mat4.perspective(c.fov * Math.PI / 180, this.#canvas.width / this.#canvas.height, c.near, c.far);
+        }
+
+        // You can put this in a loop if you want
         render() {
             const gl = this.#gl;
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -930,8 +1174,7 @@ Notes:
                 bucket.get(inst.modelKey).push(inst);
             }
 
-            // Two passes: opaque shaders first (depth writes on), transparent last
-            // (depth writes off, depth test still on so they occlude properly).
+            // Two passes: opaque first, transparent later
             this.#drawPass(batches, false);
             gl.depthMask(false);
             this.#drawPass(batches, true);
@@ -949,21 +1192,18 @@ Notes:
                 if (shader.uloc.projection) gl.uniformMatrix4fv(shader.uloc.projection, false, this.#proj);
                 this.renderHook(gl, shader.program);
 
-                // ── Static path: instanced batches ──
-                // Per-instance stream layout: 16 floats mat4 + 4 floats color = 20 floats.
+                // -- Static path: instanced batches --
+                // Per-instance stream: 16 floats mat4 + 4 floats color = 20 floats.
                 for (const [modelKey, instList] of staticBatch) {
                     const model = this.#models.get(modelKey); if (!model) continue;
                     const flat = new Float32Array(instList.length * 20);
-                    for (let i = 0; i < instList.length; i++) {
-                        const inst = instList[i];
-                        flat.set(inst.transform, i * 20);
-                        flat[i * 20 + 16] = inst.color[0];
-                        flat[i * 20 + 17] = inst.color[1];
-                        flat[i * 20 + 18] = inst.color[2];
-                        flat[i * 20 + 19] = inst.color[3];
-                    }
+                    for (let i = 0; i < instList.length; i++) packInstanceRow(flat, i * 20, instList[i]);
                     gl.bindBuffer(gl.ARRAY_BUFFER, model.instanceVBO);
                     gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
+
+                    // Morph weight palette: one row per instance (gl_InstanceID).
+                    // No-op when the shader doesn't expose morph uniforms.
+                    this.#bindMorphWeightTex(model, shader, instList);
 
                     gl.bindVertexArray(model.vao);
                     this.#applyAttributeDefaults(model);
@@ -971,8 +1211,7 @@ Notes:
                     gl.bindVertexArray(null);
                 }
 
-                // ── Skinned path: per-instance, upload bone palette ──
-                // Same 20-float layout as the static path, sized for one instance.
+                // -- Skinned path: per-instance, each gets its own bone palette upload --
                 const oneInstance = new Float32Array(20);
                 for (const [modelKey, instList] of skinnedBatch) {
                     const model = this.#models.get(modelKey); if (!model) continue;
@@ -980,18 +1219,18 @@ Notes:
                     this.#applyAttributeDefaults(model);
 
                     for (const inst of instList) {
-                        oneInstance.set(inst.transform, 0);
-                        oneInstance[16] = inst.color[0];
-                        oneInstance[17] = inst.color[1];
-                        oneInstance[18] = inst.color[2];
-                        oneInstance[19] = inst.color[3];
+                        packInstanceRow(oneInstance, 0, inst);
                         gl.bindBuffer(gl.ARRAY_BUFFER, model.instanceVBO);
                         gl.bufferData(gl.ARRAY_BUFFER, oneInstance, gl.DYNAMIC_DRAW);
 
-                        if (shader.uloc.bones) {
-                            const palette = this.#computeBonePalette(model.skeleton, inst.bonePoses);
-                            gl.uniformMatrix4fv(shader.uloc.bones, false, palette);
+                        if (shader.uloc.bonesTex != null) {
+                            gl.activeTexture(gl.TEXTURE1);
+                            this.#uploadBoneTex(model, inst.bonePoses);
+                            gl.uniform1i(shader.uloc.bonesTex, 1);
                         }
+                        // Skinned draws are per-instance: weight palette height=1,
+                        // gl_InstanceID is always 0 inside the shader.
+                        this.#bindMorphWeightTex(model, shader, [inst]);
 
                         this.#drawPrimitives(model, shader, 1);
                     }
@@ -1009,46 +1248,85 @@ Notes:
 
         #drawPrimitives(model, shader, instanceCount) {
             const gl = this.#gl;
+            const morph = shader.uloc.morph;
+            const hasMorph = morph.count != null;
             for (const prim of model.primitives) {
-                const { indexOffset, indexCount, material } = prim;
+                const { material } = prim;
 
                 const tex = material.albedo ? this.#textures.get(material.albedo) : null;
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, tex ? tex.glTex : this.#whiteTex);
                 if (shader.uloc.albedo != null) gl.uniform1i(shader.uloc.albedo, 0);
+                if (shader.uloc.fill   != null) gl.uniform4fv(shader.uloc.fill, material.fill);
 
-                if (shader.uloc.fill != null) gl.uniform4fv(shader.uloc.fill, material.fill);
+                // Per-primitive morph "push constants" + delta texture binds.
+                // u_morphCount=0 collapses the shader's morph loop for primitives
+                // without morph data, even when the shader supports morphs.
+                if (hasMorph) {
+                    const m = prim.morph;
+                    gl.uniform1i(morph.count,        m ? m.targetCount  : 0);
+                    gl.uniform1i(morph.weightOffset, m ? m.weightOffset : 0);
+                    gl.uniform1i(morph.vertexBase,   m ? m.vertexBase   : 0);
+                    // Iterate the SHADER's declared channels. Each (shader, channel) pair
+                    // has its sampler location and texture unit baked in at addShader time.
+                    // ch.loc==null means the shader's GLSL didn't actually declare that
+                    // sampler -> skip silently (the channel is advertised but unused).
+                    for (const ch of morph.channels) {
+                        if (ch.loc == null) continue;
+                        gl.activeTexture(gl.TEXTURE0 + ch.unit);
+                        gl.bindTexture(gl.TEXTURE_2D, (m && m.channels.get(ch.samplerName)) || this.#morphDummyDelta);
+                        gl.uniform1i(ch.loc, ch.unit);
+                    }
+                }
 
-                gl.drawElementsInstanced(
-                    gl.TRIANGLES, indexCount, model.indexType,
-                    indexOffset * model.indexBytes, instanceCount,
-                );
+                if (prim.indexOffset != null) {
+                    gl.drawElementsInstanced(
+                        gl.TRIANGLES, prim.indexCount, model.indexType,
+                        prim.indexOffset * model.indexBytes, instanceCount,
+                    );
+                } else {
+                    gl.drawArraysInstanced(
+                        gl.TRIANGLES, prim.vertexOffset, prim.vertexCount, instanceCount,
+                    );
+                }
             }
         }
 
-        // Build the bone-palette Float32Array (N*16 floats) for one instance.
-        // skin[i] = currentGlobal[i] * inverseBind[i]
-        // currentGlobal[i] = (parent<0 ? I : currentGlobal[parent]) * localBind[i] * localOffset[i]
-        #computeBonePalette(skeleton, bonePoses) {
-            const bones = skeleton.bones;
-            const n = bones.length;
+        // Turn morph weight into a texture
+        #bindMorphWeightTex(model, shader, instances) {
+            const gl = this.#gl, loc = shader.uloc.morph.weightTex;
+            if (loc == null) return;
+            gl.activeTexture(gl.TEXTURE0 + _MORPH_WEIGHT_TEX_UNIT);
+            if (model.morphTotalWeights <= 0) {
+                gl.bindTexture(gl.TEXTURE_2D, this.#morphDummyWeight);
+            } else {
+                const W = model.morphTotalWeights, H = instances.length;
+                const data = new Float32Array(W * H);
+                for (let i = 0; i < H; i++) {
+                    if (instances[i].morphWeights) data.set(instances[i].morphWeights, i * W);
+                }
+                model.morphWeightTex = simpleTex(gl, model.morphWeightTex, gl.R32F, gl.RED, gl.FLOAT, W, H, data);
+            }
+            gl.uniform1i(loc, _MORPH_WEIGHT_TEX_UNIT);
+        }
+
+        // Turn skin pose into a texture
+        #uploadBoneTex(model, bonePoses) {
+            const gl = this.#gl;
+            const bones = model.skeleton.bones, n = bones.length;
             const globalCurrent = new Array(n);
             const palette = new Float32Array(n * 16);
             for (let i = 0; i < n; i++) {
                 const b = bones[i];
                 const local = Mat4.multiply(b.localBind, bonePoses[i]);
                 globalCurrent[i] = b.parent < 0 ? local : Mat4.multiply(globalCurrent[b.parent], local);
-                const skin = Mat4.multiply(globalCurrent[i], b.inverseBind);
-                palette.set(skin, i * 16);
+                palette.set(Mat4.multiply(globalCurrent[i], b.inverseBind), i * 16);
             }
-            return palette;
+            model.boneTex = simpleTex(gl, model.boneTex, gl.RGBA32F, gl.RGBA, gl.FLOAT, 4, n, palette);
         }
 
 
         #addDefaultShader() {
-            // Default shaders share the same attribute set: pos + uv + boneID + boneWeight.
-            // Models supplying any subset (e.g. only pos+uv) get auto-defaulted
-            // to (uv=0,0 / boneID=0 / boneWeight=0 -> identity skin).
             const attrs = [
                 { name: "a_position",   size: 3, default: [0, 0, 0, 1] },
                 { name: "a_uv",         size: 2, default: [0, 0, 0, 0] },
@@ -1056,17 +1334,8 @@ Notes:
                 { name: "a_boneWeight", size: 4, default: [0, 0, 0, 0] },
             ];
             for (const s of _DEFAULT_SHADERS) {
-                this.#registerShader(s.key, s.vert, s.frag, attrs, !!s.transparent);
+                this.#registerShader(s.key, s.vert, s.frag, attrs, s.morphChannels, !!s.transparent);
             }
-        }
-
-        #camUpdate() {
-            const c = this.#cam;
-            c.forward = Quat.rotateVec(c.orientation, [0, 0, -1]);
-            c.right   = Quat.rotateVec(c.orientation, [1, 0,  0]);
-            c.up      = Quat.rotateVec(c.orientation, [0, 1,  0]);
-            this.#view = Mat4.lookAt(c.pos, [c.pos[0]+c.forward[0], c.pos[1]+c.forward[1], c.pos[2]+c.forward[2]], c.up);
-            this.#proj = Mat4.perspective(c.fov * Math.PI / 180, this.#canvas.width / this.#canvas.height, c.near, c.far);
         }
     }
 
