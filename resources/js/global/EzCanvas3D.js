@@ -10,15 +10,15 @@ Constructor:    new EzCanvas3D(name)
 .settings       width()/height() getters
                 fitContainer() resize the canvas to the container size
 
-Mount:          getCanvas() / mount(el) / unmount() / resize(w,h)
+Mount:          getCanvas() / mount(el) / unmount() / resize(w,h) / readCanvas()
 
-Shaders:        addShader(key, { vert, frag, attributes }) / removeShader(key) / getShaderInfo(key)
+Shaders:        addShader(key, { vert, frag, attributes }) / removeShader(key) / readShader(key)
                   attributes: [{ name, size, default?:[r,g,b,a] }, ...]
                   Declares the FULL set of per-vertex inputs the shader can consume. Any model
                   may supply ANY SUBSET - missing attributes fall back to per-attribute defaults
                   (sent via gl.vertexAttrib4f at draw). Defaults pad/truncate to length 4.
 
-Textures:       addTexture(key, { data, width, height, channels? }) / removeTexture(key)
+Textures:       addTexture(key, { data, width, height, channels? }) / removeTexture(key) / readTexture(key)
 
 Models:         addModel(key, { shader?, vertices, indices, attributes?, primitives?, skeleton? })
                   attributes  declares what's IN the model's VBO, in order. Subset of shader's attrs.
@@ -30,11 +30,15 @@ Models:         addModel(key, { shader?, vertices, indices, attributes?, primiti
                               localBind: mat4 OR {position,rotation,scale,euler} - bone's bind transform
                                          relative to parent. Default identity.
                               inverseBind: optional precomputed mat4. Auto-computed if omitted.
+                readModel(key) / removeModel(key)
 
 Instances:      addInstance(modelKey, transform?) -> instKey
-                setInstanceTransform(key, transform)        - model-space transform of this instance
-                setInstanceBonePose(key, boneIdx, transform) - per-bone local offset on top of bind pose
-                getInstanceBonePose(key, boneIdx) / getInstanceInfo(key) / removeInstance(key)
+                writeInstance(key, { transform?, boneTransform?, color?, display? })
+                    transform:     mat4 OR {position,rotation,scale,euler}
+                    boneTransform: { id, transform } OR an array of those (skinned only)
+                    color:         [r,g,b,a] - multiplied into texture * fill in the fragment
+                    display:       bool - false skips the instance during render()
+                readInstance(key) / removeInstance(key)
 
 Camera:         setCamera({position?,yaw?,pitch?,roll?,orientation?,fov?,near?,far?})
                 getCamera() -> {position,yaw,pitch,roll,fov,near,far,orientation}
@@ -52,8 +56,12 @@ Notes:
     -   Instance mat4 occupies the 4 attribute slots starting at the shader's `a_instanceMatrix`
         location (auto-resolved via gl.getAttribLocation). Convention name: `a_instanceMatrix`.
     -   Built-in uniforms (auto-bound when present): u_view, u_projection, u_albedo, u_fill, u_bones[64].
-        Material output is `texture(u_albedo) * u_fill`. When a primitive has no albedo, a 1x1 white
-        texture is bound, so `u_fill` becomes the effective RGBA (default [1,1,1,1] = white).
+        Fragment output is `texture(u_albedo) * u_fill * v_instanceColor`. When a primitive has no
+        albedo a 1x1 white texture is bound, so `u_fill` (per-material) and `v_instanceColor`
+        (per-instance) act as RGBA tints. All three default to [1,1,1,1] = no change.
+    -   Per-instance attribute `a_instanceColor` (vec4) is wired alongside `a_instanceMatrix`
+        on the same instance VBO (stride 80 bytes: 64 mat4 + 16 color). Custom shaders can opt-in
+        by declaring `in vec4 a_instanceColor`.
     -   Skinned models draw per-instance (own bone palette per instance); static models batch via
         drawElementsInstanced.
     -   renderHook(gl, program) fires once per shader batch for custom uniforms.
@@ -280,12 +288,15 @@ Notes:
         layout(location=2) in vec4 a_boneID;
         layout(location=3) in vec4 a_boneWeight;
         layout(location=4) in mat4 a_instanceMatrix;
+        layout(location=8) in vec4 a_instanceColor;
         uniform mat4 u_view;
         uniform mat4 u_projection;
         uniform mat4 u_bones[MAX_BONES];
         out vec2 v_uv;
+        out vec4 v_instanceColor;
         void main() {
             v_uv = a_uv;
+            v_instanceColor = a_instanceColor;
             float wsum = a_boneWeight.x + a_boneWeight.y + a_boneWeight.z + a_boneWeight.w;
             mat4 skin;
             if (wsum < 0.0001) {
@@ -302,14 +313,16 @@ Notes:
     const _DEFAULT_FRAG = `#version 300 es
         precision mediump float;
         in  vec2 v_uv;
+        in  vec4 v_instanceColor;
         out vec4 fragColor;
         uniform vec4      u_fill;
         uniform sampler2D u_albedo;
         void main() {
-            // Albedo is always sampled. Models with no texture get a 1x1 white pixel
-            // bound by the engine, so this collapses to u_fill in the no-texture case.
-            // u_fill doubles as RGBA tint+opacity (default [1,1,1,1] = no change).
-            fragColor = texture(u_albedo, v_uv) * u_fill;
+            // Output = texture * material fill * per-instance color tint.
+            // Models with no texture get a 1x1 white pixel bound by the engine,
+            // so the texture term collapses to identity in that case.
+            // u_fill is the material RGBA tint, v_instanceColor is the per-instance one.
+            fragColor = texture(u_albedo, v_uv) * u_fill * v_instanceColor;
         }`;
 
     // Built-in default shaders. The FIRST entry is THE default - used by addModel()
@@ -418,7 +431,7 @@ Notes:
             return this;
         }
 
-        getCanvasInfo() {
+        readCanvas() {
             // Return keys
             const modelKeys = Array.from(this.#models.keys());
             const shaderKeys = Array.from(this.#shaders.keys());
@@ -472,12 +485,12 @@ Notes:
                           ?? gl.getUniformLocation(program, "u_bones"),
             };
 
-            // Resolve instance-matrix location. Conventional name "a_instanceMatrix";
-            // falls back to "right after the last vertex attribute" when not declared.
-            let instanceLoc = gl.getAttribLocation(program, "a_instanceMatrix");
-            if (instanceLoc < 0) instanceLoc = attrs.length;
+            let instanceMat4Loc = gl.getAttribLocation(program, "a_instanceMatrix");
+            if (instanceMat4Loc < 0) instanceMat4Loc = attrs.length;
 
-            this.#shaders.set(key, { program, attributes: attrs, locs, uloc, instanceLoc, transparent });
+            const instanceColorLoc = gl.getAttribLocation(program, "a_instanceColor");
+
+            this.#shaders.set(key, { program, attributes: attrs, locs, uloc, instanceMat4Loc, instanceColorLoc, transparent });
             return true;
         }
 
@@ -492,7 +505,7 @@ Notes:
             return true;
         }
 
-        getShaderInfo(key) {
+        readShader(key) {
             const s = this.#shaders.get(key); if (!s) return null;
             return {
                 key,
@@ -538,7 +551,7 @@ Notes:
             return true;
         }
 
-        getTextureInfo(key) {
+        readTexture(key) {
             const t = this.#textures.get(key); if (!t) return null;
             return { key, width: t.width, height: t.height, channels: t.channels };
         }
@@ -686,15 +699,21 @@ Notes:
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
             gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
-            // Instance VBO - mat4 per instance starting at shader.instanceLoc.
+            // Instance VBO - per-instance: mat4 (16 floats) + RGBA color (4 floats)
+            //                              = 20 floats / 80 bytes, packed back-to-back.
             const instanceVBO = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(0), gl.DYNAMIC_DRAW);
             for (let col = 0; col < 4; col++) {
-                const loc = shader.instanceLoc + col;
+                const loc = shader.instanceMat4Loc + col;
                 gl.enableVertexAttribArray(loc);
-                gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 64, col * 16);
+                gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 80, col * 16);
                 gl.vertexAttribDivisor(loc, 1);
+            }
+            if (shader.instanceColorLoc >= 0) {
+                gl.enableVertexAttribArray(shader.instanceColorLoc);
+                gl.vertexAttribPointer(shader.instanceColorLoc, 4, gl.FLOAT, false, 80, 64);
+                gl.vertexAttribDivisor(shader.instanceColorLoc, 1);
             }
 
             gl.bindVertexArray(null);
@@ -725,7 +744,7 @@ Notes:
             return true;
         }
 
-        getModelInfo(key) {
+        readModel(key) {
             const m = this.#models.get(key); if (!m) return null;
             return {
                 key,
@@ -759,6 +778,8 @@ Notes:
                 modelKey,
                 transform: Mat4.resolveTransform(transform, null),
                 bonePoses,
+                color:   [1, 1, 1, 1],   // multiplied with material.fill * texture in the shader
+                display: true,           // false skips the instance during render()
             });
             return key;
         }
@@ -767,35 +788,50 @@ Notes:
             return this.#instances.delete(key);
         }
 
-        setInstanceTransform(key, transform) {
+        // Apply any subset of instance state in one call. Pass only the fields
+        // you want to change; everything else is left untouched.
+        //   transform:     mat4 Float32Array OR {position?, rotation?, scale?, euler?}
+        //   boneTransform: {id, transform} OR an array of those (skinned models only).
+        //                  `id` is the 0-based bone index, `transform` follows the same
+        //                  shape rules as `transform` above.
+        //   color:         [r,g,b,a] in 0..1. Multiplied with material.fill and the
+        //                  albedo texture inside the fragment shader. Default [1,1,1,1].
+        //   display:       bool. False -> instance is skipped during render(). Default true.
+        writeInstance(key, opts = {}) {
             const inst = this.#instances.get(key); if (!inst) return false;
-            inst.transform = Mat4.resolveTransform(transform, inst.transform);
+            if ("transform" in opts) {
+                inst.transform = Mat4.resolveTransform(opts.transform, inst.transform);
+            }
+            if ("color" in opts) {
+                const c = opts.color;
+                inst.color = (Array.isArray(c) || c instanceof Float32Array)
+                    ? [c[0] ?? 1, c[1] ?? 1, c[2] ?? 1, c[3] ?? 1]
+                    : [1, 1, 1, 1];
+            }
+            if ("display" in opts) {
+                inst.display = !!opts.display;
+            }
+            if ("boneTransform" in opts && inst.bonePoses) {
+                const bts = Array.isArray(opts.boneTransform) ? opts.boneTransform : [opts.boneTransform];
+                for (const bt of bts) {
+                    if (!bt) continue;
+                    const id = bt.id;
+                    if (typeof id !== "number" || id < 0 || id >= inst.bonePoses.length) continue;
+                    inst.bonePoses[id] = Mat4.resolveTransform(bt.transform, inst.bonePoses[id]);
+                }
+            }
             return true;
         }
 
-        // Per-bone additional local transform (relative to bind pose).
-        // boneIdx: 0-based index into the model's skeleton.
-        // transform: mat4 Float32Array OR {position?, rotation?, scale?, euler?} OR null (identity).
-        setInstanceBonePose(key, boneIdx, transform) {
-            const inst = this.#instances.get(key); if (!inst || !inst.bonePoses) return false;
-            if (boneIdx < 0 || boneIdx >= inst.bonePoses.length) return false;
-            inst.bonePoses[boneIdx] = Mat4.resolveTransform(transform, inst.bonePoses[boneIdx]);
-            return true;
-        }
-
-        getInstanceBonePose(key, boneIdx) {
-            const inst = this.#instances.get(key); if (!inst || !inst.bonePoses) return null;
-            if (boneIdx < 0 || boneIdx >= inst.bonePoses.length) return null;
-            return new Float32Array(inst.bonePoses[boneIdx]);
-        }
-
-        getInstanceInfo(key) {
+        readInstance(key) {
             const inst = this.#instances.get(key); if (!inst) return null;
             return {
                 key,
-                modelKey: inst.modelKey,
+                modelKey:  inst.modelKey,
                 transform: new Float32Array(inst.transform),
-                boneCount: inst.bonePoses?.length ?? 0,
+                color:     [...inst.color],
+                display:   inst.display,
+                bonePoses: inst.bonePoses ? inst.bonePoses.map(m => new Float32Array(m)) : null,
             };
         }
 
@@ -884,6 +920,7 @@ Notes:
             // shaderKey -> { static:Map<modelKey,[inst]>, skinned:Map<modelKey,[inst]> }
             const batches = new Map();
             for (const [, inst] of this.#instances) {
+                if (!inst.display) continue;
                 const model = this.#models.get(inst.modelKey); if (!model) continue;
                 const sk = model.shaderKey;
                 let entry = batches.get(sk);
@@ -913,10 +950,18 @@ Notes:
                 this.renderHook(gl, shader.program);
 
                 // ── Static path: instanced batches ──
+                // Per-instance stream layout: 16 floats mat4 + 4 floats color = 20 floats.
                 for (const [modelKey, instList] of staticBatch) {
                     const model = this.#models.get(modelKey); if (!model) continue;
-                    const flat = new Float32Array(instList.length * 16);
-                    for (let i = 0; i < instList.length; i++) flat.set(instList[i].transform, i * 16);
+                    const flat = new Float32Array(instList.length * 20);
+                    for (let i = 0; i < instList.length; i++) {
+                        const inst = instList[i];
+                        flat.set(inst.transform, i * 20);
+                        flat[i * 20 + 16] = inst.color[0];
+                        flat[i * 20 + 17] = inst.color[1];
+                        flat[i * 20 + 18] = inst.color[2];
+                        flat[i * 20 + 19] = inst.color[3];
+                    }
                     gl.bindBuffer(gl.ARRAY_BUFFER, model.instanceVBO);
                     gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
 
@@ -927,14 +972,21 @@ Notes:
                 }
 
                 // ── Skinned path: per-instance, upload bone palette ──
+                // Same 20-float layout as the static path, sized for one instance.
+                const oneInstance = new Float32Array(20);
                 for (const [modelKey, instList] of skinnedBatch) {
                     const model = this.#models.get(modelKey); if (!model) continue;
                     gl.bindVertexArray(model.vao);
                     this.#applyAttributeDefaults(model);
 
                     for (const inst of instList) {
+                        oneInstance.set(inst.transform, 0);
+                        oneInstance[16] = inst.color[0];
+                        oneInstance[17] = inst.color[1];
+                        oneInstance[18] = inst.color[2];
+                        oneInstance[19] = inst.color[3];
                         gl.bindBuffer(gl.ARRAY_BUFFER, model.instanceVBO);
-                        gl.bufferData(gl.ARRAY_BUFFER, inst.transform, gl.DYNAMIC_DRAW);
+                        gl.bufferData(gl.ARRAY_BUFFER, oneInstance, gl.DYNAMIC_DRAW);
 
                         if (shader.uloc.bones) {
                             const palette = this.#computeBonePalette(model.skeleton, inst.bonePoses);
