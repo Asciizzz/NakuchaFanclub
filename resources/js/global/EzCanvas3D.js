@@ -13,11 +13,12 @@ Shaders         addShader(key, { vertex, fragment, uniKeys?, transparent? })
                 helper functions automatically.
 
                 vertex.attributes:      [{ name, size:1..4, default?:[r,g,b,a] }, ...]
-                vertex.instanceData:    [{ key, name, type?, default? }, ...]
+                vertex.instanceData:    [{ name, type?, default? }, ...]
                                         type one of "mat4"|"vec4"|"vec3"|"vec2"|"float"
                                         (default "vec4"). mat4 occupies 4 attribute slots;
                                         others 1. Empty array = no per-instance VBO data
                                         (shader is still drawn N times via gl_InstanceID).
+                                        name doubles as the data key in writeInstance / readInstance.
                 vertex.defaultKeys:     { view?, projection? }
                                         Optional known uniforms. When present, engine emits the
                                         uniform and binds the camera matrices automatically.
@@ -48,7 +49,7 @@ Shaders         addShader(key, { vertex, fragment, uniKeys?, transparent? })
                                         bool, sampler2D, "highp sampler2D".
 
                 Built-ins: __ez_opaque_default__ and __ez_transparent_default__. Both declare
-                instanceData [{key:"transform",type:"mat4"}, {key:"color",type:"vec4",default:[1,1,1,1]}].
+                instanceData [{ name:"a_instanceMatrix", type:"mat4" }, { name:"a_instanceColor", type:"vec4", default:[1,1,1,1] }].
 
 Internal ez_ uniforms (injected automatically, invisible to shader authors):
                 ez_bonesTex           - bone palette (hasSkeleton)
@@ -81,7 +82,7 @@ Models          addModel(key, { shader?, vertices, indices, attributes?, primiti
 
 Instances       addInstance(modelKey, init?) -> instKey
                 writeInstance(key, { data?, bone?, morph?, display? })
-                    data:    object keyed by the shader's instanceData entry keys. Value shape
+                    data:    object keyed by the shader's instanceData entry names. Value shape
                             depends on the entry's type:
                             mat4  - Float32Array(16) OR {position?,rotation?,scale?,euler?}
                             vec*  - array/Float32Array of matching length
@@ -331,7 +332,7 @@ Bone storage    Bone palette uploaded per skinned instance as RGBA32F, 4 texels 
 
     function packInstanceRow(arr, offFloats, inst, layout) {
         for (const e of layout.entries) {
-            const src = inst.data[e.key];
+            const src = inst.data[e.name];
             if (src) arr.set(src, offFloats + (e.byteOffset >> 2));
         }
     }
@@ -470,7 +471,7 @@ Bone storage    Bone palette uploaded per skinned instance as RGBA32F, 4 texels 
                 throw new Error(`${_TAG} addShader: vertex attribute "${a.name}" size must be 1..4`);
             claim(a.name, "vertex.attributes");
         }
-        for (const e of instLayout.entries) claim(e.name, `vertex.instanceData[${e.key}]`);
+        for (const e of instLayout.entries) claim(e.name, `vertex.instanceData[${e.name}]`);
         for (const [k, v] of Object.entries(vDK)) claim(v, `vertex.defaultKeys.${k}`);
         for (const o of vOuts) claim(o.name, "vertex.outputs");
         for (const [k, v] of Object.entries(fDK)) claim(v, `fragment.defaultKeys.${k}`);
@@ -541,27 +542,27 @@ Bone storage    Bone palette uploaded per skinned instance as RGBA32F, 4 texels 
     };
 
     function _buildInstanceLayout(decls) {
-        const entries = [], seenKeys = new Set(), seenNames = new Set();
+        const entries = [], seenNames = new Set();
         let nextSlot = 0, off = 0;
         for (const d of decls) {
-            if (!isStr(d.key) || !isStr(d.name))
-                throw new Error(`${_TAG} instanceData entry needs key+name`);
-            if (seenKeys.has(d.key) || seenNames.has(d.name))
-                throw new Error(`${_TAG} instanceData duplicate "${d.key}"/"${d.name}"`);
+            if (!isStr(d.name))
+                throw new Error(`${_TAG} instanceData entry needs name`);
+            if (seenNames.has(d.name))
+                throw new Error(`${_TAG} instanceData duplicate name "${d.name}"`);
             const type = d.type ?? "vec4";
             const spec = _INSTANCE_TYPE_SPEC[type];
-            if (!spec) throw new Error(`${_TAG} instanceData "${d.key}": unknown type "${type}"`);
-            seenKeys.add(d.key); seenNames.add(d.name);
+            if (!spec) throw new Error(`${_TAG} instanceData "${d.name}": unknown type "${type}"`);
+            seenNames.add(d.name);
 
             let def;
             if (d.default != null) {
                 if (!d.default.length || d.default.length !== spec.floats)
-                    throw new Error(`${_TAG} instanceData "${d.key}": default length must be ${spec.floats}`);
+                    throw new Error(`${_TAG} instanceData "${d.name}": default length must be ${spec.floats}`);
                 def = Float32Array.from(d.default);
             } else def = type === "mat4" ? Mat4.identity() : new Float32Array(spec.floats);
 
             entries.push({
-                key: d.key, name: d.name, type, glsl: spec.glsl,
+                name: d.name, type, glsl: spec.glsl,
                 floats: spec.floats, slots: spec.slots,
                 locOffset: nextSlot, byteOffset: off, default: def,
             });
@@ -586,8 +587,8 @@ Bone storage    Bone palette uploaded per skinned instance as RGBA32F, 4 texels 
             },
             hasSkeleton: true,
             instanceData: [
-                { key: "transform", name: "a_instanceMatrix", type: "mat4" },
-                { key: "color",     name: "a_instanceColor",  type: "vec4", default: [1, 1, 1, 1] },
+                { name: "a_instanceMatrix", type: "mat4" },
+                { name: "a_instanceColor",  type: "vec4", default: [1, 1, 1, 1] },
             ],
             outputs: [
                 { name: "v_uv",            type: "vec2" },
@@ -1196,7 +1197,7 @@ Bone storage    Bone palette uploaded per skinned instance as RGBA32F, 4 texels 
             const key = `i${this.#instanceCounter++}`;
 
             const data = {};
-            for (const e of shader.instanceLayout.entries) data[e.key] = new Float32Array(e.default);
+            for (const e of shader.instanceLayout.entries) data[e.name] = new Float32Array(e.default);
 
             this.#instances.set(key, {
                 modelKey, data,
@@ -1217,8 +1218,8 @@ Bone storage    Bone palette uploaded per skinned instance as RGBA32F, 4 texels 
 
             if (opts.data && isObj(opts.data)) {
                 for (const e of shader.instanceLayout.entries) {
-                    if (!(e.key in opts.data)) continue;
-                    const val = opts.data[e.key], dst = inst.data[e.key];
+                    if (!(e.name in opts.data)) continue;
+                    const val = opts.data[e.name], dst = inst.data[e.name];
                     if (e.type === "mat4") {
                         const m = Mat4.resolveTransform(val, dst);
                         if (m !== dst) dst.set(m);
@@ -1648,7 +1649,7 @@ Bone storage    Bone palette uploaded per skinned instance as RGBA32F, 4 texels 
                         gl.uniform1ui(this.#pickUloc.id, id);
 
                         const transformEntry = shader.instanceLayout.entries.find(e => e.type === "mat4");
-                        matBuf.set(transformEntry ? inst.data[transformEntry.key] : Mat4.identity());
+                        matBuf.set(transformEntry ? inst.data[transformEntry.name] : Mat4.identity());
                         gl.bufferData(gl.ARRAY_BUFFER, matBuf, gl.STREAM_DRAW);
 
                         if (skinned && inst.bonePoses) {
