@@ -98,7 +98,7 @@
                 cfg: {
                     size: { min: 10, max: 20 },
                     speed: { min: 20, max: 40 },
-                    lifetime: { min: 200, max: 600 },
+                    lifetime: { min: 100, max: 300 },
                     opacity: { min: 0.3, max: 0.8 },
                     color: ["#fff"],
                     burst: {
@@ -113,7 +113,7 @@
                 cfg: {
                     size: { min: 10, max: 20 },
                     speed: { min: 20, max: 40 },
-                    lifetime: { min: 200, max: 600 },
+                    lifetime: { min: 100, max: 300 },
                     opacity: { min: 0.3, max: 0.8 },
                     color: [],
                 },
@@ -138,7 +138,7 @@
                 cfg: {
                     size: { min: 5, max: 10 },
                     speed: { min: 15, max: 30 },
-                    lifetime: { min: 600, max: 900 },
+                    lifetime: { min: 100, max: 200 },
                     opacity: { min: 0.3, max: 0.8 },
                     color: [],
                 },

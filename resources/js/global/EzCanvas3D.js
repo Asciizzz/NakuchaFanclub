@@ -13,34 +13,31 @@ EzCanvas3D
 |-- readCanvas() -> { modelKeys, meshKeys, skeletonKeys, shaderKeys, textureKeys, instanceKeys }
 |
 |-- .assets                             EzAssets — namespaced registry
-|   |-- .shader                         EzAssetStorage (backed by internal shader Map)
+|   |-- .shader                         EzAssetStorage (internal shader Map)
 |   |   |-- .add(key, EzShader)         auto-compiles if described but not yet compiled
 |   |   |-- .remove(key)                deletes GL program; built-ins are protected
 |   |   |-- .read(key)                  -> { key, attributes, morphChannels, hasSkeleton }
 |   |   |-- .[key] / ["key"]            raw EzShader instance (direct map lookup)
 |   |   |-- .has(key) / .keys() / .values() / .entries() / .size / [Symbol.iterator]
-|   |   |-- built-ins (reserved, cannot be removed):
-|   |       |-- "__ez_opaque_default__"      rQueue 1000, depthWrite, no blend
-|   |       |-- "__ez_transparent_default__" rQueue 2000, no depthWrite, blend
-|   |-- .texture                        EzAssetStorage (backed by internal texture Map)
+|   |-- .texture                        EzAssetStorage (internal texture Map)
 |   |   |-- .add(key, { data, width, height, channels?, filter?, wrap? })
 |   |   |   |-- filter: "nearest" (crisp) | gl.LINEAR (default, mipmaps when POT)
 |   |   |-- .remove(key)                deletes GL texture
 |   |   |-- .[key] / ["key"]            raw { glTex, width, height, channels }
 |   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .mesh                           EzAssetStorage (backed by internal mesh Map)
+|   |-- .mesh                           EzAssetStorage (internal mesh Map)
 |   |   |-- .add(key, EzMesh3D)         store a mesh asset directly
 |   |   |-- .remove(key)                destroys VAO/VBOs/morph textures
 |   |   |-- .read(key)                  -> { key, morphTotalWeights, primitives }
 |   |   |-- .[key] / ["key"]            raw EzMesh3D instance
 |   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .skeleton                       EzAssetStorage (backed by internal skeleton Map)
+|   |-- .skeleton                       EzAssetStorage (internal skeleton Map)
 |   |   |-- .add(key, EzSkeleton3D)     store a skeleton asset directly
 |   |   |-- .remove(key)                removes from map (no GPU resources)
 |   |   |-- .read(key)                  -> { key, boneCount }
 |   |   |-- .[key] / ["key"]            raw EzSkeleton3D instance
 |   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .model                          EzAssetStorage (backed by internal model Map)
+|   |-- .model                          EzAssetStorage (internal model Map)
 |   |   |-- .add(key, { defaultShader?, vertices, indices, attributes?, primitives?, skeleton? })
 |   |   |   |-- Same descriptor as before. Internally creates:
 |   |   |   |     assets.mesh["<key>_mesh"]         EzMesh3D (VAO, VBOs, morph textures)
@@ -229,6 +226,8 @@ EzAssets
     class _math {
         static clamp = (p, min, max) => Math.max(min, Math.min(max, p));
 
+        // all mat are column major
+
         static Mat4 = {
             identity() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
 
@@ -322,6 +321,42 @@ EzAssets
                 const scale = t.scale ?? [1,1,1];
                 const quat  = t.euler ? _math.Quat.fromEulerZYX(t.euler) : (t.rotation ?? [0,0,0,1]);
                 return _math.Mat4.compose(pos, quat, scale);
+            },
+
+            transformVec3(m, v) {
+                const x = v[0], y = v[1], z = v[2];
+                const w = m[3]*x + m[7]*y + m[11]*z + m[15];
+                return [
+                    (m[0]*x + m[4]*y + m[8]*z + m[12]) / w,
+                    (m[1]*x + m[5]*y + m[9]*z + m[13]) / w,
+                    (m[2]*x + m[6]*y + m[10]*z + m[14]) / w,
+                ];
+            },
+
+            transformVec3Normal(m3, v) {
+                const x = v[0], y = v[1], z = v[2];
+                const rx = m3[0]*x + m3[3]*y + m3[6]*z;
+                const ry = m3[1]*x + m3[4]*y + m3[7]*z;
+                const rz = m3[2]*x + m3[5]*y + m3[8]*z;
+                const len = Math.hypot(rx, ry, rz) || 1;
+                return [rx/len, ry/len, rz/len];
+            },
+
+            normalMat3(m) {
+                const a00=m[0], a01=m[1], a02=m[2];
+                const a10=m[4], a11=m[5], a12=m[6];
+                const a20=m[8], a21=m[9], a22=m[10];
+                const b00 = a11*a22 - a12*a21, b01 = a12*a20 - a10*a22, b02 = a10*a21 - a11*a20;
+                const b10 = a02*a21 - a01*a22, b11 = a00*a22 - a02*a20, b12 = a01*a20 - a00*a21;
+                const b20 = a01*a12 - a02*a11, b21 = a02*a10 - a00*a12, b22 = a00*a11 - a01*a10;
+                const det = a00*b00 + a01*b01 + a02*b02;
+                if (!det) return [1,0,0, 0,1,0, 0,0,1];
+                const id = 1 / det;
+                return [
+                    b00*id, b10*id, b20*id,
+                    b01*id, b11*id, b21*id,
+                    b02*id, b12*id, b22*id,
+                ];
             }
         };
 
