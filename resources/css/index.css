@@ -3,6 +3,19 @@
 	src: url('../assets/fonts/Outfit-VariableFont_wght.ttf') format('truetype');
 }
 
+/* Registered custom properties — must be @property for CSS transition to work on them */
+@property --reveal-radius {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+
+@property --reveal-radius-welcome {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+
 :root {
 	--color-1: #437897;
 	--color-2: #204052;
@@ -117,11 +130,15 @@ header nav a:hover {
 	height: 100%;
 	min-height: 100vh;
 
-	background: var(--color-1);
 	pointer-events: none;
-	z-index: 0;
+	background: var(--color-1);
+	transition: background 0.2s ease;
 
 	overflow: hidden;
+}
+
+#ez-canvas3d-bubble {
+	z-index: 1;
 }
 
 
@@ -140,19 +157,32 @@ header nav a:hover {
 	justify-content: center;
 	flex-direction: column;
 
-	perspective: 800px;
+	z-index: 1;
+
+	--reveal-x: 50%;
+	--reveal-y: 50%;
+	--reveal-radius-welcome: 0px;
+	--reveal-open-duration: 0.5s;
+	--reveal-close-duration: 0.4s;
+
+	-webkit-mask-image: radial-gradient(
+		circle at var(--reveal-x) var(--reveal-y),
+		transparent var(--reveal-radius-welcome),
+		#000 calc(var(--reveal-radius-welcome) + 1px)
+	);
+	mask-image: radial-gradient(
+		circle at var(--reveal-x) var(--reveal-y),
+		transparent var(--reveal-radius-welcome),
+		#000 calc(var(--reveal-radius-welcome) + 1px)
+	);
+
+	transition:
+		--reveal-radius-welcome var(--reveal-close-duration) cubic-bezier(1, 0, 0.4, 1);
 }
 
 #welcome * {
 	user-select: none;
 }
-
-@property --reveal-radius {
-	syntax: "<length>";
-	inherits: false;
-	initial-value: 0px;
-}
-
 
 #welcome #starglitter {
 	position: absolute;
@@ -442,7 +472,8 @@ header nav a:hover {
 	pointer-events: none;
 	visibility: hidden;
 
-	background: var(--color-2);
+	/* Transparent — the sea tank canvas behind shows through the mask window */
+	background: transparent;
 	color: #ffffff;
 
 	--reveal-x: 18%;
@@ -480,6 +511,24 @@ header nav a:hover {
 		--reveal-radius var(--reveal-open-duration) cubic-bezier(0.4, 0, 1, 1),
 		visibility 0s linear 0s;
 	--reveal-radius: 170vmax;
+}
+
+#toggle-biography:checked ~ #welcome,
+#toggle-introduction:checked ~ #welcome,
+#toggle-news:checked ~ #welcome,
+#toggle-discography:checked ~ #welcome,
+#toggle-merch:checked ~ #welcome {
+	--reveal-radius-welcome: 170vmax;
+	transition:
+		--reveal-radius-welcome var(--reveal-open-duration) cubic-bezier(0.4, 0, 1, 1);
+}
+
+#toggle-biography:checked ~ #jellytank,
+#toggle-introduction:checked ~ #jellytank,
+#toggle-news:checked ~ #jellytank,
+#toggle-discography:checked ~ #jellytank,
+#toggle-merch:checked ~ #jellytank {
+	background: var(--color-2);
 }
 
 .reveal-section-content {

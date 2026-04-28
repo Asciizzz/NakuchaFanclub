@@ -40,7 +40,6 @@
             <a href="#">Merch</a>
         </nav>
     </header>
-
     <div id="jellytank"></div>
 
     <div id="welcome">

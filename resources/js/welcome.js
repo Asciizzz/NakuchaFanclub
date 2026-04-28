@@ -292,33 +292,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                         entities.push(entity);
                     }
                     attrs.entities = entities;
-
-                    const bubbles = [];
-                    for (const bubble of attrs.bubbles) {
-                        if (bubble.popped) {
-                            continue;
-                        }
-
-                        bubble.x += bubble.vx;
-                        bubble.y += bubble.vy;
-
-                        const killPadding = bubble.size * 1.3;
-                        if (bubble.y < -killPadding || bubble.x < -killPadding || bubble.x > width + killPadding) {
-                            continue;
-                        }
-
-                        // Draw a circle for the bubble
-                        runtime.ctx.save();
-                        runtime.ctx.globalAlpha = bubble.alpha;
-                        runtime.ctx.fillStyle = "#ffffff";
-                        runtime.ctx.beginPath();
-                        runtime.ctx.arc(bubble.x + bubble.size / 2, bubble.y + bubble.size / 2, bubble.size / 2, 0, Math.PI * 2);
-                        runtime.ctx.fill();
-                        runtime.ctx.restore();
-
-                        bubbles.push(bubble);
-                    }
-                    attrs.bubbles = bubbles;
                 },
 
                 events: {
@@ -366,25 +339,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
 
                             entity.cursorInside = inside;
                         }
-
-                        for (const bubble of attrs.bubbles) {
-                            if (bubble.popped) continue;
-
-                            const cx = bubble.x + bubble.size / 2;
-                            const cy = bubble.y + bubble.size / 2;
-                            const dx = cx - point.x;
-                            const dy = cy - point.y;
-                            const dist = Math.hypot(dx, dy);
-                            const radius = bubble.size / 2;
-                            const inside = dist <= radius;
-
-                            if (inside && !bubble.cursorInside && attrs.pointer.speed >= attrs.bubbleCfg.popSpeed) {
-                                bubble.popped = true;
-                                continue;
-                            }
-
-                            bubble.cursorInside = inside;
-                        }
                     },
 
                     pointerleave(self) {
@@ -396,9 +350,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
 
                         for (const entity of attrs.entities) {
                             entity.cursorInside = false;
-                        }
-                        for (const bubble of attrs.bubbles) {
-                            bubble.cursorInside = false;
                         }
                     },
 
@@ -421,20 +372,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
                                 entity.burst = toRange(attrs.cfg.burstMin, attrs.cfg.burstMax) * 2;
                                 entity.lastScaredAt = performance.now();
                                 entity.color = `hsl(${Math.floor(Math.random() * 36) * 10}, 70%, 80%)`;
-                            }
-                        }
-
-                        for (const bubble of attrs.bubbles) {
-                            if (bubble.popped) continue;
-
-                            const cx = bubble.x + bubble.size / 2;
-                            const cy = bubble.y + bubble.size / 2;
-                            const dx = cx - point.x;
-                            const dy = cy - point.y;
-                            const dist = Math.hypot(dx, dy);
-                            const radius = bubble.size / 2;
-                            if (dist <= radius) {
-                                bubble.popped = true;
                             }
                         }
                     }
@@ -563,33 +500,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
         return canv;
     };
 
-    const copyJellyAttrs = (sourceCanv, targetCanv) => {
-        const source = sourceCanv?.actions?.jellytank;
-        const target = targetCanv?.actions?.jellytank;
-        if (!source || !target) return;
-
-        target.attrs.entities = source.attrs.entities;
-        target.attrs.bubbles = source.attrs.bubbles;
-        target.attrs.spawnTimer = 0;
-        target.attrs.bubbleSpawnTimer = 0;
-    };
-
-    const clearJellyAttrs = (canv) => {
-        const action = canv?.actions?.jellytank;
-        if (!action) return;
-
-        action.attrs.entities = [];
-        action.attrs.bubbles = [];
-        action.attrs.spawnTimer = 0;
-        action.attrs.bubbleSpawnTimer = 0;
-    };
-
-    const hasJellyEntities = (canv) => {
-        const action = canv?.actions?.jellytank;
-        if (!action) return false;
-        return (action.attrs.entities?.length ?? 0) > 0 || (action.attrs.bubbles?.length ?? 0) > 0;
-    };
-
     const jellyHost = document.getElementById("jellytank");
     if (jellyHost) {
         const mainJellyCanv = createCanvRuntime({ includeJelly: true, includeStars: false });
@@ -603,16 +513,6 @@ const WELCOME_LEFT_SIDE_CONFIG = {
         mainGlitterCanv.mount(glitterHost);
         window.mainGlitterCanv = mainGlitterCanv;
     }
-
-    window.createSectionJellyCanv = (hostElement) => {
-        const canv = createCanvRuntime({ includeJelly: true, includeStars: false });
-        canv.mount(hostElement);
-        return canv;
-    };
-
-    window.copyJellyCanvState = copyJellyAttrs;
-    window.clearJellyCanvState = clearJellyAttrs;
-    window.hasJellyCanvState = hasJellyEntities;
 })();
 
 
@@ -1135,7 +1035,6 @@ function animateStaggeredSequence(spans, options, revealCallback) {
     }
 })();
 
-
 // Shared circle reveal + copied tank controller for content sections
 (function() {
     const mainCanv = window.mainJellyCanv ?? null;
@@ -1158,111 +1057,21 @@ function animateStaggeredSequence(spans, options, revealCallback) {
         sections.push({
             input,
             section,
-            host: null,
-            canv: null,
             closeTimerId: null,
-            mainStopTimerId: null,
         });
     }
 
     if (sections.length === 0) return;
 
-    const createCanvHost = () => {
-        const host = document.createElement("div");
-        host.dataset.canvCopyHost = "true";
-        host.style.position = "absolute";
-        host.style.inset = "0";
-        host.style.zIndex = "0";
-        host.style.pointerEvents = "none";
-        host.style.overflow = "hidden";
-        return host;
-    };
-
-    const destroyCanvHost = (item, host) => {
-        if (item?.canv) {
-            item.canv.unmount();
-            item.canv = null;
-        }
-        if (!host) return;
-
-        if (host.parentNode) {
-            host.parentNode.removeChild(host);
-        }
-    };
-
-    const getOpenDurationMs = (section) => {
-        const raw = getComputedStyle(section).getPropertyValue("--reveal-open-duration").trim();
-        if (!raw) return 500;
-
-        const parsed = Number.parseFloat(raw);
-        if (!Number.isFinite(parsed)) return 500;
-        if (raw.endsWith("ms")) return parsed;
-        return parsed * 1000;
-    };
-
-    const getCloseDurationMs = (section) => {
-        const raw = getComputedStyle(section).getPropertyValue("--reveal-close-duration").trim();
-        if (!raw) return 400;
-
-        const parsed = Number.parseFloat(raw);
-        if (!Number.isFinite(parsed)) return 400;
-        if (raw.endsWith("ms")) return parsed;
-        return parsed * 1000;
-    };
-
     const isSectionOpen = (item) => item.input.checked;
-
-    const hasOpenSections = () => sections.some((item) => item.input.checked);
-
-    const getSourceCanvForSection = (item) => {
-        if (window.hasJellyCanvState?.(mainCanv)) {
-            return mainCanv;
-        }
-
-        const fallback = sections.find((other) => other !== item && other.canv && window.hasJellyCanvState?.(other.canv));
-        if (!fallback) return mainCanv;
-        return fallback.canv;
-    };
-
-    const clearMainAfterOpen = (item) => {
-        if (item.mainStopTimerId != null) {
-            clearTimeout(item.mainStopTimerId);
-            item.mainStopTimerId = null;
-        }
-
-        item.mainStopTimerId = window.setTimeout(() => {
-            if (!item.input.checked || !item.host) {
-                item.mainStopTimerId = null;
-                return;
-            }
-
-            window.clearJellyCanvState?.(mainCanv);
-            item.mainStopTimerId = null;
-        }, getOpenDurationMs(item.section));
-    };
 
     const openSection = (item) => {
         if (item.closeTimerId != null) {
             clearTimeout(item.closeTimerId);
             item.closeTimerId = null;
         }
-
-        if (item.host) return;
-
-        item.host = createCanvHost();
-        item.section.insertBefore(item.host, item.section.firstChild);
-        item.canv = window.createSectionJellyCanv?.(item.host) ?? null;
-
-        if (!item.canv) return;
-
-        const sourceCanv = getSourceCanvForSection(item);
-        if (sourceCanv) {
-            window.copyJellyCanvState?.(sourceCanv, item.canv);
-
-            if (sourceCanv === mainCanv) {
-                clearMainAfterOpen(item);
-            }
-        }
+        // Sections are transparent — the main jelly canvas shows through.
+        // No per-section canvas needed; the main tank keeps running.
     };
 
     const closeSection = (item) => {
@@ -1270,28 +1079,7 @@ function animateStaggeredSequence(spans, options, revealCallback) {
             clearTimeout(item.closeTimerId);
             item.closeTimerId = null;
         }
-        if (!item.host) return;
-
-        const closingHost = item.host;
-        const closingCanv = item.canv;
-        const closeDuration = getCloseDurationMs(item.section);
-        item.closeTimerId = window.setTimeout(() => {
-            if (closingCanv) {
-                window.copyJellyCanvState?.(closingCanv, mainCanv);
-            }
-
-            destroyCanvHost(item, closingHost);
-            if (item.host === closingHost) {
-                item.host = null;
-            }
-
-            if (item.mainStopTimerId != null) {
-                clearTimeout(item.mainStopTimerId);
-                item.mainStopTimerId = null;
-            }
-
-            item.closeTimerId = null;
-        }, closeDuration);
+        // Sections are transparent — nothing to tear down canvas-wise.
     };
 
     const syncSections = () => {
@@ -1305,6 +1093,7 @@ function animateStaggeredSequence(spans, options, revealCallback) {
     };
 
     const setRevealOriginFromEvent = (e) => {
+        // Sync origin on each section (used by section's own mask)
         for (const item of sections) {
             const rect = item.section.getBoundingClientRect();
             const localX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
@@ -1312,6 +1101,16 @@ function animateStaggeredSequence(spans, options, revealCallback) {
 
             item.section.style.setProperty("--reveal-x", `${localX}px`);
             item.section.style.setProperty("--reveal-y", `${localY}px`);
+        }
+
+        // Sync origin on #welcome so its inverted mask uses the same click point
+        const welcome = document.getElementById("welcome");
+        if (welcome) {
+            const rect = welcome.getBoundingClientRect();
+            const localX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+            const localY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+            welcome.style.setProperty("--reveal-x", `${localX}px`);
+            welcome.style.setProperty("--reveal-y", `${localY}px`);
         }
     };
 
@@ -1332,7 +1131,6 @@ function animateStaggeredSequence(spans, options, revealCallback) {
 
     syncSections();
 })();
-
 
 // Custom floaters (context + tooltip)
 
