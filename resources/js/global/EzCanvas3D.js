@@ -864,26 +864,8 @@ EzAssets
         }
     }
 
-    function simpleTex(gl, existing, iFmt, fmt, type, w, h, data) {
-        const tex = existing ?? gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        if (!existing) {
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
-        }
-        gl.texImage2D(gl.TEXTURE_2D, 0, iFmt, w, h, 0, fmt, type, data);
-        return tex;
-    }
 
-    const _dummyTex = (gl, iFmt, fmt, type, data) => simpleTex(gl, null, iFmt, fmt, type, 1, 1, data);
-
-    // ---------------------------------------------------------------------------
-    //  EzMesh3D — owns all GPU geometry data for one mesh asset
-    // ---------------------------------------------------------------------------
     class EzMesh3D {
-        // Public fields — all accessible directly (no private encapsulation by design)
         vao               = null;
         vbo               = null;
         ebo               = null;
@@ -903,8 +885,6 @@ EzAssets
                 if (p.morph) for (const t of p.morph.channels.values()) gl.deleteTexture(t);
         }
 
-        // Create and return an EzMesh3D from raw descriptor opts.
-        // Mirrors the geometry half of the old #addModelImpl.
         static fromDesc(gl, shader, key, opts = {}) {
             const { vertices, indices, attributes, primitives } = opts;
 
@@ -962,7 +942,6 @@ EzAssets
                 }
             }
 
-            // Morph targets
             let morphTotalWeights = 0;
             const shaderMorphChannels = shader._morphChannels ?? [];
 
@@ -1040,7 +1019,6 @@ EzAssets
                 morphTotalWeights += targetCount;
             }
 
-            // Build VAO
             const vao = gl.createVertexArray();
             gl.bindVertexArray(vao);
 
@@ -1088,14 +1066,9 @@ EzAssets
         }
     }
 
-    // ---------------------------------------------------------------------------
-    //  EzSkeleton3D — owns resolved bone hierarchy data (no heavy GPU state)
-    // ---------------------------------------------------------------------------
     class EzSkeleton3D {
-        // Public fields
         bones = []; // [{ parent, localBind: Float32Array(16), inverseBind: Float32Array(16) }]
 
-        // Compute skinning palette (Float32Array(boneCount*16)) given per-bone pose matrices.
         computePalette(bonePoses) {
             const n = this.bones.length;
             const globalCurrent = new Array(n);
@@ -1109,7 +1082,6 @@ EzAssets
             return palette;
         }
 
-        // Create and return an EzSkeleton3D from raw skeleton descriptor, or null if no bones.
         static fromDesc(key, skeleton) {
             if (!skeleton || !Array.isArray(skeleton.bones) || skeleton.bones.length === 0) return null;
             const bones = [], globalBind = [];
@@ -1132,12 +1104,28 @@ EzAssets
         }
     }
 
+
     function packInstanceRow(arr, offFloats, inst, layout) {
         for (const e of layout.entries) {
             const src = inst.data[e.name];
             if (src) arr.set(src, offFloats + (e.byteOffset >> 2));
         }
     }
+
+    function simpleTex(gl, existing, iFmt, fmt, type, w, h, data) {
+        const tex = existing ?? gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        if (!existing) {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
+        }
+        gl.texImage2D(gl.TEXTURE_2D, 0, iFmt, w, h, 0, fmt, type, data);
+        return tex;
+    }
+
+    const _dummyTex = (gl, iFmt, fmt, type, data) => simpleTex(gl, null, iFmt, fmt, type, 1, 1, data);
 
 
     // Fixed texture units for internal ez_ resources.
