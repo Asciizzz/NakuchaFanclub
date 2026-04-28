@@ -94,17 +94,19 @@ EzCanvas3D
 |   |-- Bone storage: palette uploaded as RGBA32F, 4 texels wide × N bones tall.
 |                     Always bound to texture unit 1 when hasSkeleton is active.
 |
-|-- Camera
-|   |-- setCamera({ position?, yaw?, pitch?, roll?, orientation?, fov?, near?, far? })
-|   |-- getCamera() / getCameraVectors() -> { forward, up, right }
-|   |-- rotateCamera(pitchDelta, yawDelta, rollDelta?)   degrees, pitch clamped ±89
-|   |-- translateCamera([dx,dy,dz])
-|   |-- resetCameraRoll()
+|-- Camera (ez.camera — EzCamera3D instance)
+|   |-- Public attributes: pos, orientation, yaw, pitch, roll, forward, up, right, fov, near, far, view, projection
+|   |-- set({ position?, yaw?, pitch?, roll?, orientation?, fov?, near?, far? })    set config, auto calls update()
+|   |-- update()                                                                     recompute vectors, view & projection
+|   |-- get vectors                                                                  { forward, up, right }
+|   |-- rotate(pitchDelta, yawDelta, rollDelta?)   degrees, pitch clamped ±89
+|   |-- translate([dx,dy,dz])
+|   |-- resetRoll()
+|   |-- setAspect(width, height)                                                    update projection aspect ratio
+|   |-- toJSON()                                                                     serialize camera state
 |
 |-- Render
     |-- render()          call each rAF frame
-    |-- pick(x, y)        GPU colour-pick at canvas-local coords (e.offsetX, e.offsetY)
-                          -> { instanceKey, modelKey, shaderKey } | null
 
 ----
 EzMesh3D
@@ -173,6 +175,26 @@ Internal ez_ uniforms
     ez_morphWeightOffset — weight offset into ez_morphWeightTex
     ez_morphVertexBase   — vertex ID offset for current primitive
     ez_morphDelta_N      — delta texture for channel N
+
+----
+EzCamera3D
+|-- new EzCamera3D()
+|-- All attributes are public for convenience:
+|   |-- pos: [x, y, z]              camera position
+|   |-- orientation: [x, y, z, w]   quaternion
+|   |-- yaw, pitch, roll: degrees   euler angles (pitch clamped ±89)
+|   |-- forward, up, right: vectors computed by update()
+|   |-- fov, near, far: projection params
+|   |-- view: Float32Array(16)      view matrix
+|   |-- projection: Float32Array(16) projection matrix
+|-- set(cfg)                        set properties from config object
+|-- update()                        recompute forward/up/right, view & projection matrices
+|-- setAspect(w, h)                 update aspect ratio and recompute projection
+|-- rotate(pitchΔ, yawΔ, rollΔ?)    rotate by deltas (degrees)
+|-- translate([dx,dy,dz])           move by offset in world space
+|-- resetRoll()                     zero out roll while preserving yaw/pitch
+|-- get vectors                     { forward, up, right }
+|-- toJSON()                        serialize to plain object
 
 ----
 EzAssets
@@ -358,6 +380,19 @@ EzAssets
                 const th0 = Math.acos(dot), th = th0*t;
                 const s0 = Math.cos(th) - dot*Math.sin(th)/Math.sin(th0), s1 = Math.sin(th)/Math.sin(th0);
                 return [s0*ax+s1*bx, s0*ay+s1*by, s0*az+s1*bz, s0*aw+s1*bw];
+            },
+
+            toEulerYPR([x, y, z, w]) {
+                const r2d = 180 / Math.PI;
+                const sinr_cosp = 2 * (w * x + y * z);
+                const cosr_cosp = 1 - 2 * (x * x + y * y);
+                const roll = Math.atan2(sinr_cosp, cosr_cosp) * r2d;
+                const sinp = 2 * (w * y - z * x);
+                const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * 90 : Math.asin(sinp) * r2d;
+                const siny_cosp = 2 * (w * z + x * y);
+                const cosy_cosp = 1 - 2 * (y * y + z * z);
+                const yaw = Math.atan2(siny_cosp, cosy_cosp) * r2d;
+                return { yaw, pitch, roll };
             },
         };
     }
@@ -865,6 +900,100 @@ EzAssets
     }
 
 
+    class EzCamera3D {
+        pos = [0, 0, 3];
+        orientation = [0, 0, 0, 1];
+        pitch = 0; yaw = 0; roll = 0;
+        forward = [0, 0, -1];
+        up = [0, 1, 0];
+        right = [1, 0, 0];
+        fov = 45; near = 0.1; far = 1000;
+        view = null;
+        projection = null;
+        #aspect = 1;
+
+        constructor() { this.update(); }
+
+        set(cfg = {}) {
+            for (const k of ["fov", "near", "far"]) if (k in cfg) this[k] = cfg[k];
+            if ("position" in cfg) this.pos = cfg.position;
+
+            if ("orientation" in cfg) {
+                this.orientation = _math.Quat.normalize(cfg.orientation);
+                const e = _math.Quat.toEulerYPR(this.orientation);
+                this.pitch = _math.clamp(e.pitch, -89, 89);
+                this.yaw = e.yaw;
+                this.roll = e.roll;
+            } else if ("yaw" in cfg || "pitch" in cfg || "roll" in cfg) {
+                if ("yaw" in cfg) this.yaw = cfg.yaw;
+                if ("pitch" in cfg) this.pitch = _math.clamp(cfg.pitch, -89, 89);
+                if ("roll" in cfg) this.roll = cfg.roll;
+                this.orientation = _math.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
+            }
+
+            this.update();
+            return this;
+        }
+
+        update() {
+            this.forward = _math.Quat.rotateVec(this.orientation, [0, 0, -1]);
+            this.right = _math.Quat.rotateVec(this.orientation, [1, 0, 0]);
+            this.up = _math.Quat.rotateVec(this.orientation, [0, 1, 0]);
+            this.view = _math.Mat4.lookAt(this.pos, [this.pos[0] + this.forward[0], this.pos[1] + this.forward[1], this.pos[2] + this.forward[2]], this.up);
+            this.projection = _math.Mat4.perspective(this.fov * Math.PI / 180, this.#aspect, this.near, this.far);
+            return this;
+        }
+
+        setAspect(width, height) {
+            this.#aspect = width / height || 1;
+            this.update();
+            return this;
+        }
+
+        get vectors() {
+            return {
+                forward: [...this.forward],
+                up: [...this.up],
+                right: [...this.right],
+            };
+        }
+
+        rotate(pitchDelta, yawDelta, rollDelta = 0) {
+            this.pitch = _math.clamp(this.pitch + pitchDelta, -89, 89);
+            this.yaw += yawDelta;
+            this.roll += rollDelta;
+            this.orientation = _math.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
+            this.update();
+            return this;
+        }
+
+        translate(offset) {
+            this.pos = [this.pos[0] + offset[0], this.pos[1] + offset[1], this.pos[2] + offset[2]];
+            this.update();
+            return this;
+        }
+
+        resetRoll() {
+            this.roll = 0;
+            this.orientation = _math.Quat.normalize(_math.Quat.fromEulerYPR(this.yaw, this.pitch, 0));
+            this.update();
+            return this;
+        }
+
+        toJSON() {
+            return {
+                position: [...this.pos],
+                yaw: this.yaw,
+                pitch: this.pitch,
+                roll: this.roll,
+                fov: this.fov,
+                near: this.near,
+                far: this.far,
+                orientation: [...this.orientation],
+            };
+        }
+    }
+
     class EzMesh3D {
         vao               = null;
         vbo               = null;
@@ -1134,103 +1263,6 @@ EzAssets
     const _EZ_TEX_UNIT_MORPH_WEIGHT = 2;
     const _EZ_TEX_UNIT_MORPH_DELTA  = 3; // N channels occupy 3, 4, 5, ...
 
-    const _DEFAULT_TEMPLATE = {
-        vertex: {
-            attributes: [
-                { name: "a_position",   size: 3, default: [0, 0, 0, 1] },
-                { name: "a_uv",         size: 2, default: [0, 0, 0, 0] },
-                { name: "a_boneID",     size: 4, default: [0, 0, 0, 0] },
-                { name: "a_boneWeight", size: 4, default: [0, 0, 0, 0] },
-            ],
-            defaultKeys: {
-                view:       "u_view",
-                projection: "u_projection",
-            },
-            hasSkeleton: true,
-            instanceData: [
-                { name: "a_instanceMatrix", type: "mat4" },
-                { name: "a_instanceColor",  type: "vec4", default: [1, 1, 1, 1] },
-            ],
-            outputs: [
-                { name: "v_uv",            type: "vec2" },
-                { name: "v_instanceColor", type: "vec4" },
-            ],
-            main: `
-                v_uv = a_uv;
-                v_instanceColor = a_instanceColor;
-                mat4 skin = computeSkin(a_boneID, a_boneWeight);
-                gl_Position = u_projection * u_view * a_instanceMatrix * skin * vec4(a_position, 1.0);
-            `,
-        },
-        fragment: {
-            defaultKeys: {
-                fill:   "u_fill",
-                albedo: "u_albedo",
-            },
-            outputColor: "fragColor",
-            main: `fragColor = texture(u_albedo, v_uv) * u_fill * v_instanceColor;`,
-        },
-    };
-
-
-    // A shader for screen space object picking, very useful
-    // cannot handle morph deformation BUT does works with rigs/skins
-    const _PICK_VERT_LOC_POSITION   = 0;
-    const _PICK_VERT_LOC_BONEID     = 1;
-    const _PICK_VERT_LOC_BONEWEIGHT = 2;
-    const _PICK_VERT_LOC_MATRIX     = 3; // occupies slots 3,4,5,6
-
-    const _PICK_VERT_SRC = `#version 300 es
-        precision highp float;
-        layout(location=${_PICK_VERT_LOC_POSITION})   in vec3 a_position;
-        layout(location=${_PICK_VERT_LOC_BONEID})     in vec4 a_boneID;
-        layout(location=${_PICK_VERT_LOC_BONEWEIGHT}) in vec4 a_boneWeight;
-        layout(location=${_PICK_VERT_LOC_MATRIX})     in mat4 a_pickMatrix;
-
-        uniform mat4 ez_pickView;
-        uniform mat4 ez_pickProj;
-        uniform bool ez_pickHasSkeleton;
-        uniform highp sampler2D ${EzShader3D.EZ.BONES_TEX};
-
-        mat4 fetchBone(int i) {
-            return mat4(
-                texelFetch(${EzShader3D.EZ.BONES_TEX}, ivec2(0, i), 0),
-                texelFetch(${EzShader3D.EZ.BONES_TEX}, ivec2(1, i), 0),
-                texelFetch(${EzShader3D.EZ.BONES_TEX}, ivec2(2, i), 0),
-                texelFetch(${EzShader3D.EZ.BONES_TEX}, ivec2(3, i), 0)
-            );
-        }
-        mat4 computeSkin(vec4 boneID, vec4 boneWeight) {
-            float wsum = boneWeight.x + boneWeight.y + boneWeight.z + boneWeight.w;
-            if (wsum < 0.0001) return mat4(1.0);
-            return boneWeight.x * fetchBone(int(boneID.x))
-                + boneWeight.y * fetchBone(int(boneID.y))
-                + boneWeight.z * fetchBone(int(boneID.z))
-                + boneWeight.w * fetchBone(int(boneID.w));
-        }
-
-        void main() {
-            mat4 skin = ez_pickHasSkeleton
-                ? computeSkin(a_boneID, a_boneWeight)
-                : mat4(1.0);
-            gl_Position = ez_pickProj * ez_pickView * a_pickMatrix * skin * vec4(a_position, 1.0);
-        }`;
-
-    const _PICK_FRAG_SRC = `#version 300 es
-        precision mediump float;
-        uniform uint ez_pickId;
-        out vec4 fragColor;
-        void main() {
-            // Encode 24-bit ID into RGB, A=1. ID 0 means background (no hit).
-            fragColor = vec4(
-                float((ez_pickId >> 16u) & 255u) / 255.0,
-                float((ez_pickId >>  8u) & 255u) / 255.0,
-                float( ez_pickId         & 255u) / 255.0,
-                1.0
-            );
-        }`;
-
-
     function _drawPrim(gl, prim, mesh, instanceCount) {
         EzWebGL.drawInstanced(gl, {
             instanceCount,
@@ -1247,16 +1279,6 @@ EzAssets
                 }
         });
     }
-
-    const _RCFG_OPAQUE = { rQueue: 1000, depthWrite: true,  depthTest: true, blend: false, blendSrc: null, blendDst: null, doubleSided: false };
-    const _RCFG_TRANSPARENT = { rQueue: 2000, depthWrite: false, depthTest: true, blend: true,  blendSrc: null, blendDst: null, doubleSided: true };
-
-    const _DEFAULT_SHADERS = [
-        { key: "__ez_opaque_default__",      renderCfg: _RCFG_OPAQUE },
-        { key: "__ez_transparent_default__", renderCfg: _RCFG_TRANSPARENT },
-    ];
-    const _DEFAULT_OPAQUE_KEY  = _DEFAULT_SHADERS[0].key;
-    const _DEFAULT_SHADER_KEYS = new Set(_DEFAULT_SHADERS.map(s => s.key));
 
     const TAGC3D = "[EzCanvas3D]";
     class EzCanvas3D {
@@ -1281,26 +1303,7 @@ EzAssets
 
         #instanceCounter = 0;
 
-        // Picking
-        #pickProgram  = null;  // the single picking GL program
-        #pickFbo      = null;  // offscreen framebuffer
-        #pickColorTex = null;  // RGBA8 color attachment
-        #pickDepthRb  = null;  // depth renderbuffer
-        #pickFboW     = 0;
-        #pickFboH     = 0;
-        #pickVao      = null;  // picking VAO (re-configured per model draw)
-        #pickInstVbo  = null;  // instance VBO for the picking pass (mat4 per instance)
-        // Picking uniform locations (cached after program compile)
-        #pickUloc     = null;
-
-        #cam = {
-            pos: [0, 0, 3], orientation: [0, 0, 0, 1],
-            pitch: 0, yaw: 0, roll: 0,
-            forward: [0, 0, -1], up: [0, 1, 0], right: [1, 0, 0],
-            fov: 45, near: 0.1, far: 1000,
-        };
-        #proj = null;
-        #view = null;
+        camera = null;
 
         settings = {
             width: () => this.#canvas.width,
@@ -1336,10 +1339,8 @@ EzAssets
             this.#morphDummyDelta  = _dummyTex(gl, gl.RGB32F, gl.RGB,  gl.FLOAT,         new Float32Array([0,0,0]));
             this.#morphDummyWeight = _dummyTex(gl, gl.R32F,   gl.RED,  gl.FLOAT,         new Float32Array([0]));
 
-            this.#initPickProgram();
+            this.camera = new EzCamera3D();
             this.#registerAssets();
-            this.#addDefaultShader();
-            this.#camUpdate();
         }
 
         #registerAssets() {
@@ -1348,8 +1349,6 @@ EzAssets
             this.#assets
                 .register("shader", {
                     add: (map, key, shader) => {
-                        if (_DEFAULT_SHADER_KEYS.has(key))
-                            return _c.warn(TAGC3D, `shader.add: key "${key}" is reserved`);
                         if (!(shader instanceof EzShader))
                             return _c.warn(TAGC3D, `shader.add: expected an EzShader instance for "${key}"`);
                         if (!shader.compiled) {
@@ -1362,8 +1361,6 @@ EzAssets
                         return true;
                     },
                     remove: (map, key) => {
-                        if (_DEFAULT_SHADER_KEYS.has(key))
-                            return _c.warn(TAGC3D, `shader.remove: built-in "${key}" cannot be removed`);
                         const s = map.get(key); if (!s) return false;
                         gl.deleteProgram(s.program);
                         map.delete(key);
@@ -1488,9 +1485,7 @@ EzAssets
         resize(w, h) {
             this.#canvas.width = w; this.#canvas.height = h;
             this.#gl.viewport(0, 0, w, h);
-            // Invalidate pick FBO so it gets rebuilt at the correct size on next pick().
-            this.#pickFboW = 0;
-            this.#camUpdate();
+            this.camera.setAspect(w, h);
             return this;
         }
 
@@ -1510,9 +1505,10 @@ EzAssets
         #addModelImpl(map, key, opts = {}) {
             if (!_is.str(key)) return false;
             // Delegate geometry + skeleton creation to EzMesh3D / EzSkeleton3D
-            const { defaultShader: shaderKeyIn, skeleton } = opts;
+            const { defaultShader: shaderKey, skeleton } = opts;
 
-            const shaderKey = _is.str(shaderKeyIn) ? shaderKeyIn : _DEFAULT_OPAQUE_KEY;
+            if (!_is.str(shaderKey))
+                return _c.warn(TAGC3D, `addModel: defaultShader required`);
             const shader = this.shaders.get(shaderKey);
             if (!shader)
                 return _c.warn(TAGC3D, `addModel: shader "${shaderKey}" not found`);
@@ -1636,82 +1632,31 @@ EzAssets
 
 
         setCamera(opts = {}) {
-            const c = this.#cam;
-            for (const k of ["fov","near","far"]) if (k in opts) c[k] = opts[k];
-            if ("position" in opts) c.pos = opts.position;
-
-            if ("orientation" in opts) {
-                c.orientation = _math.Quat.normalize(opts.orientation);
-                const e = _math.Quat.toEulerYPR(c.orientation);
-                c.pitch = _math.clamp(e.pitch, -89, 89);
-                c.yaw   = e.yaw;
-                c.roll  = e.roll;
-            } else if ("yaw" in opts || "pitch" in opts || "roll" in opts) {
-                if ("yaw"   in opts) c.yaw   = opts.yaw;
-                if ("pitch" in opts) c.pitch = _math.clamp(opts.pitch, -89, 89);
-                if ("roll"  in opts) c.roll  = opts.roll;
-                c.orientation = _math.Quat.fromEulerYPR(c.yaw, c.pitch, c.roll);
-            }
-
-            this.#camUpdate();
+            this.camera.set(opts);
             return this;
         }
 
         getCamera() {
-            const c = this.#cam;
-            return {
-                position:    [...c.pos],
-                yaw:         c.yaw,
-                pitch:       c.pitch,
-                roll:        c.roll,
-                fov:         c.fov,
-                near:        c.near,
-                far:         c.far,
-                orientation: [...c.orientation],
-            };
+            return this.camera.toJSON();
         }
 
         rotateCamera(pitchDelta, yawDelta, rollDelta = 0) {
-            const c = this.#cam;
-            c.pitch = _math.clamp(c.pitch + pitchDelta, -89, 89);
-            c.yaw  += yawDelta;
-            c.roll += rollDelta;
-            c.orientation = _math.Quat.fromEulerYPR(c.yaw, c.pitch, c.roll);
-            this.#camUpdate();
+            this.camera.rotate(pitchDelta, yawDelta, rollDelta);
             return this;
         }
 
         translateCamera(offset) {
-            const c = this.#cam, p = c.pos;
-            c.pos = [p[0]+offset[0], p[1]+offset[1], p[2]+offset[2]];
-            this.#view = _math.Mat4.lookAt(c.pos, [c.pos[0]+c.forward[0], c.pos[1]+c.forward[1], c.pos[2]+c.forward[2]], c.up);
+            this.camera.translate(offset);
             return this;
         }
 
         resetCameraRoll() {
-            const c = this.#cam;
-            c.roll = 0;
-            c.orientation = _math.Quat.normalize(_math.Quat.fromEulerYPR(c.yaw, c.pitch, 0));
-            this.#camUpdate();
+            this.camera.resetRoll();
             return this;
         }
 
         getCameraVectors() {
-            const c = this.#cam;
-            return {
-                forward: [...c.forward],
-                up:      [...c.up],
-                right:   [...c.right],
-            };
-        }
-
-        #camUpdate() {
-            const c = this.#cam;
-            c.forward = _math.Quat.rotateVec(c.orientation, [0, 0, -1]);
-            c.right   = _math.Quat.rotateVec(c.orientation, [1, 0,  0]);
-            c.up      = _math.Quat.rotateVec(c.orientation, [0, 1,  0]);
-            this.#view = _math.Mat4.lookAt(c.pos, [c.pos[0]+c.forward[0], c.pos[1]+c.forward[1], c.pos[2]+c.forward[2]], c.up);
-            this.#proj = _math.Mat4.perspective(c.fov * Math.PI / 180, this.#canvas.width / this.#canvas.height, c.near, c.far);
+            return this.camera.vectors;
         }
 
         render() {
@@ -1749,8 +1694,8 @@ EzAssets
                 shader.applyRenderState(gl);
 
                 shader.bind(gl);
-                if (shader.uloc.view)       gl.uniformMatrix4fv(shader.uloc.view,       false, this.#view);
-                if (shader.uloc.projection) gl.uniformMatrix4fv(shader.uloc.projection, false, this.#proj);
+                if (shader.uloc.view)       gl.uniformMatrix4fv(shader.uloc.view,       false, this.camera.view);
+                if (shader.uloc.projection) gl.uniformMatrix4fv(shader.uloc.projection, false, this.camera.projection);
 
                 // 0 stride = shader has no instanceData (drawn purely via gl_InstanceID).
                 const layout = shader.instanceLayout;
@@ -1866,196 +1811,6 @@ EzAssets
             const n = skel.bones.length;
             model.boneTex = simpleTex(gl, model.boneTex, gl.RGBA32F, gl.RGBA, gl.FLOAT, 4, n, palette);
         }
-
-        // Cool picking thingy
-
-        #initPickProgram() {
-            const gl = this.#gl;
-            this.#pickProgram = EzShader.createProgram(gl, _PICK_VERT_SRC, _PICK_FRAG_SRC);
-            if (!this.#pickProgram) throw new Error(`${TAGC3D} Failed to compile picking shader`);
-
-            const p = this.#pickProgram;
-            this.#pickUloc = {
-                view:         gl.getUniformLocation(p, "ez_pickView"),
-                proj:         gl.getUniformLocation(p, "ez_pickProj"),
-                hasSkeleton:  gl.getUniformLocation(p, "ez_pickHasSkeleton"),
-                bonesTex:     gl.getUniformLocation(p, EzShader3D.EZ.BONES_TEX),
-                id:           gl.getUniformLocation(p, "ez_pickId"),
-            };
-
-            // VAO for picking — attribute pointers are reconfigured per model.
-            this.#pickVao    = gl.createVertexArray();
-            this.#pickInstVbo = gl.createBuffer();
-        }
-
-        #ensurePickFbo() {
-            const gl = this.#gl;
-            const w = this.#canvas.width, h = this.#canvas.height;
-            if (this.#pickFboW === w && this.#pickFboH === h) return;
-
-            if (this.#pickFbo)      gl.deleteFramebuffer(this.#pickFbo);
-            if (this.#pickColorTex) gl.deleteTexture(this.#pickColorTex);
-            if (this.#pickDepthRb)  gl.deleteRenderbuffer(this.#pickDepthRb);
-
-            const col = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, col);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            gl.bindTexture(gl.TEXTURE_2D, null);
-
-            const dep = gl.createRenderbuffer();
-            gl.bindRenderbuffer(gl.RENDERBUFFER, dep);
-            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
-            gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-
-            const fbo = gl.createFramebuffer();
-            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, col, 0);
-            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, dep);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-            this.#pickFbo      = fbo;
-            this.#pickColorTex = col;
-            this.#pickDepthRb  = dep;
-            this.#pickFboW     = w;
-            this.#pickFboH     = h;
-        }
-
-
-        // x, y are coord in the canvas
-        pick(x, y) {
-            const gl   = this.#gl;
-            const rect = this.#canvas.getBoundingClientRect();
-
-            // Map canvas-local CSS coords -> physical framebuffer pixels, flip Y.
-            const px = Math.round(x * (this.#canvas.width  / rect.width));
-            const py = this.#canvas.height - 1 - Math.round(y * (this.#canvas.height / rect.height));
-
-            // Out of bounds -> no hit.
-            if (px < 0 || py < 0 || px >= this.#canvas.width || py >= this.#canvas.height)
-                return null;
-
-            this.#ensurePickFbo();
-
-
-            const registry = new Map(); // uint -> { instanceKey, modelKey, shaderKey }
-            let nextId = 1;
-
-            const batches = new Map();
-            for (const [instKey, inst] of this.#instances) {
-                if (!inst.display) continue;
-                const model = this.models.get(inst.modelKey); if (!model) continue;
-                const shader = this.shaders.get(model.shaderKey); if (!shader) continue;
-
-                const id = nextId++;
-                registry.set(id, { instanceKey: instKey, modelKey: inst.modelKey, shaderKey: model.shaderKey });
-
-                const skinned = !!model.skeletonKey;
-                const bkey    = model.shaderKey;
-                if (!batches.has(bkey)) batches.set(bkey, { skinned, modelBatches: new Map() });
-                const mb = batches.get(bkey).modelBatches;
-                if (!mb.has(inst.modelKey)) mb.set(inst.modelKey, []);
-                mb.get(inst.modelKey).push({ inst, id });
-            }
-
-            // Render picking pass into FBO.
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.#pickFbo);
-            gl.viewport(0, 0, this.#canvas.width, this.#canvas.height);
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            gl.disable(gl.BLEND);    // blending corrupts ID colours
-            gl.enable(gl.DEPTH_TEST);
-            gl.enable(gl.CULL_FACE);
-
-            gl.useProgram(this.#pickProgram);
-            gl.uniformMatrix4fv(this.#pickUloc.view, false, this.#view);
-            gl.uniformMatrix4fv(this.#pickUloc.proj, false, this.#proj);
-            gl.uniform1i(this.#pickUloc.bonesTex, _EZ_TEX_UNIT_BONES);
-
-            // Reusable mat4 buffer for instance transform upload.
-            const matBuf = new Float32Array(16);
-
-            gl.bindVertexArray(this.#pickVao);
-
-            // Wire or zero a pick-pass attrib from the given VBO.
-            const wirePickAttr = (buffer, loc, size, stride, off, fallback) => {
-                if (off != null) { EzWebGL.wireAttr(gl, { buffer, loc, size, stride, offset: off, divisor: 0 }); }
-                else { gl.disableVertexAttribArray(loc); gl.vertexAttrib4f(loc, ...fallback); }
-            };
-
-            for (const [shaderKey, { skinned, modelBatches }] of batches) {
-                gl.uniform1i(this.#pickUloc.hasSkeleton, skinned ? 1 : 0);
-
-                for (const [modelKey, entries] of modelBatches) {
-                    const model = this.models.get(modelKey); if (!model) continue;
-                    const shader = this.shaders.get(shaderKey); if (!shader) continue;
-
-                    // Derive stride + byte offsets from shader's declared attributes.
-                    let stride = 0;
-                    const offsets = {};
-                    for (const a of shader.attributes) { offsets[a.name] = stride; stride += a.size * 4; }
-
-                    const mesh_p = this.#assets.mesh.get(model.meshKey); if (!mesh_p) continue;
-                    wirePickAttr(mesh_p.vbo, _PICK_VERT_LOC_POSITION,   3, stride, offsets["a_position"] ?? 0, [0,0,0,0]);
-                    wirePickAttr(mesh_p.vbo, _PICK_VERT_LOC_BONEID,     4, stride, offsets["a_boneID"],         [0,0,0,0]);
-                    wirePickAttr(mesh_p.vbo, _PICK_VERT_LOC_BONEWEIGHT, 4, stride, offsets["a_boneWeight"],     [0,0,0,1]);
-
-                    // Bind EBO if indexed.
-                    if (mesh_p.ebo) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh_p.ebo);
-
-                    for (let col = 0; col < 4; col++)
-                        EzWebGL.wireAttr(gl, { buffer: this.#pickInstVbo, loc: _PICK_VERT_LOC_MATRIX + col, size: 4, stride: 64, offset: col * 16, divisor: 1 });
-
-                    for (const { inst, id } of entries) {
-                        gl.uniform1ui(this.#pickUloc.id, id);
-
-                        const transformEntry = shader.instanceLayout.entries.find(e => e.type === "mat4");
-                        matBuf.set(transformEntry ? inst.data[transformEntry.name] : _math.Mat4.identity());
-                        gl.bufferData(gl.ARRAY_BUFFER, matBuf, gl.STREAM_DRAW);
-
-                        if (skinned && inst.bonePoses) {
-                            const skel_p = model.skeletonKey ? this.#assets.skeleton.get(model.skeletonKey) : null;
-                            if (skel_p) {
-                                gl.activeTexture(gl.TEXTURE0 + _EZ_TEX_UNIT_BONES);
-                                this.#uploadBoneTex(skel_p, model, inst.bonePoses);
-                            }
-                        }
-
-                        for (const prim of mesh_p.primitives) _drawPrim(gl, prim, mesh_p, 1);
-                    }
-
-                    if (mesh_p.ebo) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-                }
-            }
-
-            gl.bindVertexArray(null);
-
-            // Read the single pixel.
-            const pixel = new Uint8Array(4);
-            gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-
-            // Restore main framebuffer state.
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            gl.viewport(0, 0, this.#canvas.width, this.#canvas.height);
-            gl.clearColor(0, 0, 0, 0);
-            gl.enable(gl.BLEND);
-
-            // Decode ID.
-            const hitId = (pixel[0] << 16) | (pixel[1] << 8) | pixel[2];
-            if (hitId === 0 || pixel[3] === 0) return null; // background
-
-            return registry.get(hitId) ?? null;
-        }
-
-        #addDefaultShader() {
-            for (const s of _DEFAULT_SHADERS) {
-                const shader = new EzShader3D()
-                    .describe({ ..._DEFAULT_TEMPLATE, renderCfg: s.renderCfg })
-                    .compile(this.#gl);
-                this.shaders._map.set(s.key, shader);
-            }
-        }
     }
 
     window.EzMat4          = _math.Mat4;
@@ -2064,6 +1819,7 @@ EzAssets
     window.EzShader3D      = EzShader3D;
     window.EzMesh3D        = EzMesh3D;
     window.EzSkeleton3D    = EzSkeleton3D;
+    window.EzCamera3D      = EzCamera3D;
     window.EzCanvas3D      = EzCanvas3D;
 
 })();
