@@ -4,7 +4,7 @@
  * Returns processed mesh data without registering to EzCanvas3D.
  * User handles the models.add() call themselves.
  * 
- * Dependencies: EzCanvas3D.js (for EzMat4, EzQuat)
+ * Dependencies: EzCanvas3D.js (for EzMath.Mat4, EzMath.Quat)
  */
 
 (function () {
@@ -74,7 +74,7 @@
 
         function nodeLocalMat(node) {
             if (node.matrix) return new Float32Array(node.matrix);
-            return EzMat4.compose(node.translation || [0, 0, 0], node.rotation || [0, 0, 0, 1], node.scale || [1, 1, 1]);
+            return EzMath.Mat4.compose(node.translation || [0, 0, 0], node.rotation || [0, 0, 0, 1], node.scale || [1, 1, 1]);
         }
 
         return { gltf, binBuf, readAccessor, readIndices, nodeLocalMat };
@@ -137,7 +137,7 @@
             for (const ni of (list || [])) {
                 const node = gltf.nodes[ni];
                 const localMat = nodeLocalMat(node);
-                const worldMat = parentMat ? EzMat4.multiply(parentMat, localMat) : localMat;
+                const worldMat = parentMat ? EzMath.Mat4.multiply(parentMat, localMat) : localMat;
                 if (node.mesh != null) meshNodes.push({ meshIdx: node.mesh, transform: worldMat });
                 walkNodes(node.children, worldMat);
             }
@@ -156,12 +156,12 @@
                 const chunk = new Float32Array(vcount * STRIDE);
 
                 // Bake node transform into vertices
-                const normalMat = transform ? EzMat4.normalMat3(transform) : null;
+                const normalMat = transform ? EzMath.Mat4.normalMat3(transform) : null;
                 for (let v = 0; v < vcount; v++) {
                     const o = v * STRIDE;
                     // Position: transform by node matrix
                     if (transform) {
-                        const p = EzMat4.transformVec3(transform, [pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]]);
+                        const p = EzMath.Mat4.transformVec3(transform, [pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]]);
                         chunk[o] = p[0]; chunk[o + 1] = p[1]; chunk[o + 2] = p[2];
                     } else {
                         chunk[o] = pos[v * 3]; chunk[o + 1] = pos[v * 3 + 1]; chunk[o + 2] = pos[v * 3 + 2];
@@ -169,7 +169,7 @@
                     // Normal: transform by inverse-transpose of upper 3x3
                     if (nor) {
                         if (normalMat) {
-                            const n = EzMat4.transformVec3Normal(normalMat, [nor[v * 3], nor[v * 3 + 1], nor[v * 3 + 2]]);
+                            const n = EzMath.Mat4.transformVec3Normal(normalMat, [nor[v * 3], nor[v * 3 + 1], nor[v * 3 + 2]]);
                             chunk[o + 3] = n[0]; chunk[o + 4] = n[1]; chunk[o + 5] = n[2];
                         } else {
                             chunk[o + 3] = nor[v * 3]; chunk[o + 4] = nor[v * 3 + 1]; chunk[o + 5] = nor[v * 3 + 2];

@@ -10,34 +10,33 @@ EzCanvas3D
 |   |-- .width() / .height()
 |   |-- .fitContainer()
 |-- get canvas() / mount(el) / unmount() / resize(w,h)
-|-- readCanvas() -> { modelKeys, meshKeys, skeletonKeys, shaderKeys, textureKeys, instanceKeys }
 |
 |-- .assets                             EzAssets — namespaced registry
-|   |-- .shader                         EzAssetStorage (internal shader Map)
+|   |-- .shaders                        EzAssetStorage (internal shader Map)
 |   |   |-- .add(key, EzShader)         auto-compiles if described but not yet compiled
 |   |   |-- .remove(key)                deletes GL program; built-ins are protected
 |   |   |-- .read(key)                  -> { key, attributes, morphChannels, hasSkeleton }
 |   |   |-- .[key] / ["key"]            raw EzShader instance (direct map lookup)
 |   |   |-- .has(key) / .keys() / .values() / .entries() / .size / [Symbol.iterator]
-|   |-- .texture                        EzAssetStorage (internal texture Map)
+|   |-- .textures                       EzAssetStorage (internal texture Map)
 |   |   |-- .add(key, { data, width, height, channels?, filter?, wrap? })
 |   |   |   |-- filter: "nearest" (crisp) | gl.LINEAR (default, mipmaps when POT)
 |   |   |-- .remove(key)                deletes GL texture
 |   |   |-- .[key] / ["key"]            raw { glTex, width, height, channels }
 |   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .mesh                           EzAssetStorage (internal mesh Map)
+|   |-- .meshes                         EzAssetStorage (internal mesh Map)
 |   |   |-- .add(key, EzMesh3D)         store a mesh asset directly
 |   |   |-- .remove(key)                destroys VAO/VBOs/morph textures
 |   |   |-- .read(key)                  -> { key, morphTotalWeights, primitives }
 |   |   |-- .[key] / ["key"]            raw EzMesh3D instance
 |   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .skeleton                       EzAssetStorage (internal skeleton Map)
+|   |-- .skeletons                      EzAssetStorage (internal skeleton Map)
 |   |   |-- .add(key, EzSkeleton3D)     store a skeleton asset directly
 |   |   |-- .remove(key)                removes from map (no GPU resources)
 |   |   |-- .read(key)                  -> { key, boneCount }
 |   |   |-- .[key] / ["key"]            raw EzSkeleton3D instance
 |   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .model                          EzAssetStorage (internal model Map)
+|   |-- .models                         EzAssetStorage (internal model Map)
 |   |   |-- .add(key, { defaultShader?, vertices, indices, attributes?, primitives?, skeleton? })
 |   |   |   |-- Same descriptor as before. Internally creates:
 |   |   |   |     assets.mesh["<key>_mesh"]         EzMesh3D (VAO, VBOs, morph textures)
@@ -63,17 +62,11 @@ EzCanvas3D
 |   |-- <custom>                        any namespace auto-vivified on first access
 |       |-- .register(name, hooks, map?) to attach add/remove/read/… hooks + optional backing Map
 |
-|-- .shaders   -> ez.assets.shader
-|-- .models    -> ez.assets.model
-|-- .textures  -> ez.assets.texture
-|-- .meshes    -> ez.assets.mesh
-|-- .skeletons -> ez.assets.skeleton
-|
-|   Legacy convenience methods (delegate to assets):
-|   addShader(key, s) / removeShader(key) / readShader(key)
-|   addTexture(key, o) / removeTexture(key) / readTexture(key)
-|   addModel(key, o)  / removeModel(key)  / readModel(key)
-|   static imageToData(img) -> { data, width, height, channels:4 }
+|-- .shaders   -> ez.assets.shaders
+|-- .models    -> ez.assets.models
+|-- .textures  -> ez.assets.textures
+|-- .meshes    -> ez.assets.meshs
+|-- .skeletons -> ez.assets.skeletons
 |
 |-- Instances
 |   |-- addInstance(modelKey, init?) -> instKey
@@ -91,16 +84,7 @@ EzCanvas3D
 |   |-- Bone storage: palette uploaded as RGBA32F, 4 texels wide × N bones tall.
 |                     Always bound to texture unit 1 when hasSkeleton is active.
 |
-|-- Camera (ez.camera — EzCamera3D instance)
-|   |-- Public attributes: pos, orientation, yaw, pitch, roll, forward, up, right, fov, near, far, view, projection
-|   |-- set({ position?, yaw?, pitch?, roll?, orientation?, fov?, near?, far? })    set config, auto calls update()
-|   |-- update()                                                                     recompute vectors, view & projection
-|   |-- get vectors                                                                  { forward, up, right }
-|   |-- rotate(pitchDelta, yawDelta, rollDelta?)   degrees, pitch clamped ±89
-|   |-- translate([dx,dy,dz])
-|   |-- resetRoll()
-|   |-- setAspect(width, height)                                                    update projection aspect ratio
-|   |-- toJSON()                                                                     serialize camera state
+|-- Camera (ez.camera — EzCamera3D instance) - refer to EzCamera3D section
 |
 |-- Render
     |-- render()          call each rAF frame
@@ -223,7 +207,7 @@ EzAssets
         static sampler = t => t === "sampler2D" || t === "highp sampler2D"
     }
 
-    class _math {
+    class EzMath {
         static clamp = (p, min, max) => Math.max(min, Math.min(max, p));
 
         // all mat are column major
@@ -253,7 +237,7 @@ EzAssets
                 const b06 = a20*a31 - a21*a30, b07 = a20*a32 - a22*a30, b08 = a20*a33 - a23*a30;
                 const b09 = a21*a32 - a22*a31, b10 = a21*a33 - a23*a31, b11 = a22*a33 - a23*a32;
                 const det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
-                if (!det) return _math.Mat4.identity();
+                if (!det) return EzMath.Mat4.identity();
                 const id = 1 / det;
                 return new Float32Array([ // Son :wilted_rose:
                     (a11*b11 - a12*b10 + a13*b09) * id,
@@ -316,11 +300,11 @@ EzAssets
 
             resolveTransform(t, existing) {
                 if (t instanceof Float32Array && t.length === 16) return t;
-                if (!_is.obj(t)) return existing ?? _math.Mat4.identity();
+                if (!_is.obj(t)) return existing ?? EzMath.Mat4.identity();
                 const pos   = t.position ?? [existing?.[12]??0, existing?.[13]??0, existing?.[14]??0];
                 const scale = t.scale ?? [1,1,1];
-                const quat  = t.euler ? _math.Quat.fromEulerZYX(t.euler) : (t.rotation ?? [0,0,0,1]);
-                return _math.Mat4.compose(pos, quat, scale);
+                const quat  = t.euler ? EzMath.Quat.fromEulerZYX(t.euler) : (t.rotation ?? [0,0,0,1]);
+                return EzMath.Mat4.compose(pos, quat, scale);
             },
 
             transformVec3(m, v) {
@@ -393,11 +377,11 @@ EzAssets
 
             fromEulerYPR(yawDeg, pitchDeg, rollDeg) {
                 const d2r = Math.PI / 180;
-                const qY = _math.Quat.fromAxisAngle([0, 1, 0],  yawDeg   * d2r);
-                const qP = _math.Quat.fromAxisAngle([1, 0, 0],  pitchDeg * d2r);
-                const q  = _math.Quat.normalize(_math.Quat.multiply(qY, qP));
+                const qY = EzMath.Quat.fromAxisAngle([0, 1, 0],  yawDeg   * d2r);
+                const qP = EzMath.Quat.fromAxisAngle([1, 0, 0],  pitchDeg * d2r);
+                const q  = EzMath.Quat.normalize(EzMath.Quat.multiply(qY, qP));
                 if (!rollDeg) return q;
-                return _math.Quat.normalize(_math.Quat.multiply(q, _math.Quat.fromAxisAngle([0, 0, -1], rollDeg * d2r)));
+                return EzMath.Quat.normalize(EzMath.Quat.multiply(q, EzMath.Quat.fromAxisAngle([0, 0, -1], rollDeg * d2r)));
             },
 
             fromEulerZYX([ex, ey, ez]) {
@@ -411,7 +395,7 @@ EzAssets
                 let [ax,ay,az,aw] = a, [bx,by,bz,bw] = b;
                 let dot = ax*bx + ay*by + az*bz + aw*bw;
                 if (dot < 0) { bx=-bx; by=-by; bz=-bz; bw=-bw; dot=-dot; }
-                if (dot > 0.9995) return _math.Quat.normalize([ax+t*(bx-ax), ay+t*(by-ay), az+t*(bz-az), aw+t*(bw-aw)]);
+                if (dot > 0.9995) return EzMath.Quat.normalize([ax+t*(bx-ax), ay+t*(by-ay), az+t*(bz-az), aw+t*(bw-aw)]);
                 const th0 = Math.acos(dot), th = th0*t;
                 const s0 = Math.cos(th) - dot*Math.sin(th)/Math.sin(th0), s1 = Math.sin(th)/Math.sin(th0);
                 return [s0*ax+s1*bx, s0*ay+s1*by, s0*az+s1*bz, s0*aw+s1*bw];
@@ -713,7 +697,7 @@ EzAssets
                     if (!d.default.length || d.default.length !== spec.floats)
                         throw new Error(`${TAGC3D} instanceData "${d.name}": default length must be ${spec.floats}`);
                     def = Float32Array.from(d.default);
-                } else def = type === "mat4" ? _math.Mat4.identity() : new Float32Array(spec.floats);
+                } else def = type === "mat4" ? EzMath.Mat4.identity() : new Float32Array(spec.floats);
 
                 entries.push({
                     name: d.name, type, glsl: spec.glsl,
@@ -939,13 +923,18 @@ EzAssets
         pos = [0, 0, 3];
         orientation = [0, 0, 0, 1];
         pitch = 0; yaw = 0; roll = 0;
+
         forward = [0, 0, -1];
         up = [0, 1, 0];
         right = [1, 0, 0];
-        fov = 45; near = 0.1; far = 1000;
+
+        near = 0.1; far = 1000;
+
+        fov = 45;
+        aspect = 1;
+
         view = null;
         projection = null;
-        #aspect = 1;
 
         constructor() { this.update(); }
 
@@ -954,16 +943,16 @@ EzAssets
             if ("position" in cfg) this.pos = cfg.position;
 
             if ("orientation" in cfg) {
-                this.orientation = _math.Quat.normalize(cfg.orientation);
-                const e = _math.Quat.toEulerYPR(this.orientation);
-                this.pitch = _math.clamp(e.pitch, -89, 89);
+                this.orientation = EzMath.Quat.normalize(cfg.orientation);
+                const e = EzMath.Quat.toEulerYPR(this.orientation);
+                this.pitch = EzMath.clamp(e.pitch, -89, 89);
                 this.yaw = e.yaw;
                 this.roll = e.roll;
             } else if ("yaw" in cfg || "pitch" in cfg || "roll" in cfg) {
                 if ("yaw" in cfg) this.yaw = cfg.yaw;
-                if ("pitch" in cfg) this.pitch = _math.clamp(cfg.pitch, -89, 89);
+                if ("pitch" in cfg) this.pitch = EzMath.clamp(cfg.pitch, -89, 89);
                 if ("roll" in cfg) this.roll = cfg.roll;
-                this.orientation = _math.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
+                this.orientation = EzMath.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
             }
 
             this.update();
@@ -971,33 +960,25 @@ EzAssets
         }
 
         update() {
-            this.forward = _math.Quat.rotateVec(this.orientation, [0, 0, -1]);
-            this.right = _math.Quat.rotateVec(this.orientation, [1, 0, 0]);
-            this.up = _math.Quat.rotateVec(this.orientation, [0, 1, 0]);
-            this.view = _math.Mat4.lookAt(this.pos, [this.pos[0] + this.forward[0], this.pos[1] + this.forward[1], this.pos[2] + this.forward[2]], this.up);
-            this.projection = _math.Mat4.perspective(this.fov * Math.PI / 180, this.#aspect, this.near, this.far);
+            this.forward = EzMath.Quat.rotateVec(this.orientation, [0, 0, -1]);
+            this.right = EzMath.Quat.rotateVec(this.orientation, [1, 0, 0]);
+            this.up = EzMath.Quat.rotateVec(this.orientation, [0, 1, 0]);
+            this.view = EzMath.Mat4.lookAt(this.pos, [this.pos[0] + this.forward[0], this.pos[1] + this.forward[1], this.pos[2] + this.forward[2]], this.up);
+            this.projection = EzMath.Mat4.perspective(this.fov * Math.PI / 180, this.aspect, this.near, this.far);
             return this;
         }
 
         setAspect(width, height) {
-            this.#aspect = width / height || 1;
+            this.aspect = width / height || 1;
             this.update();
             return this;
         }
 
-        get vectors() {
-            return {
-                forward: [...this.forward],
-                up: [...this.up],
-                right: [...this.right],
-            };
-        }
-
         rotate(pitchDelta, yawDelta, rollDelta = 0) {
-            this.pitch = _math.clamp(this.pitch + pitchDelta, -89, 89);
+            this.pitch = EzMath.clamp(this.pitch + pitchDelta, -89, 89);
             this.yaw += yawDelta;
             this.roll += rollDelta;
-            this.orientation = _math.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
+            this.orientation = EzMath.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
             this.update();
             return this;
         }
@@ -1010,21 +991,27 @@ EzAssets
 
         resetRoll() {
             this.roll = 0;
-            this.orientation = _math.Quat.normalize(_math.Quat.fromEulerYPR(this.yaw, this.pitch, 0));
+            this.orientation = EzMath.Quat.normalize(EzMath.Quat.fromEulerYPR(this.yaw, this.pitch, 0));
             this.update();
             return this;
         }
 
-        toJSON() {
+        get data() {
             return {
                 position: [...this.pos],
+                orientation: [...this.orientation],
                 yaw: this.yaw,
                 pitch: this.pitch,
                 roll: this.roll,
-                fov: this.fov,
+
+                forward: [...this.forward],
+                up: [...this.up],
+                right: [...this.right],
+
                 near: this.near,
                 far: this.far,
-                orientation: [...this.orientation],
+                
+                fov: this.fov,
             };
         }
     }
@@ -1239,9 +1226,9 @@ EzAssets
             const palette = new Float32Array(n * 16);
             for (let i = 0; i < n; i++) {
                 const b = this.bones[i];
-                const local = _math.Mat4.multiply(b.localBind, bonePoses[i]);
-                globalCurrent[i] = b.parent < 0 ? local : _math.Mat4.multiply(globalCurrent[b.parent], local);
-                palette.set(_math.Mat4.multiply(globalCurrent[i], b.inverseBind), i * 16);
+                const local = EzMath.Mat4.multiply(b.localBind, bonePoses[i]);
+                globalCurrent[i] = b.parent < 0 ? local : EzMath.Mat4.multiply(globalCurrent[b.parent], local);
+                palette.set(EzMath.Mat4.multiply(globalCurrent[i], b.inverseBind), i * 16);
             }
             return palette;
         }
@@ -1254,12 +1241,12 @@ EzAssets
                 const parent = b.parent ?? -1;
                 if (parent >= i)
                     return _c.warn(`[EzSkeleton3D]`, `"${key}": bone ${i} parent must be < self`) || null;
-                const localBind = _math.Mat4.resolveTransform(b.localBind ?? null, null);
-                const gb = parent < 0 ? localBind : _math.Mat4.multiply(globalBind[parent], localBind);
+                const localBind = EzMath.Mat4.resolveTransform(b.localBind ?? null, null);
+                const gb = parent < 0 ? localBind : EzMath.Mat4.multiply(globalBind[parent], localBind);
                 globalBind[i] = gb;
                 const inverseBind = b.inverseBind instanceof Float32Array && b.inverseBind.length === 16
                     ? b.inverseBind
-                    : _math.Mat4.invert(gb);
+                    : EzMath.Mat4.invert(gb);
                 bones.push({ parent, localBind, inverseBind });
             }
             const skel = new EzSkeleton3D();
@@ -1324,11 +1311,11 @@ EzAssets
         #assets    = new EzAssets();
 
         get assets()     { return this.#assets; }
-        get shaders()    { return this.#assets.shader; }
-        get models()     { return this.#assets.model; }
-        get textures()   { return this.#assets.texture; }
-        get meshes()     { return this.#assets.mesh; }
-        get skeletons()  { return this.#assets.skeleton; }
+        get shaders()    { return this.#assets.shaders; }
+        get models()     { return this.#assets.models; }
+        get textures()   { return this.#assets.textures; }
+        get meshes()     { return this.#assets.meshes; }
+        get skeletons()  { return this.#assets.skeletons; }
 
 
         #instances = new Map();
@@ -1382,7 +1369,7 @@ EzAssets
             const gl = this.#gl;
 
             this.#assets
-                .register("shader", {
+                .register("shaders", {
                     add: (map, key, shader) => {
                         if (!(shader instanceof EzShader))
                             return _c.warn(TAGC3D, `shader.add: expected an EzShader instance for "${key}"`);
@@ -1411,7 +1398,7 @@ EzAssets
                         };
                     },
                 })
-                .register("texture", {
+                .register("textures", {
                     add: (map, key, { data, width, height, channels = 4, filter = gl.LINEAR, wrap = gl.REPEAT } = {}) => {
                         if (!_is.str(key) || !data || !width || !height) return false;
                         const hasMipmap = filter === "nearest";
@@ -1432,7 +1419,7 @@ EzAssets
                         return true;
                     }
                 })
-                .register("mesh", {
+                .register("meshs", {
                     add: (map, key, mesh) => {
                         if (!(mesh instanceof EzMesh3D)) return _c.warn(TAGC3D, `mesh.add: expected EzMesh3D for "${key}"`);
                         map.set(key, mesh);
@@ -1462,7 +1449,7 @@ EzAssets
                         };
                     },
                 })
-                .register("skeleton", {
+                .register("skeletons", {
                     add: (map, key, skel) => {
                         if (!(skel instanceof EzSkeleton3D)) return _c.warn(TAGC3D, `skeleton.add: expected EzSkeleton3D for "${key}"`);
                         map.set(key, skel);
@@ -1474,7 +1461,7 @@ EzAssets
                         return { key, boneCount: s.bones.length };
                     },
                 })
-                .register("model", {
+                .register("models", {
                     add: (map, key, opts) => this.#addModelImpl(map, key, opts),
                     remove: (map, key) => {
                         const m = map.get(key); if (!m) return false;
@@ -1516,26 +1503,13 @@ EzAssets
             return this; 
         }
         unmount()   { this.#canvas.parentElement?.removeChild(this.#canvas);   return this; }
-
         resize(w, h) {
             this.#canvas.width = w; this.#canvas.height = h;
             this.#gl.viewport(0, 0, w, h);
             this.camera.setAspect(w, h);
             return this;
         }
-
         getCanvas() { return this.#canvas; }
-        readCanvas() {
-            return {
-                modelKeys:    [...this.models.keys()],
-                meshKeys:     [...this.#assets.mesh.keys()],
-                skeletonKeys: [...this.#assets.skeleton.keys()],
-                shaderKeys:   [...this.shaders.keys()],
-                textureKeys:  [...this.textures.keys()],
-                instanceKeys: [...this.#instances.keys()],
-            };
-        }
-
 
         #addModelImpl(map, key, opts = {}) {
             if (!_is.str(key)) return false;
@@ -1596,7 +1570,7 @@ EzAssets
             this.#instances.set(key, {
                 modelKey, shaderKey: overrideKey,
                 data,
-                bonePoses:    skel ? Array.from({ length: skel.bones.length }, _math.Mat4.identity) : null,
+                bonePoses:    skel ? Array.from({ length: skel.bones.length }, EzMath.Mat4.identity) : null,
                 morphWeights: (mesh && mesh.morphTotalWeights > 0) ? new Float32Array(mesh.morphTotalWeights) : null,
                 display: true,
             });
@@ -1618,7 +1592,7 @@ EzAssets
                     if (!(e.name in opts.data)) continue;
                     const val = opts.data[e.name], dst = inst.data[e.name];
                     if (e.type === "mat4") {
-                        const m = _math.Mat4.resolveTransform(val, dst);
+                        const m = EzMath.Mat4.resolveTransform(val, dst);
                         if (m !== dst) dst.set(m);
                     } else if (e.type === "float") {
                         dst[0] = +val || 0;
@@ -1634,7 +1608,7 @@ EzAssets
                     if (!bt) continue;
                     const id = bt.id;
                     if (typeof id !== "number" || id < 0 || id >= inst.bonePoses.length) continue;
-                    inst.bonePoses[id] = _math.Mat4.resolveTransform(bt.transform, inst.bonePoses[id]);
+                    inst.bonePoses[id] = EzMath.Mat4.resolveTransform(bt.transform, inst.bonePoses[id]);
                 }
             }
             if (opts.morph && inst.morphWeights) {
@@ -1665,34 +1639,11 @@ EzAssets
             };
         }
 
-
         setCamera(opts = {}) {
             this.camera.set(opts);
             return this;
         }
 
-        getCamera() {
-            return this.camera.toJSON();
-        }
-
-        rotateCamera(pitchDelta, yawDelta, rollDelta = 0) {
-            this.camera.rotate(pitchDelta, yawDelta, rollDelta);
-            return this;
-        }
-
-        translateCamera(offset) {
-            this.camera.translate(offset);
-            return this;
-        }
-
-        resetCameraRoll() {
-            this.camera.resetRoll();
-            return this;
-        }
-
-        getCameraVectors() {
-            return this.camera.vectors;
-        }
 
         render() {
             const gl = this.#gl;
@@ -1848,8 +1799,7 @@ EzAssets
         }
     }
 
-    window.EzMat4          = _math.Mat4;
-    window.EzQuat          = _math.Quat;
+    window.EzMath          = EzMath;
     window.EzShader        = EzShader;
     window.EzShader3D      = EzShader3D;
     window.EzMesh3D        = EzMesh3D;
