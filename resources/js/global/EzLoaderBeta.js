@@ -22,7 +22,6 @@
  * Returns:
  *   {
  *       vertices, indices, attributes, primitives, skeleton,
- *       boneNames:           string[],            // empty if no skin
  *       morphTargetNames:    string[] | null,
  *       logicalMorphCount:   number,
  *       primMorphInfo:       ({offset,count}|null)[],
@@ -141,16 +140,11 @@
 
     function buildSkeleton(gltf, readAccessor, nodeLocalMat) {
         const skin = gltf.skins?.length ? gltf.skins[0] : null;
-        if (!skin) return { skeleton: null, jointRemap: null, boneNames: [] };
+        if (!skin) return { skeleton: null, jointRemap: null };
 
         const joints = skin.joints, n = joints.length;
         const nodeToJoint = {};
-        const rawNames = new Array(n);
-        for (let ji = 0; ji < n; ji++) {
-            const ni = joints[ji];
-            nodeToJoint[ni] = ji;
-            rawNames[ji] = gltf.nodes[ni].name || `Bone_${ji}`;
-        }
+        for (let ji = 0; ji < n; ji++) nodeToJoint[joints[ji]] = ji;
 
         const parents = new Array(n).fill(-1);
         for (let i = 0; i < n; i++) {
@@ -186,15 +180,13 @@
             const bone = {
                 parent:    oldP === -1 ? -1 : jointRemap[oldP],
                 localBind: nodeLocalMat(node),
+                name:      node.name || `Bone_${ni}`,
             };
             if (ibmData) bone.inverseBind = ibmData.slice(oldIdx * 16, oldIdx * 16 + 16);
             bones[ni] = bone;
         }
 
-        const boneNames = new Array(n);
-        for (let oi = 0; oi < n; oi++) boneNames[jointRemap[oi]] = rawNames[oi];
-
-        return { skeleton: { bones }, jointRemap, boneNames };
+        return { skeleton: { bones }, jointRemap };
     }
 
     function collectMeshNodes(gltf) {
@@ -255,8 +247,8 @@
 
         const { gltf, readAccessor, readIndices, loadTextureBitmap, nodeLocalMat } = await parseGLB(url);
 
-        // Skeleton
-        const { skeleton, jointRemap, boneNames } = buildSkeleton(gltf, readAccessor, nodeLocalMat);
+        // Skeleton (bone .name lives on each bone)
+        const { skeleton, jointRemap } = buildSkeleton(gltf, readAccessor, nodeLocalMat);
 
         // Textures (only if we have an ez to register them on)
         const textureKeys = await registerTextures(gltf, ez, modelKey, loadTextureBitmap);
@@ -396,7 +388,6 @@
             attributes,
             primitives:         primitiveDescs,
             skeleton,
-            boneNames,
             morphTargetNames,
             logicalMorphCount,
             primMorphInfo,

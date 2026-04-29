@@ -15,7 +15,9 @@ EzCanvas3D
 |   |-- Fields you can read or write directly:
 |   |   |-- position     [x, y, z]
 |   |   |-- orientation  quat [x, y, z, w]   (use EzMath.Quat helpers)
-|   |   |-- fov          degrees             (default 45)
+|   |   |-- orthographic bool                (default false; true = orthographic projection)
+|   |   |-- fov          degrees             (default 45, perspective only)
+|   |   |-- orthoSize    world units         (default 5, orthographic only — half-height)
 |   |   |-- near / far   clip planes         (defaults 0.1 / 1000)
 |   |   |-- aspect       updated for you by resize() / settings.fitContainer()
 |   |-- Read-only derived values:
@@ -24,7 +26,7 @@ EzCanvas3D
 |   |   |-- vectors                          { forward, right, up }
 |   |   |-- view / projection                mat4 — auto-uploaded by render()
 |   |-- Methods:
-|   |   |-- set({ position?, orientation?, fov?, near?, far?, aspect? })
+|   |   |-- set({ position?, orientation?, fov?, near?, far?, aspect?, orthographic?, orthoSize? })
 |   |   |-- rotate(yawDeg, pitchDeg, rollDeg)        incremental, in degrees
 |   |   |-- lookAt(target, up?=[0,1,0])              point at a world position
 |   |   |-- translate([dx, dy, dz])                  move in world space
@@ -76,10 +78,11 @@ EzCanvas3D
 |   |   |       ],
 |   |   |       skeleton?: {
 |   |   |           bones: [
-|   |   |               { parent, localBind?, inverseBind? }, ...
+|   |   |               { parent, localBind?, inverseBind?, name? }, ...
 |   |   |               // parent: -1 = root; otherwise must be < own index
 |   |   |               // localBind: mat4 | { position?, rotation?, scale?, euler? }
 |   |   |               // inverseBind: auto-computed from the bind pose if omitted
+|   |   |               // name: optional. Defaults to "Bone_<index>"
 |   |   |           ],
 |   |   |       },
 |   |   |   })
@@ -200,7 +203,7 @@ EzSkeleton3D
 |   |-- false on validation error (e.g. parent index >= self)
 |-- .computePalette(bonePoses) -> Float32Array(boneCount * 16)
 |                                  ready-to-upload skinning matrix palette
-|-- .bones                     read-only [{ parent, localBind, inverseBind }, ...]
+|-- .bones                     read-only [{ parent, localBind, inverseBind, name }, ...]
 */
 
 (function () {
@@ -276,6 +279,16 @@ EzSkeleton3D
                     0,        f, 0,             0,
                     0,        0, (far+near)*nf, -1,
                     0,        0, 2*far*near*nf,  0,
+                ]);
+            },
+
+            ortho(left, right, bottom, top, near, far) {
+                const lr = 1/(left-right), bt = 1/(bottom-top), nf = 1/(near-far);
+                return new Float32Array([
+                    -2*lr,            0,                0,              0,
+                    0,                -2*bt,            0,              0,
+                    0,                0,                2*nf,           0,
+                    (left+right)*lr,  (top+bottom)*bt,  (far+near)*nf,  1,
                 ]);
             },
 
@@ -946,6 +959,9 @@ EzSkeleton3D
         fov  = 45;
         aspect = 1;
 
+        orthographic = false;
+        orthoSize    = 5;   // half-height of the view in world units
+
         constructor() {}
 
         get yaw()   { return EzMath.Quat.toEulerYPR(this.orientation).yaw;   }
@@ -966,6 +982,10 @@ EzSkeleton3D
         }
 
         get projection() {
+            if (this.orthographic) {
+                const h = this.orthoSize, w = h * this.aspect;
+                return EzMath.Mat4.ortho(-w, w, -h, h, this.near, this.far);
+            }
             return EzMath.Mat4.perspective(
                 this.fov * (Math.PI / 180), this.aspect, this.near, this.far
             );
@@ -977,7 +997,9 @@ EzSkeleton3D
             if (cfg.near        != null) this.near        = cfg.near;
             if (cfg.far         != null) this.far         = cfg.far;
             if (cfg.aspect      != null) this.aspect      = cfg.aspect;
-            if (cfg.fov         != null) this.fov         = cfg.fov;
+            if (cfg.fov          != null) this.fov          = cfg.fov;
+            if (cfg.orthoSize    != null) this.orthoSize    = cfg.orthoSize;
+            if (cfg.orthographic != null) this.orthographic = !!cfg.orthographic;
             return this;
         }
 
@@ -1270,7 +1292,7 @@ EzSkeleton3D
     }
 
     class EzSkeleton3D {
-        bones = []; // [{ parent, localBind: Float32Array(16), inverseBind: Float32Array(16) }]
+        bones = []; // [{ parent, localBind: Float32Array(16), inverseBind: Float32Array(16), name: string }]
 
         computePalette(bonePoses) {
             const n = this.bones.length;
@@ -1299,7 +1321,7 @@ EzSkeleton3D
                 const inverseBind = b.inverseBind instanceof Float32Array && b.inverseBind.length === 16
                     ? b.inverseBind
                     : EzMath.Mat4.invert(gb);
-                bones.push({ parent, localBind, inverseBind });
+                bones.push({ parent, localBind, inverseBind, name: typeof b.name === "string" ? b.name : `Bone_${i}` });
             }
             const skel = new EzSkeleton3D();
             skel.bones = bones;

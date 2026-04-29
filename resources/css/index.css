@@ -133,6 +133,7 @@ header nav a:hover {
 	pointer-events: none;
 	background: var(--color-1);
 	transition: background 0.2s ease;
+	transition-delay: 0.2s;
 
 	overflow: hidden;
 }
@@ -177,7 +178,7 @@ header nav a:hover {
 	);
 
 	transition:
-		--reveal-radius-welcome var(--reveal-close-duration) cubic-bezier(1, 0, 0.4, 1);
+		--reveal-radius-welcome var(--reveal-close-duration) cubic-bezier(0, 0, 0.6, 1);
 }
 
 #welcome * {
@@ -494,7 +495,7 @@ header nav a:hover {
 	);
 
 	transition: 
-		--reveal-radius var(--reveal-close-duration) cubic-bezier(1, 0, 0.4, 1),
+		--reveal-radius var(--reveal-close-duration) cubic-bezier(0, 0, 0.6, 1),
 		visibility 0s linear var(--reveal-close-duration),
 		z-index 0s linear var(--reveal-close-duration);
 }
@@ -529,6 +530,7 @@ header nav a:hover {
 #toggle-discography:checked ~ #jellytank,
 #toggle-merch:checked ~ #jellytank {
 	background: var(--color-2);
+	transition-delay: 0s;
 }
 
 .reveal-section-content {

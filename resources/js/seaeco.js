@@ -133,7 +133,7 @@ ez3d.models.add('bubble', {
     primitives: [{ vertexOffset: 0, vertexCount: 6 }],
 });
 
-const WORLD_W = 17.0;
+const WORLD_W = 24.0;
 const WORLD_H = 17.0;
 const WORLD_BOTTOM = -10.0;
 const WORLD_TOP = 4.5;
@@ -239,10 +239,10 @@ document.addEventListener('mousemove', e => {
     const nx = (e.clientX / window.innerWidth  - 0.5); // -0.5 .. 0.5
     const ny = (e.clientY / window.innerHeight - 0.5);
     // Absolute yaw/pitch in degrees (tweak the multipliers to taste).
-    const yawDeg   = nx * 20;
-    const pitchDeg = -ny * 12;
+    const yawDeg   = nx * 5;
+    const pitchDeg = -ny * 3;
     ez3d.camera.set({
-        orientation: EzMath.Quat.fromEulerYPR(yawDeg, pitchDeg, 0),
-        fov: 60,
+        orthographic: true,
+        orientation: EzMath.Quat.fromEulerYPR(yawDeg, pitchDeg, 0)
     });
 });
