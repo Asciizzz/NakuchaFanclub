@@ -5,7 +5,7 @@ ez3d.mount(container);
 ez3d.resize(window.innerWidth, window.innerHeight);
 new ResizeObserver(() => ez3d.settings.fitContainer()).observe(container);
 
-ez3d.setCamera({ position: [0, 0, 8], pitch: 0, yaw: 0, fov: 38, near: 0.01, far: 200 });
+ez3d.camera.set({ position: [0, 0, 8], fov: 38, near: 0.01, far: 200 });
 
 // ----------------------------------------------------------------
 // BUBBLE HANDLING
@@ -236,11 +236,13 @@ function frame(ts) {
 requestAnimationFrame(frame);
 
 document.addEventListener('mousemove', e => {
-    const nx = (e.clientX / window.innerWidth - 0.5);
+    const nx = (e.clientX / window.innerWidth  - 0.5); // -0.5 .. 0.5
     const ny = (e.clientY / window.innerHeight - 0.5);
-    ez3d.setCamera({
-        pitch: ny,
-        yaw: nx,
+    // Absolute yaw/pitch in degrees (tweak the multipliers to taste).
+    const yawDeg   = nx * 20;
+    const pitchDeg = -ny * 12;
+    ez3d.camera.set({
+        orientation: EzMath.Quat.fromEulerYPR(yawDeg, pitchDeg, 0),
         fov: 60,
     });
 });

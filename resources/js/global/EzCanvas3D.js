@@ -6,191 +6,201 @@ Holy crap guys I actually made a proper 3D html webgl renderer instead of using 
 
 EzCanvas3D
 |-- new EzCanvas3D(name)
-|-- .settings
-|   |-- .width() / .height()
-|   |-- .fitContainer()
-|-- get canvas() / mount(el) / unmount() / resize(w,h)
+|-- mount(el) / unmount() / resize(w, h) / getCanvas()
+|-- settings
+|   |-- width() / height()
+|   |-- fitContainer()                       resize canvas to its parent's bounds
 |
-|-- .assets                             EzAssets — namespaced registry
-|   |-- .shaders                        EzAssetStorage (internal shader Map)
-|   |   |-- .add(key, EzShader)         auto-compiles if described but not yet compiled
-|   |   |-- .remove(key)                deletes GL program; built-ins are protected
-|   |   |-- .read(key)                  -> { key, attributes, morphChannels, hasSkeleton }
-|   |   |-- .[key] / ["key"]            raw EzShader instance (direct map lookup)
-|   |   |-- .has(key) / .keys() / .values() / .entries() / .size / [Symbol.iterator]
-|   |-- .textures                       EzAssetStorage (internal texture Map)
-|   |   |-- .add(key, { data, width, height, channels?, filter?, wrap? })
-|   |   |   |-- filter: "nearest" (crisp) | gl.LINEAR (default, mipmaps when POT)
-|   |   |-- .remove(key)                deletes GL texture
-|   |   |-- .[key] / ["key"]            raw { glTex, width, height, channels }
-|   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .meshes                         EzAssetStorage (internal mesh Map)
-|   |   |-- .add(key, EzMesh3D)         store a mesh asset directly
-|   |   |-- .remove(key)                destroys VAO/VBOs/morph textures
-|   |   |-- .read(key)                  -> { key, morphTotalWeights, primitives }
-|   |   |-- .[key] / ["key"]            raw EzMesh3D instance
-|   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .skeletons                      EzAssetStorage (internal skeleton Map)
-|   |   |-- .add(key, EzSkeleton3D)     store a skeleton asset directly
-|   |   |-- .remove(key)                removes from map (no GPU resources)
-|   |   |-- .read(key)                  -> { key, boneCount }
-|   |   |-- .[key] / ["key"]            raw EzSkeleton3D instance
-|   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- .models                         EzAssetStorage (internal model Map)
-|   |   |-- .add(key, { defaultShader?, vertices, indices, attributes?, primitives?, skeleton? })
-|   |   |   |-- Same descriptor as before. Internally creates:
-|   |   |   |     assets.mesh["<key>_mesh"]         EzMesh3D (VAO, VBOs, morph textures)
-|   |   |   |     assets.skeleton["<key>_skeleton"] EzSkeleton3D (if skeleton provided)
-|   |   |   |-- Model stores meshKey + skeletonKey references (not the data itself).
-|   |   |   |-- attributes:   [{ name, size }]  VBO packing order.
-|   |   |   |                 Default [{name:"a_position",size:3},{name:"a_uv",size:2}].
-|   |   |   |                 Missing shader attrs fall back to per-attr default (vertexAttrib4f).
-|   |   |   |-- primitives:   [{ indexOffset?, indexCount?, vertexOffset?, vertexCount?,
-|   |   |   |                    material?, morphTargets? }]
-|   |   |   |   |-- Indexed (indexOffset+indexCount) and non-indexed (vertexOffset+vertexCount)
-|   |   |   |   |   modes are mutually exclusive.
-|   |   |   |   |-- material:     { albedo?, fill?:[r,g,b,a] }
-|   |   |   |   |-- morphTargets: { <channelName>: [Float32Array(vertexCount*3), ...] }
-|   |   |   |                     Keys must match shader's vertex.morphChannels.
-|   |   |   |-- skeleton:     { bones: [{ parent, localBind?, inverseBind? }] }
-|   |   |                     parent: -1 = root, else must be < own index.
-|   |   |                     localBind: mat4 | transform-shape. inverseBind auto-computed if omitted.
-|   |   |-- .remove(key)                evicts instances; mesh/skeleton assets remain unless removed separately
-|   |   |-- .read(key)                  -> { key, defaultShader, meshKey, skeletonKey, primitives, indexCount, boneCount, morphTotalWeights }
-|   |   |-- .[key] / ["key"]            raw internal model object
-|   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |-- <custom>                        any namespace auto-vivified on first access
-|       |-- .register(name, hooks, map?) to attach add/remove/read/… hooks + optional backing Map
+|-- .camera                                  your view into the world
+|   |-- Fields you can read or write directly:
+|   |   |-- position     [x, y, z]
+|   |   |-- orientation  quat [x, y, z, w]   (use EzMath.Quat helpers)
+|   |   |-- fov          degrees             (default 45)
+|   |   |-- near / far   clip planes         (defaults 0.1 / 1000)
+|   |   |-- aspect       updated for you by resize() / settings.fitContainer()
+|   |-- Read-only derived values:
+|   |   |-- yaw / pitch / roll               degrees, decoded from orientation
+|   |   |-- forward / right / up             unit vectors in world space
+|   |   |-- vectors                          { forward, right, up }
+|   |   |-- view / projection                mat4 — auto-uploaded by render()
+|   |-- Methods:
+|   |   |-- set({ position?, orientation?, fov?, near?, far?, aspect? })
+|   |   |-- rotate(yawDeg, pitchDeg, rollDeg)        incremental, in degrees
+|   |   |-- lookAt(target, up?=[0,1,0])              point at a world position
+|   |   |-- translate([dx, dy, dz])                  move in world space
+|   |-- To set an absolute yaw/pitch:
+|       ez.camera.set({ orientation: EzMath.Quat.fromEulerYPR(yaw, pitch, roll) });
 |
-|-- .shaders   -> ez.assets.shaders
-|-- .models    -> ez.assets.models
-|-- .textures  -> ez.assets.textures
-|-- .meshes    -> ez.assets.meshs
-|-- .skeletons -> ez.assets.skeletons
+|-- .assets                                  keyed registries for every resource
+|   |
+|   |-- Common surface (every namespace has these):
+|   |   |-- .add(key, value)                 true on success, false on error
+|   |   |-- .remove(key)                     cleans up GL resources where applicable
+|   |   |-- .read(key)                       safe read-only snapshot (where supported)
+|   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
+|   |   |-- .[key] / ["key"]                 raw stored value (direct lookup)
+|   |
+|   |-- .shaders                             EzShader3D registry  (see § EzShader3D)
+|   |   |-- .add(key, ezShader)              auto-compiles if only described
+|   |   |-- .remove(key)                     deletes the underlying GL program
+|   |   |-- .read(key)                       -> { key, attributes, morphChannels, hasSkeleton }
+|   |
+|   |-- .textures                            GPU textures
+|   |   |-- .add(key, {
+|   |   |       data,                        TypedArray, or ImageBitmap / Image / Canvas
+|   |   |       width, height,
+|   |   |       channels?: 1|2|3|4,          default 4 (RGBA)
+|   |   |       filter?: "nearest" | gl.LINEAR    default LINEAR (mipmaps when POT)
+|   |   |       wrap?: gl wrap constant      default gl.REPEAT
+|   |   |   })
+|   |   |-- .remove(key)                     deletes the GL texture
+|   |
+|   |-- .models                              the high-level "drawable" — mesh + optional skeleton
+|   |   |-- .add(key, {
+|   |   |       defaultShader,               shader key — required
+|   |   |       vertices,                    Float32Array, packed per `attributes` order
+|   |   |       indices?,                    Uint16Array | Uint32Array (omit for non-indexed)
+|   |   |       attributes?: [{ name, size }],
+|   |   |           default [{name:"a_position",size:3},{name:"a_uv",size:2}].
+|   |   |           Names must match the shader's vertex.attributes; any attribute
+|   |   |           not listed here falls back to that attribute's `default`.
+|   |   |       primitives?: [
+|   |   |           {
+|   |   |               // pick ONE of (indexOffset+indexCount) or (vertexOffset+vertexCount)
+|   |   |               indexOffset?, indexCount?,
+|   |   |               vertexOffset?, vertexCount?,
+|   |   |               material?: { albedo?: textureKey, fill?: [r,g,b,a] },
+|   |   |               morphTargets?: { <channelName>: [Float32Array(vertexCount*3), ...] }
+|   |   |                              // keys must match shader's vertex.morphChannels
+|   |   |           }, ...
+|   |   |       ],
+|   |   |       skeleton?: {
+|   |   |           bones: [
+|   |   |               { parent, localBind?, inverseBind? }, ...
+|   |   |               // parent: -1 = root; otherwise must be < own index
+|   |   |               // localBind: mat4 | { position?, rotation?, scale?, euler? }
+|   |   |               // inverseBind: auto-computed from the bind pose if omitted
+|   |   |           ],
+|   |   |       },
+|   |   |   })
+|   |   |   |-- Behind the scenes this also creates:
+|   |   |   |     .assets.meshes["<key>_mesh"]        the EzMesh3D
+|   |   |   |     .assets.skeletons["<key>_skeleton"] the EzSkeleton3D (when present)
+|   |   |-- .remove(key)                     drops the model and its instances.
+|   |   |                                    Mesh/skeleton entries are kept — remove
+|   |   |                                    them separately to free the GL buffers.
+|   |   |-- .read(key)                       -> { key, defaultShader, meshKey, skeletonKey,
+|   |                                              primitives, indexCount, boneCount,
+|   |                                              morphTotalWeights }
+|   |
+|   |-- .meshes                              lower-level geometry handles  (see § EzMesh3D)
+|   |   |-- Created automatically by .models.add. Touch these only to share
+|   |   |   geometry between models, or to .add an EzMesh3D you built via
+|   |   |   EzMesh3D.fromDesc yourself.
+|   |
+|   |-- .skeletons                           lower-level rig handles  (see § EzSkeleton3D)
+|   |   |-- Same story as .meshes — created for you, manageable by hand if needed.
+|   |
+|   |-- .<custom>                            roll your own namespace
+|   |   |-- ez.assets.register(name, hooks)
+|   |   |     hooks.add(map, key, value)     return false to reject, else stored
+|   |   |     hooks.remove(map, key)         cleanup before deletion
+|   |   |     hooks.<any>(map, ...args)      any other key becomes a method on the namespace
+|   |   |-- ez.assets.namespaces() -> string[]
+|   |
+|   |-- Shortcuts on EzCanvas3D itself (just aliases for .assets.<x>):
+|       |-- ez.shaders     -> ez.assets.shaders
+|       |-- ez.models      -> ez.assets.models
+|       |-- ez.textures    -> ez.assets.textures
+|       |-- ez.meshes      -> ez.assets.meshes
+|       |-- ez.skeletons   -> ez.assets.skeletons
 |
-|-- Instances
+|-- Instances — one entry of a model in the scene
 |   |-- addInstance(modelKey, init?) -> instKey
-|   |   |-- init.shader: optional shader key override (compatible instanceData layout required)
+|   |   |-- init.shader: optional override (must share the same instanceData layout)
+|   |   |-- init.data / init.bone / init.morph / init.display: forwarded to writeInstance
 |   |-- writeInstance(key, { data?, bone?, morph?, display?, shader? })
-|   |   |-- data:    keyed by instanceData entry names
+|   |   |-- data:    keyed by your shader's instanceData names
 |   |   |   |-- mat4  — Float32Array(16) OR { position?, rotation?(quat), scale?, euler?(ZYX deg) }
-|   |   |   |-- vec*  — array/Float32Array of matching length
+|   |   |   |-- vec*  — array / Float32Array of matching length
 |   |   |   |-- float — number
-|   |   |-- bone:    { id, transform } OR array of those  (hasSkeleton models only)
-|   |   |-- morph:   [w0,w1,...] OR { offset, weights:[...] }
-|   |   |            Weight count = sum of morphTargets counts across all primitives.
-|   |   |-- display: false skips instance in render(). Default true.
-|   |-- readInstance(key) / removeInstance(key)
-|   |-- Bone storage: palette uploaded as RGBA32F, 4 texels wide × N bones tall.
-|                     Always bound to texture unit 1 when hasSkeleton is active.
+|   |   |-- bone:    { id, transform } OR array of those         (skinned models only)
+|   |   |             transform: mat4 | { position?, rotation?, scale?, euler? }
+|   |   |-- morph:   [w0, w1, ...]  OR  { offset, weights: [...] }
+|   |   |             total weight count = sum of morphTargets counts across primitives
+|   |   |-- display: false hides this instance for one or more frames (default true)
+|   |   |-- shader:  swap the shader at runtime (compatibility rules above)
+|   |-- readInstance(key)         -> snapshot { modelKey, data, bonePoses, morphWeights, display }
+|   |-- removeInstance(key)
 |
-|-- Camera (ez.camera — EzCamera3D instance) - refer to EzCamera3D section
-|
-|-- Render
-    |-- render()          call each rAF frame
+|-- render()                                 call once per animation frame
 
-----
-EzMesh3D
-|-- new EzMesh3D()               (usually created via EzMesh3D.fromDesc or addModel)
-|-- static .fromDesc(gl, shader, key, opts) -> EzMesh3D | false
-|   |-- opts: { vertices, indices, attributes?, primitives? }  (same mesh fields as addModel)
-|   |-- Returns false on validation error.
-|-- .destroy(gl)                 frees VAO, VBOs, morph textures
-|-- Public fields (all mutable for convenience):
-|   .vao, .vbo, .ebo, .instanceVBO
-|   .indexType, .indexBytes
-|   .primitives                  [{ indexOffset?, indexCount?, vertexOffset?, vertexCount?, material, morph? }]
-|   .defaulted                   [{ loc, default }]  per-attr fallback constants
-|   .morphTotalWeights           total morph weight slots across all primitives
-
-----
-EzSkeleton3D
-|-- new EzSkeleton3D()           (usually created via EzSkeleton3D.fromDesc or addModel)
-|-- static .fromDesc(key, skeletonDesc) -> EzSkeleton3D | null | false
-|   |-- skeletonDesc: { bones: [{ parent, localBind?, inverseBind? }] }
-|   |-- Returns null if no skeleton, false on validation error.
-|-- .computePalette(bonePoses)   -> Float32Array(boneCount*16) skinning matrix palette
-|-- Public fields:
-|   .bones                       [{ parent, localBind: Float32Array(16), inverseBind: Float32Array(16) }]
-
-----
 EzShader3D  (extends EzShader)
-|-- new EzShader3D()
-|-- .describe({ vertex, fragment, uniKeys?, onbind(gl,program)?, renderCfg? })
-|   |-- vertex
-|   |   |-- .attributes:    [{ name, size:1..4, default?:[r,g,b,a] }]
-|   |   |-- .instanceData:  [{ name, type?, default? }]
-|   |   |   |-- type: "mat4"|"vec4"|"vec3"|"vec2"|"float"  (default "vec4")
-|   |   |       mat4 = 4 attribute slots. name = data key in writeInstance/readInstance.
-|   |   |-- .defaultKeys:   { view?, projection? }
-|   |   |   |-- engine auto-emits uniform + binds camera matrices when present.
-|   |   |-- .hasSkeleton:   bool — injects ez_bonesTex, fetchBone(i), computeSkin(id,wt)
-|   |   |-- .morphChannels: string[] — injects ez_morph* uniforms + applyMorph(chIdx, vtxLocal)
-|   |   |                             morphVertexLocal() = gl_VertexID - ez_morphVertexBase
-|   |   |-- .outputs:       [{ name, type? }]
-|   |   |-- .main:          GLSL body only
-|   |-- fragment
-|   |   |-- .defaultKeys:   { fill?, albedo? }
-|   |   |   |-- fill   -> uniform vec4, bound per-primitive
-|   |   |   |-- albedo -> uniform sampler2D, bound per-primitive (unit 0)
-|   |   |-- .outputColor:   out variable name  (default "fragColor")
-|   |   |-- .main:          GLSL body only
-|   |-- uniKeys:  [{ name, type }]  free uniforms emitted to both stages
-|   |   |-- Sampler types auto-assigned texture units after internal ones.
-|   |   |   onbind(gl, program) receives { texUnits: { name->unit } } to bind textures.
-|   |   |-- Supported: mat4, mat3, vec4, vec3, vec2, float, int, bool, sampler2D, "highp sampler2D"
-|   |-- onbind(gl, program):  called each draw, use to bind custom uniforms/textures
-|   |-- renderCfg
-|       |-- rQueue:      draw order, lower = earlier. Default 1000. Transparent = 2000.
-|       |-- depthWrite:  gl.depthMask.  Default true.
-|       |-- depthTest:   gl.DEPTH_TEST. Default true.
-|       |-- blend:       gl.BLEND.      Default false.
-|       |-- blendSrc/blendDst: gl blend factors. Default SRC_ALPHA / ONE_MINUS_SRC_ALPHA.
-|       |-- doubleSided: disables CULL_FACE. Default false.
-|-- .compile(gl) -> self
+new EzShader3D().describe({ vertex, fragment, uniKeys?, onbind?, renderCfg? })
+|-- vertex
+|   |-- attributes:    [{ name, size: 1..4, default?: [r,g,b,a] }]
+|   |                    `default` is used when a model doesn't supply this attribute.
+|   |-- instanceData:  [{ name, type?, default? }]
+|   |                    type: "mat4" | "vec4" | "vec3" | "vec2" | "float"  (default "vec4")
+|   |                    `name` is the key you use in writeInstance({ data: { ... } }).
+|   |-- defaultKeys:   { view?, projection? }
+|   |                    Names a uniform; the engine auto-binds the camera matrices.
+|   |-- hasSkeleton:   bool. Gives you in GLSL:
+|   |                    mat4 computeSkin(vec4 boneID, vec4 boneWeight);
+|   |                    mat4 fetchBone(int id);
+|   |-- morphChannels: string[]. Channel names matching primitive morphTargets keys.
+|   |                    Gives you in GLSL:
+|   |                    vec3 applyMorph(int channelIdx, int vertexLocal);
+|   |                    int  morphVertexLocal();    // gl_VertexID local to the primitive
+|   |-- outputs:       [{ name, type? }]   varyings to the fragment stage (type default vec4)
+|   |-- main:          GLSL body (no `void main` wrapper)
+|-- fragment
+|   |-- defaultKeys:   { fill?, albedo? }
+|   |                    fill   -> uniform vec4,      bound per-primitive material.fill
+|   |                    albedo -> uniform sampler2D, bound per-primitive material.albedo
+|   |-- outputColor:   out variable name (default "fragColor")
+|   |-- main:          GLSL body
+|-- uniKeys:  [{ name, type }] custom uniforms emitted to both stages.
+|             Supported: mat4, mat3, vec4, vec3, vec2, float, int, bool,
+|                        sampler2D, "highp sampler2D".
+|             Sampler uniforms get texture units assigned for you; the unit map
+|             lives on `shader.texUnits[name]`.
+|-- onbind(gl, program): called every draw — use it to upload your uniKeys
+|                        and bind any sampler textures.
+|-- renderCfg
+    |-- rQueue       draw order. Lower = earlier. Default 1000.
+    |                Sky-style backgrounds use 0; transparent overlays use ~2000+.
+    |-- depthWrite   default true
+    |-- depthTest    default true
+    |-- blend        default false
+    |-- blendSrc / blendDst   gl blend factors. Default SRC_ALPHA / ONE_MINUS_SRC_ALPHA.
+                              See EzShader.BLEND for named constants.
+    |-- doubleSided  default false. true disables back-face culling for this shader.
 
-Internal ez_ uniforms
-    ez_bonesTex          — bone palette texture       (hasSkeleton)
-    ez_morphWeightTex    — per-instance morph weights  (morphChannels)
-    ez_morphCount        — target count for current primitive
-    ez_morphWeightOffset — weight offset into ez_morphWeightTex
-    ez_morphVertexBase   — vertex ID offset for current primitive
-    ez_morphDelta_N      — delta texture for channel N
+A shader must be `.describe(...)`d before `.assets.shaders.add(key, shader)`;
+the engine compiles it for you on add.
 
-----
-EzCamera3D
-|-- new EzCamera3D()
-|-- All attributes are public for convenience:
-|   |-- pos: [x, y, z]              camera position
-|   |-- orientation: [x, y, z, w]   quaternion
-|   |-- yaw, pitch, roll: degrees   euler angles (pitch clamped ±89)
-|   |-- forward, up, right: vectors computed by update()
-|   |-- fov, near, far: projection params
-|   |-- view: Float32Array(16)      view matrix
-|   |-- projection: Float32Array(16) projection matrix
-|-- set(cfg)                        set properties from config object
-|-- update()                        recompute forward/up/right, view & projection matrices
-|-- setAspect(w, h)                 update aspect ratio and recompute projection
-|-- rotate(pitchΔ, yawΔ, rollΔ?)    rotate by deltas (degrees)
-|-- translate([dx,dy,dz])           move by offset in world space
-|-- resetRoll()                     zero out roll while preserving yaw/pitch
-|-- get vectors                     { forward, up, right }
-|-- toJSON()                        serialize to plain object
+EzShader  (low-level base — most users don't touch this directly)
+|-- compile(vertSrc, fragSrc, gl) -> self
+|-- bind(gl) / applyRenderState(gl)
+|-- static .BLEND   named gl blend factor constants
 
-----
-EzAssets
-|-- new EzAssets()
-|-- .register(name, hooks, map?)   register a namespace with lifecycle hooks
-|   |-- hooks.add(map, key, value) -> bool | any   return false to abort; return value to store
-|   |-- hooks.remove(map, key)                    cleanup side effects before deletion
-|   |-- hooks.<any>(map, ...args)                 any other named method exposed on the namespace
-|   |-- map: optional external Map to use as backing store (shares state with caller)
-|-- .<name>                        auto-vivified EzAssetStorage on first access
-|   |-- .add(key, value) / .remove(key)
-|   |-- .<hook>(...)               any hook registered for this namespace
-|   |-- .[key] / ["key"]           direct map lookup (raw stored value)
-|   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|-- .namespaces()                  -> string[] of all registered/accessed namespace names
+EzMesh3D
+|-- static EzMesh3D.fromDesc(gl, shader, key, opts) -> EzMesh3D | false
+|   |-- opts: { vertices, indices?, attributes?, primitives? }
+|   |          (same shape as the corresponding fields on models.add)
+|   |-- Returns false on validation error (and console-warns the reason).
+|-- .destroy(gl)             frees its VAO, VBOs, and morph delta textures
+|-- .primitives              array of draw ranges, each with material + optional morph info
+|-- .morphTotalWeights       total number of morph weight slots used by this mesh
+
+EzSkeleton3D
+|-- static EzSkeleton3D.fromDesc(key, { bones }) -> EzSkeleton3D | null | false
+|   |-- null  if no skeleton was provided
+|   |-- false on validation error (e.g. parent index >= self)
+|-- .computePalette(bonePoses) -> Float32Array(boneCount * 16)
+|                                  ready-to-upload skinning matrix palette
+|-- .bones                     read-only [{ parent, localBind, inverseBind }, ...]
 */
 
 (function () {
@@ -401,16 +411,25 @@ EzAssets
                 return [s0*ax+s1*bx, s0*ay+s1*by, s0*az+s1*bz, s0*aw+s1*bw];
             },
 
+            // Inverse of fromEulerYPR: q = Ry(yaw) * Rx(pitch) * Rz_neg(roll),
+            // i.e. intrinsic Y-X-(-Z) with roll axis = [0,0,-1]. Returns degrees.
             toEulerYPR([x, y, z, w]) {
                 const r2d = 180 / Math.PI;
-                const sinr_cosp = 2 * (w * x + y * z);
-                const cosr_cosp = 1 - 2 * (x * x + y * y);
-                const roll = Math.atan2(sinr_cosp, cosr_cosp) * r2d;
-                const sinp = 2 * (w * y - z * x);
-                const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * 90 : Math.asin(sinp) * r2d;
-                const siny_cosp = 2 * (w * z + x * y);
-                const cosy_cosp = 1 - 2 * (y * y + z * z);
-                const yaw = Math.atan2(siny_cosp, cosy_cosp) * r2d;
+                // R[1][2] = 2(yz - wx) = -sin(pitch)
+                const sp = 2 * (w * x - y * z);            // = sin(pitch)
+                const pitch = Math.abs(sp) >= 0.999999
+                    ? Math.sign(sp) * 90
+                    : Math.asin(sp) * r2d;
+                if (Math.abs(sp) >= 0.999999) {
+                    // Gimbal lock: cos(pitch) ≈ 0. Fold roll into yaw, set roll = 0.
+                    // Use R[0][1] = 2(xy - wz) and R[0][0] = 1 - 2(y²+z²).
+                    const yaw = Math.atan2(-2 * (x * y - w * z), 1 - 2 * (y * y + z * z)) * r2d;
+                    return { yaw, pitch, roll: 0 };
+                }
+                // yaw = atan2(R[0][2], R[2][2])
+                const yaw = Math.atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y)) * r2d;
+                // roll = -atan2(R[1][0], R[1][1])  (negated because roll axis is -Z)
+                const roll = -Math.atan2(2 * (x * y + w * z), 1 - 2 * (x * x + z * z)) * r2d;
                 return { yaw, pitch, roll };
             },
         };
@@ -920,99 +939,132 @@ EzAssets
 
 
     class EzCamera3D {
-        pos = [0, 0, 3];
+        position    = [0, 0, 3];
         orientation = [0, 0, 0, 1];
-        pitch = 0; yaw = 0; roll = 0;
-
-        forward = [0, 0, -1];
-        up = [0, 1, 0];
-        right = [1, 0, 0];
 
         near = 0.1; far = 1000;
-
-        fov = 45;
+        fov  = 45;
         aspect = 1;
 
-        view = null;
-        projection = null;
+        constructor() {}
 
-        constructor() { this.update(); }
+        get yaw()   { return EzMath.Quat.toEulerYPR(this.orientation).yaw;   }
+        get pitch() { return EzMath.Quat.toEulerYPR(this.orientation).pitch; }
+        get roll()  { return EzMath.Quat.toEulerYPR(this.orientation).roll;  }
+
+        get forward() { return EzMath.Quat.rotateVec(this.orientation, [0, 0, -1]); }
+        get right()   { return EzMath.Quat.rotateVec(this.orientation, [1, 0,  0]); }
+        get up()      { return EzMath.Quat.rotateVec(this.orientation, [0, 1,  0]); }
+
+        get vectors() { return { forward: this.forward, right: this.right, up: this.up }; }
+
+        get view() {
+            const f = this.forward, u = this.up, p = this.position;
+            return EzMath.Mat4.lookAt(
+                p, [p[0] + f[0], p[1] + f[1], p[2] + f[2]], u
+            );
+        }
+
+        get projection() {
+            return EzMath.Mat4.perspective(
+                this.fov * (Math.PI / 180), this.aspect, this.near, this.far
+            );
+        }
 
         set(cfg = {}) {
-            for (const k of ["fov", "near", "far"]) if (k in cfg) this[k] = cfg[k];
-            if ("position" in cfg) this.pos = cfg.position;
+            if (cfg.position    != null) this.position    = [...cfg.position];
+            if (cfg.orientation != null) this.orientation = EzMath.Quat.normalize(cfg.orientation);
+            if (cfg.near        != null) this.near        = cfg.near;
+            if (cfg.far         != null) this.far         = cfg.far;
+            if (cfg.aspect      != null) this.aspect      = cfg.aspect;
+            if (cfg.fov         != null) this.fov         = cfg.fov;
+            return this;
+        }
 
-            if ("orientation" in cfg) {
-                this.orientation = EzMath.Quat.normalize(cfg.orientation);
-                const e = EzMath.Quat.toEulerYPR(this.orientation);
-                this.pitch = EzMath.clamp(e.pitch, -89, 89);
-                this.yaw = e.yaw;
-                this.roll = e.roll;
-            } else if ("yaw" in cfg || "pitch" in cfg || "roll" in cfg) {
-                if ("yaw" in cfg) this.yaw = cfg.yaw;
-                if ("pitch" in cfg) this.pitch = EzMath.clamp(cfg.pitch, -89, 89);
-                if ("roll" in cfg) this.roll = cfg.roll;
-                this.orientation = EzMath.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
+        rotate(yawDelta = 0, pitchDelta = 0, rollDelta = 0) {
+            const d2r = Math.PI / 180;
+            let q = this.orientation;
+            if (yawDelta) {
+                const qY = EzMath.Quat.fromAxisAngle([0, 1, 0], yawDelta * d2r);
+                q = EzMath.Quat.multiply(qY, q);
             }
-
-            this.update();
+            if (pitchDelta) {
+                const qX = EzMath.Quat.fromAxisAngle([1, 0, 0], pitchDelta * d2r);
+                q = EzMath.Quat.multiply(q, qX);
+            }
+            if (rollDelta) {
+                const qZ = EzMath.Quat.fromAxisAngle([0, 0, -1], rollDelta * d2r);
+                q = EzMath.Quat.multiply(q, qZ);
+            }
+            this.orientation = EzMath.Quat.normalize(q);
             return this;
         }
 
-        update() {
-            this.forward = EzMath.Quat.rotateVec(this.orientation, [0, 0, -1]);
-            this.right = EzMath.Quat.rotateVec(this.orientation, [1, 0, 0]);
-            this.up = EzMath.Quat.rotateVec(this.orientation, [0, 1, 0]);
-            this.view = EzMath.Mat4.lookAt(this.pos, [this.pos[0] + this.forward[0], this.pos[1] + this.forward[1], this.pos[2] + this.forward[2]], this.up);
-            this.projection = EzMath.Mat4.perspective(this.fov * Math.PI / 180, this.aspect, this.near, this.far);
-            return this;
-        }
+        lookAt(target, up = [0, 1, 0]) {
+            const px = this.position[0], py = this.position[1], pz = this.position[2];
+            let fx = target[0] - px, fy = target[1] - py, fz = target[2] - pz;
+            const fl = Math.hypot(fx, fy, fz);
+            if (fl < 1e-8) return this;
+            fx /= fl; fy /= fl; fz /= fl;
 
-        setAspect(width, height) {
-            this.aspect = width / height || 1;
-            this.update();
-            return this;
-        }
+            let rx = fy * up[2] - fz * up[1];
+            let ry = fz * up[0] - fx * up[2];
+            let rz = fx * up[1] - fy * up[0];
+            let rl = Math.hypot(rx, ry, rz);
+            if (rl < 1e-6) {
+                const altUp = Math.abs(fy) > 0.9 ? [0, 0, 1] : [0, 1, 0];
+                rx = fy * altUp[2] - fz * altUp[1];
+                ry = fz * altUp[0] - fx * altUp[2];
+                rz = fx * altUp[1] - fy * altUp[0];
+                rl = Math.hypot(rx, ry, rz) || 1;
+            }
+            rx /= rl; ry /= rl; rz /= rl;
+            const ux = ry * fz - rz * fy;
+            const uy = rz * fx - rx * fz;
+            const uz = rx * fy - ry * fx;
 
-        rotate(pitchDelta, yawDelta, rollDelta = 0) {
-            this.pitch = EzMath.clamp(this.pitch + pitchDelta, -89, 89);
-            this.yaw += yawDelta;
-            this.roll += rollDelta;
-            this.orientation = EzMath.Quat.fromEulerYPR(this.yaw, this.pitch, this.roll);
-            this.update();
+            const m00 = rx,  m01 = ux,  m02 = -fx;
+            const m10 = ry,  m11 = uy,  m12 = -fy;
+            const m20 = rz,  m21 = uz,  m22 = -fz;
+
+            const tr = m00 + m11 + m22;
+            let qx, qy, qz, qw;
+            if (tr > 0) {
+                const s = Math.sqrt(tr + 1) * 2;
+                qw = 0.25 * s;
+                qx = (m21 - m12) / s;
+                qy = (m02 - m20) / s;
+                qz = (m10 - m01) / s;
+            } else if (m00 > m11 && m00 > m22) {
+                const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
+                qw = (m21 - m12) / s;
+                qx = 0.25 * s;
+                qy = (m01 + m10) / s;
+                qz = (m02 + m20) / s;
+            } else if (m11 > m22) {
+                const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
+                qw = (m02 - m20) / s;
+                qx = (m01 + m10) / s;
+                qy = 0.25 * s;
+                qz = (m12 + m21) / s;
+            } else {
+                const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+                qw = (m10 - m01) / s;
+                qx = (m02 + m20) / s;
+                qy = (m12 + m21) / s;
+                qz = 0.25 * s;
+            }
+            this.orientation = EzMath.Quat.normalize([qx, qy, qz, qw]);
             return this;
         }
 
         translate(offset) {
-            this.pos = [this.pos[0] + offset[0], this.pos[1] + offset[1], this.pos[2] + offset[2]];
-            this.update();
+            this.position = [
+                this.position[0] + offset[0],
+                this.position[1] + offset[1],
+                this.position[2] + offset[2]
+            ];
             return this;
-        }
-
-        resetRoll() {
-            this.roll = 0;
-            this.orientation = EzMath.Quat.normalize(EzMath.Quat.fromEulerYPR(this.yaw, this.pitch, 0));
-            this.update();
-            return this;
-        }
-
-        get data() {
-            return {
-                position: [...this.pos],
-                orientation: [...this.orientation],
-                yaw: this.yaw,
-                pitch: this.pitch,
-                roll: this.roll,
-
-                forward: [...this.forward],
-                up: [...this.up],
-                right: [...this.right],
-
-                near: this.near,
-                far: this.far,
-                
-                fov: this.fov,
-            };
         }
     }
 
@@ -1506,7 +1558,7 @@ EzAssets
         resize(w, h) {
             this.#canvas.width = w; this.#canvas.height = h;
             this.#gl.viewport(0, 0, w, h);
-            this.camera.setAspect(w, h);
+            this.camera.aspect = w / h;
             return this;
         }
         getCanvas() { return this.#canvas; }
@@ -1804,7 +1856,6 @@ EzAssets
     window.EzShader3D      = EzShader3D;
     window.EzMesh3D        = EzMesh3D;
     window.EzSkeleton3D    = EzSkeleton3D;
-    window.EzCamera3D      = EzCamera3D;
     window.EzCanvas3D      = EzCanvas3D;
 
 })();
