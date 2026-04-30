@@ -178,7 +178,10 @@ new EzShader3D().describe({ vertex, fragment, uniKeys?, onbind?, renderCfg? })
     |-- blend        default false
     |-- blendSrc / blendDst   gl blend factors. Default SRC_ALPHA / ONE_MINUS_SRC_ALPHA.
                               See EzShader.BLEND for named constants.
-    |-- twoSided     default false. true disables back-face culling for this shader.
+    |-- cull         'back' (default) | 'front' | 'none'.
+    |                'back'  : standard opaque rendering.
+    |                'front' : inverted-hull tricks (outline / shell).
+    |                'none'  : two-sided sheets, particles, billboards.
 
 A shader must be `.describe(...)`d before `.assets.shaders.add(key, shader)`;
 the engine compiles it for you on add.
@@ -517,7 +520,11 @@ EzSkeleton3D
             gl.depthMask(cfg.depthWrite);
             cfg.depthTest ? gl.enable(gl.DEPTH_TEST)  : gl.disable(gl.DEPTH_TEST);
             cfg.blend     ? gl.enable(gl.BLEND)       : gl.disable(gl.BLEND);
-            cfg.twoSided  ? gl.disable(gl.CULL_FACE)  : gl.enable(gl.CULL_FACE);
+            switch (cfg.cull) {
+                case 'none':  gl.disable(gl.CULL_FACE); break;
+                case 'front': gl.enable(gl.CULL_FACE);  gl.cullFace(gl.FRONT); break;
+                default:      gl.enable(gl.CULL_FACE);  gl.cullFace(gl.BACK);  break;
+            }
             if (cfg.blend) gl.blendFunc(cfg.blendSrc, cfg.blendDst);
         }
 
@@ -536,9 +543,20 @@ EzSkeleton3D
             finally { gl.bindVertexArray(null); }
         }
 
+
         static uploadVBO(gl, vbo, data, usage) {
+            const need = data.byteLength;
+            const cap  = vbo._ezCapacity | 0;
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-            gl.bufferData(gl.ARRAY_BUFFER, data, usage ?? gl.DYNAMIC_DRAW);
+            if (need > 0 && need <= cap) {
+                gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+            } else {
+                const grow   = Math.ceil(cap * 1.5);
+                const newCap = Math.max(need, grow);
+                gl.bufferData(gl.ARRAY_BUFFER, newCap, usage ?? gl.DYNAMIC_DRAW);
+                if (need > 0) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+                vbo._ezCapacity = newCap;
+            }
         }
 
         static setConstantAttribs(gl, list) {
@@ -614,8 +632,12 @@ EzSkeleton3D
             return tex;
         }
 
-        static uploadTexture2D(gl, existing, internalFmt, fmt, type, w, h, data) {
+        // Upload (and optionally bind) a 2D texture.
+        static uploadTexture2D(gl, existing, internalFmt, fmt, type, w, h, data, unit = null) {
             const tex = existing ?? gl.createTexture();
+            const explicit = unit != null;
+            const prevActive = explicit ? 0 : gl.getParameter(gl.ACTIVE_TEXTURE);
+            gl.activeTexture(gl.TEXTURE0 + (explicit ? unit : EzRender.SCRATCH_TEX_UNIT));
             gl.bindTexture(gl.TEXTURE_2D, tex);
             if (!existing) {
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -624,35 +646,18 @@ EzSkeleton3D
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
             }
             gl.texImage2D(gl.TEXTURE_2D, 0, internalFmt, w, h, 0, fmt, type, data);
+            if (!explicit) gl.activeTexture(prevActive);
             return tex;
         }
+        static SCRATCH_TEX_UNIT = 15;
 
 
         static drawInstanced(gl, drawCfg, instanceCount) {
             const mode = drawCfg.mode ?? gl.TRIANGLES;
             if (drawCfg.indexed) {
-                gl.drawElementsInstanced(mode, drawCfg.count, drawCfg.indexType, drawCfg.indexOffset, instanceCount);
+                gl.drawElementsInstanced(mode, drawCfg.indexCount, drawCfg.indexType, drawCfg.indexOffset, instanceCount);
             } else {
                 gl.drawArraysInstanced(mode, drawCfg.vertexOffset, drawCfg.vertexCount, instanceCount);
-            }
-        }
-
-
-        static drawPrimitive(gl, mesh, primIdx, instanceCount) {
-            const p = mesh.primitives[primIdx];
-            if (p.indexOffset != null) {
-                EzRender.drawInstanced(gl, {
-                    indexed: true,
-                    count: p.indexCount,
-                    indexType: mesh.indexType,
-                    indexOffset: p.indexOffset * mesh.indexBytes,
-                }, instanceCount);
-            } else {
-                EzRender.drawInstanced(gl, {
-                    indexed: false,
-                    vertexOffset: p.vertexOffset,
-                    vertexCount: p.vertexCount,
-                }, instanceCount);
             }
         }
 
@@ -966,7 +971,7 @@ EzSkeleton3D
                     rQueue:     typeof rCfg.rQueue      === "number"  ? rCfg.rQueue      : 1000,
                     depthWrite: typeof rCfg.depthWrite  === "boolean" ? rCfg.depthWrite  : true,
                     depthTest:  typeof rCfg.depthTest   === "boolean" ? rCfg.depthTest   : true,
-                    twoSided:   typeof rCfg.twoSided    === "boolean" ? rCfg.twoSided    : false,
+                    cull:       ['back','front','none'].includes(rCfg.cull) ? rCfg.cull : 'back',
                     blend:      typeof rCfg.blend       === "boolean" ? rCfg.blend       : false,
                     blendSrc:   rCfg.blendSrc ?? EzShader.BLEND.SRC_ALPHA,
                     blendDst:   rCfg.blendDst ?? EzShader.BLEND.ONE_MINUS_SRC_ALPHA,
@@ -1427,7 +1432,6 @@ EzSkeleton3D
 
     const TAGC3D = "[EzCanvas3D]";
     class EzCanvas3D {
-
         #canvas = null;
         #gl     = null;
 
@@ -1814,7 +1818,7 @@ EzSkeleton3D
                                 const prim = mesh.primitives[pi];
                                 this.#bindMaterial(shader, prim.material);
                                 this.#bindMorphPrim(shader, prim);
-                                EzRender.drawPrimitive(gl, mesh, pi, chunk.length);
+                                EzCanvas3D.drawPrimitive(gl, mesh, pi, chunk.length);
                             }
                         }
                     });
@@ -1888,6 +1892,24 @@ EzSkeleton3D
         #chunkInstances(shader, instances) {
             const perInstance = shader.uloc.bonesTex != null;
             return perInstance ? instances.map(i => [i]) : [instances];
+        }
+
+        static drawPrimitive(gl, mesh, primIdx, instanceCount) {
+            const p = mesh.primitives[primIdx];
+            if (p.indexOffset != null) {
+                EzRender.drawInstanced(gl, {
+                    indexed:     true,
+                    indexCount:  p.indexCount,
+                    indexType:   mesh.indexType,
+                    indexOffset: p.indexOffset * mesh.indexBytes,
+                }, instanceCount);
+            } else {
+                EzRender.drawInstanced(gl, {
+                    indexed:      false,
+                    vertexOffset: p.vertexOffset,
+                    vertexCount:  p.vertexCount,
+                }, instanceCount);
+            }
         }
     }
 
