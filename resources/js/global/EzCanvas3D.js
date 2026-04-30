@@ -178,7 +178,7 @@ new EzShader3D().describe({ vertex, fragment, uniKeys?, onbind?, renderCfg? })
     |-- blend        default false
     |-- blendSrc / blendDst   gl blend factors. Default SRC_ALPHA / ONE_MINUS_SRC_ALPHA.
                               See EzShader.BLEND for named constants.
-    |-- doubleSided  default false. true disables back-face culling for this shader.
+    |-- twoSided     default false. true disables back-face culling for this shader.
 
 A shader must be `.describe(...)`d before `.assets.shaders.add(key, shader)`;
 the engine compiles it for you on add.
@@ -509,42 +509,101 @@ EzSkeleton3D
         namespaces() { return [...this.#namespaces.keys()]; }
     }
 
-    const TAGWGL = "[EzWebGL]";
-    class EzWebGL {
+
+    const TAGRENDER = "[EzRender]";
+    class EzRender {
+        static applyState(gl, cfg) {
+            if (!cfg) return;
+            gl.depthMask(cfg.depthWrite);
+            cfg.depthTest ? gl.enable(gl.DEPTH_TEST)  : gl.disable(gl.DEPTH_TEST);
+            cfg.blend     ? gl.enable(gl.BLEND)       : gl.disable(gl.BLEND);
+            cfg.twoSided  ? gl.disable(gl.CULL_FACE)  : gl.enable(gl.CULL_FACE);
+            if (cfg.blend) gl.blendFunc(cfg.blendSrc, cfg.blendDst);
+        }
+
+        static restoreDefaultState(gl) {
+            gl.depthMask(true);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.enable(gl.CULL_FACE);
+            gl.cullFace(gl.BACK);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        }
+
+        static withVAO(gl, vao, fn) {
+            gl.bindVertexArray(vao);
+            try { fn(); }
+            finally { gl.bindVertexArray(null); }
+        }
+
+        static uploadVBO(gl, vbo, data, usage) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+            gl.bufferData(gl.ARRAY_BUFFER, data, usage ?? gl.DYNAMIC_DRAW);
+        }
+
+        static setConstantAttribs(gl, list) {
+            for (const a of list) {
+                const v = a.value ?? a.default ?? [0,0,0,0];
+                gl.vertexAttrib4f(a.loc, v[0]??0, v[1]??0, v[2]??0, v[3]??0);
+            }
+        }
+
+        static wireAttr(gl, { buffer, loc, size, type, normalized, stride, offset, divisor, enabled }) {
+            if (loc == null || loc === -1) return;
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            if (enabled !== false) gl.enableVertexAttribArray(loc);
+            gl.vertexAttribPointer(loc, size, type ?? gl.FLOAT, !!normalized, stride ?? 0, offset ?? 0);
+            if (divisor) gl.vertexAttribDivisor(loc, divisor);
+        }
+
+        static setUniforms(gl, program, list) {
+            const D = EzRender.#UNI;
+            for (const u of list) {
+                let loc = u.loc;
+                if (loc === undefined) loc = u.name ? gl.getUniformLocation(program, u.name) : null;
+                if (loc == null) continue;
+                D[u.type]?.(gl, loc, u.value);
+            }
+        }
+        static #UNI = {
+            mat4:  (gl, loc, v) => gl.uniformMatrix4fv(loc, false, v),
+            mat3:  (gl, loc, v) => gl.uniformMatrix3fv(loc, false, v),
+            vec4:  (gl, loc, v) => gl.uniform4fv(loc, v),
+            vec3:  (gl, loc, v) => gl.uniform3fv(loc, v),
+            vec2:  (gl, loc, v) => gl.uniform2fv(loc, v),
+            float: (gl, loc, v) => gl.uniform1f(loc, v),
+            int:   (gl, loc, v) => gl.uniform1i(loc, v),
+            bool:  (gl, loc, v) => gl.uniform1i(loc, v ? 1 : 0),
+        };
+
+        static bindSampler(gl, loc, unit, tex, target) {
+            if (loc == null) return;
+            gl.activeTexture(gl.TEXTURE0 + unit);
+            gl.bindTexture(target ?? gl.TEXTURE_2D, tex);
+            gl.uniform1i(loc, unit);
+        }
+
         static createTexture(gl, {
             data, width = 1, height = 1,
-
-            format = gl.RGBA,
-            internalFormat = format,
-            type = gl.UNSIGNED_BYTE,
-
-            wrapS = gl.CLAMP_TO_EDGE,
-            wrapT = gl.CLAMP_TO_EDGE,
-
-            minFilter = gl.LINEAR,
-            magFilter = gl.LINEAR,
-
-            mipmap = false,
-            flipY = false,
-            premultiplyAlpha = false
+            format = gl.RGBA, internalFormat = format, type = gl.UNSIGNED_BYTE,
+            wrapS = gl.CLAMP_TO_EDGE, wrapT = gl.CLAMP_TO_EDGE,
+            minFilter = gl.LINEAR, magFilter = gl.LINEAR,
+            mipmap = false, flipY = false, premultiplyAlpha = false,
         }) {
-
             const tex = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, tex);
-
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipY);
             gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premultiplyAlpha);
 
             const isImageSrc = data instanceof ImageBitmap || data instanceof HTMLImageElement || data instanceof HTMLCanvasElement;
             if (isImageSrc) gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, format, type, data);
-            else gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, data);
+            else            gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, data);
 
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
 
-            const canUseMipmaps = mipmap && _is.POT(width) && _is.POT(height);
-            if (canUseMipmaps) {
+            if (mipmap && _is.POT(width) && _is.POT(height)) {
                 gl.generateMipmap(gl.TEXTURE_2D);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
             } else {
@@ -552,38 +611,66 @@ EzSkeleton3D
             }
 
             gl.bindTexture(gl.TEXTURE_2D, null);
+            return tex;
+        }
 
+        static uploadTexture2D(gl, existing, internalFmt, fmt, type, w, h, data) {
+            const tex = existing ?? gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            if (!existing) {
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
+            }
+            gl.texImage2D(gl.TEXTURE_2D, 0, internalFmt, w, h, 0, fmt, type, data);
             return tex;
         }
 
 
-        static wireAttr(gl, {
-            buffer, loc, size,
-            type = gl.FLOAT,
-            normalized = false,
-            stride = 0, offset = 0,
-            divisor = 0, enabled = true
-        }) {
-            if (loc === null || loc === -1 || loc === undefined) return;
-
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-            if (enabled) gl.enableVertexAttribArray(loc);
-
-            gl.vertexAttribPointer(loc, size, type, normalized, stride, offset);
-            if (divisor !== 0) gl.vertexAttribDivisor(loc, divisor); // WebGL1 need to be aware
+        static drawInstanced(gl, drawCfg, instanceCount) {
+            const mode = drawCfg.mode ?? gl.TRIANGLES;
+            if (drawCfg.indexed) {
+                gl.drawElementsInstanced(mode, drawCfg.count, drawCfg.indexType, drawCfg.indexOffset, instanceCount);
+            } else {
+                gl.drawArraysInstanced(mode, drawCfg.vertexOffset, drawCfg.vertexCount, instanceCount);
+            }
         }
 
-        static drawInstanced(gl, { instanceVBO, instanceData, instanceCount, draw }) {
-            if (instanceData) {
-                gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
-                gl.bufferData(gl.ARRAY_BUFFER, instanceData, gl.DYNAMIC_DRAW);
-            }
 
-            if (draw.indexed) {
-                gl.drawElementsInstanced(gl.TRIANGLES, draw.count, draw.indexType, draw.indexOffset, instanceCount);
+        static drawPrimitive(gl, mesh, primIdx, instanceCount) {
+            const p = mesh.primitives[primIdx];
+            if (p.indexOffset != null) {
+                EzRender.drawInstanced(gl, {
+                    indexed: true,
+                    count: p.indexCount,
+                    indexType: mesh.indexType,
+                    indexOffset: p.indexOffset * mesh.indexBytes,
+                }, instanceCount);
             } else {
-                gl.drawArraysInstanced(gl.TRIANGLES, draw.vertexOffset, draw.vertexCount, instanceCount);
+                EzRender.drawInstanced(gl, {
+                    indexed: false,
+                    vertexOffset: p.vertexOffset,
+                    vertexCount: p.vertexCount,
+                }, instanceCount);
             }
+        }
+
+
+        static packInstanceRow(arr, offFloats, data, layout) {
+            for (const e of layout.entries) {
+                const src = data[e.name];
+                if (src) arr.set(src, offFloats + (e.byteOffset >> 2));
+            }
+        }
+
+        static packInstances(dataArray, layout) {
+            const stride = layout.strideFloats;
+            if (stride === 0) return null;
+            const flat = new Float32Array(dataArray.length * stride);
+            for (let i = 0; i < dataArray.length; i++)
+                EzRender.packInstanceRow(flat, i * stride, dataArray[i], layout);
+            return flat;
         }
     }
 
@@ -623,17 +710,11 @@ EzSkeleton3D
         bind(gl) {
             gl.useProgram(this.program);
             if (this.onbind) this.onbind(gl, this.program);
+            return this;
         }
 
-        applyRenderState(gl) {
-            const rc = this.renderCfg;
-            if (!rc) return;
-            gl.depthMask(rc.depthWrite);
-            rc.depthTest   ? gl.enable(gl.DEPTH_TEST)  : gl.disable(gl.DEPTH_TEST);
-            rc.blend       ? gl.enable(gl.BLEND)       : gl.disable(gl.BLEND);
-            rc.doubleSided ? gl.disable(gl.CULL_FACE)  : gl.enable(gl.CULL_FACE);
-            if (rc.blend) gl.blendFunc(rc.blendSrc, rc.blendDst);
-        }
+        applyRenderState(gl) { EzRender.applyState(gl, this.renderCfg); return this; }
+        static restoreRenderState(gl) { EzRender.restoreDefaultState(gl); }
 
         static compileShader(gl, type, src) {
             const shader = gl.createShader(type);
@@ -641,7 +722,7 @@ EzSkeleton3D
             gl.shaderSource(shader, src);
             gl.compileShader(shader);
             if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                _c.err(TAGWGL, "shader compile error:", gl.getShaderInfoLog(shader));
+                _c.err("[EzShader]", "shader compile error:", gl.getShaderInfoLog(shader));
                 gl.deleteShader(shader);
                 return null;
             }
@@ -660,7 +741,7 @@ EzSkeleton3D
             gl.linkProgram(program);
 
             if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                _c.err(TAGWGL, "program link error:", gl.getProgramInfoLog(program));
+                _c.err("[EzShader]", "program link error:", gl.getProgramInfoLog(program));
                 return null;
             }
 
@@ -882,13 +963,13 @@ EzSkeleton3D
                 names: { view: vDK.view ?? null, projection: vDK.projection ?? null, albedo: fDK.albedo ?? null, fill: fDK.fill ?? null },
                 onbind: typeof onbind === "function" ? onbind : null,
                 renderCfg: {
-                    rQueue:      typeof rCfg.rQueue      === "number"  ? rCfg.rQueue      : 1000,
-                    depthWrite:  typeof rCfg.depthWrite  === "boolean" ? rCfg.depthWrite  : true,
-                    depthTest:   typeof rCfg.depthTest   === "boolean" ? rCfg.depthTest   : true,
-                    doubleSided: typeof rCfg.doubleSided === "boolean" ? rCfg.doubleSided : false,
-                    blend:       typeof rCfg.blend       === "boolean" ? rCfg.blend       : false,
-                    blendSrc:    rCfg.blendSrc ?? EzShader.BLEND.SRC_ALPHA,
-                    blendDst:    rCfg.blendDst ?? EzShader.BLEND.ONE_MINUS_SRC_ALPHA,
+                    rQueue:     typeof rCfg.rQueue      === "number"  ? rCfg.rQueue      : 1000,
+                    depthWrite: typeof rCfg.depthWrite  === "boolean" ? rCfg.depthWrite  : true,
+                    depthTest:  typeof rCfg.depthTest   === "boolean" ? rCfg.depthTest   : true,
+                    twoSided:   typeof rCfg.twoSided    === "boolean" ? rCfg.twoSided    : false,
+                    blend:      typeof rCfg.blend       === "boolean" ? rCfg.blend       : false,
+                    blendSrc:   rCfg.blendSrc ?? EzShader.BLEND.SRC_ALPHA,
+                    blendDst:   rCfg.blendDst ?? EzShader.BLEND.ONE_MINUS_SRC_ALPHA,
                 },
             };
 
@@ -1238,7 +1319,7 @@ EzSkeleton3D
                             packed[dst + 2] = d[v * 3 + 2];
                         }
                     }
-                    p.morph.channels.set(chIdx, simpleTex(gl, null, gl.RGB32F, gl.RGB, gl.FLOAT, targetCount, vCount, packed));
+                    p.morph.channels.set(chIdx, EzRender.uploadTexture2D(gl, null, gl.RGB32F, gl.RGB, gl.FLOAT, targetCount, vCount, packed));
                 }
 
                 morphTotalWeights += targetCount;
@@ -1252,7 +1333,7 @@ EzSkeleton3D
                 gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
                 gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
                 for (const w of wired)
-                    EzWebGL.wireAttr(gl, { buffer: vbo, loc: w.loc, size: w.size, stride: vaoStride, offset: w.offset });
+                    EzRender.wireAttr(gl, { buffer: vbo, loc: w.loc, size: w.size, stride: vaoStride, offset: w.offset });
             }
             for (const d of defaulted) gl.disableVertexAttribArray(d.loc);
 
@@ -1270,9 +1351,9 @@ EzSkeleton3D
                 if (e.loc < 0) continue;
                 if (e.type === "mat4") {
                     for (let col = 0; col < 4; col++)
-                        EzWebGL.wireAttr(gl, { buffer: instanceVBO, loc: e.loc + col, size: 4, stride: instLayout.strideBytes, offset: e.byteOffset + col * 16, divisor: 1 });
+                        EzRender.wireAttr(gl, { buffer: instanceVBO, loc: e.loc + col, size: 4, stride: instLayout.strideBytes, offset: e.byteOffset + col * 16, divisor: 1 });
                 } else {
-                    EzWebGL.wireAttr(gl, { buffer: instanceVBO, loc: e.loc, size: e.floats, stride: instLayout.strideBytes, offset: e.byteOffset, divisor: 1 });
+                    EzRender.wireAttr(gl, { buffer: instanceVBO, loc: e.loc, size: e.floats, stride: instLayout.strideBytes, offset: e.byteOffset, divisor: 1 });
                 }
             }
             gl.bindVertexArray(null);
@@ -1330,51 +1411,19 @@ EzSkeleton3D
     }
 
 
-    function packInstanceRow(arr, offFloats, inst, layout) {
-        for (const e of layout.entries) {
-            const src = inst.data[e.name];
-            if (src) arr.set(src, offFloats + (e.byteOffset >> 2));
-        }
-    }
-
-    function simpleTex(gl, existing, iFmt, fmt, type, w, h, data) {
-        const tex = existing ?? gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        if (!existing) {
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
-        }
-        gl.texImage2D(gl.TEXTURE_2D, 0, iFmt, w, h, 0, fmt, type, data);
-        return tex;
-    }
-
-    const _dummyTex = (gl, iFmt, fmt, type, data) => simpleTex(gl, null, iFmt, fmt, type, 1, 1, data);
+    // Tiny convenience for 1x1 fallback textures used by EzCanvas3D.
+    const _dummyTex = (gl, iFmt, fmt, type, data) => EzRender.uploadTexture2D(gl, null, iFmt, fmt, type, 1, 1, data);
 
 
     // Fixed texture units for internal ez_ resources.
+    // EzShader3D bakes these into compiled GLSL; the engine binds samplers
+    // to matching units when the relevant feature is in use. EzRender itself
+    // doesn't reference these — they're an EzCanvas3D / EzShader3D contract.
     const _EZ_TEX_UNIT_ALBEDO       = 0;
     const _EZ_TEX_UNIT_BONES        = 1;
     const _EZ_TEX_UNIT_MORPH_WEIGHT = 2;
     const _EZ_TEX_UNIT_MORPH_DELTA  = 3; // N channels occupy 3, 4, 5, ...
 
-    function _drawPrim(gl, prim, mesh, instanceCount) {
-        EzWebGL.drawInstanced(gl, {
-            instanceCount,
-            draw: prim.indexOffset != null
-                ? { 
-                    indexed: true,
-                    count: prim.indexCount,
-                    indexType: mesh.indexType,
-                    indexOffset: prim.indexOffset * mesh.indexBytes 
-                } : {
-                    indexed: false,
-                    vertexOffset: prim.vertexOffset,
-                    vertexCount: prim.vertexCount
-                }
-        });
-    }
 
     const TAGC3D = "[EzCanvas3D]";
     class EzCanvas3D {
@@ -1482,7 +1531,7 @@ EzSkeleton3D
                             ch === 2 ? [gl.RG8,   gl.RG  ] :
                             ch === 3 ? [gl.RGB8,  gl.RGB ] :
                                        [gl.RGBA8, gl.RGBA];
-                        const glTex = EzWebGL.createTexture(gl, { data, width, height, format, internalFormat, wrapS: wrap, wrapT: wrap, mipmap: hasMipmap });
+                        const glTex = EzRender.createTexture(gl, { data, width, height, format, internalFormat, wrapS: wrap, wrapT: wrap, mipmap: hasMipmap });
                         map.set(key, { glTex, width, height, channels });
                         return true;
                     },
@@ -1723,153 +1772,122 @@ EzSkeleton3D
             const gl = this.#gl;
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            // shaderKey -> { static, skinned } -> Map<modelKey, [inst]>
             const batches = new Map();
             for (const [, inst] of this.#instances) {
                 if (!inst.display) continue;
                 const model = this.models.get(inst.modelKey); if (!model) continue;
-                const resolvedKey = inst.shaderKey ?? model.shaderKey;
-                let entry = batches.get(resolvedKey);
-                if (!entry) batches.set(resolvedKey, entry = { static: new Map(), skinned: new Map() });
-                const skel = model.skeletonKey ? this.#assets.skeleton.get(model.skeletonKey) : null;
-                const bucket = skel ? entry.skinned : entry.static;
-                if (!bucket.has(inst.modelKey)) bucket.set(inst.modelKey, []);
-                bucket.get(inst.modelKey).push(inst);
+                const shaderKey = inst.shaderKey ?? model.shaderKey;
+                let modelMap = batches.get(shaderKey);
+                if (!modelMap) batches.set(shaderKey, modelMap = new Map());
+                let list = modelMap.get(inst.modelKey);
+                if (!list) modelMap.set(inst.modelKey, list = []);
+                list.push(inst);
             }
 
-            // Sort batches by rQueue (ascending) then draw all.
-            const sorted = [...batches.entries()]
-                .sort((a, b) => {
-                    const ra = this.shaders.get(a[0])?.renderCfg.rQueue ?? 1000;
-                    const rb = this.shaders.get(b[0])?.renderCfg.rQueue ?? 1000;
-                    return ra - rb;
-                });
-            this.#drawPass(sorted);
-        }
+            const sorted = [...batches.entries()].sort((a, b) =>
+                (this.shaders.get(a[0])?.renderCfg.rQueue ?? 1000) -
+                (this.shaders.get(b[0])?.renderCfg.rQueue ?? 1000));
 
-        #drawPass(sorted) {
-            const gl = this.#gl;
-            for (const [shaderKey, { static: staticBatch, skinned: skinnedBatch }] of sorted) {
+            for (const [shaderKey, modelMap] of sorted) {
                 const shader = this.shaders.get(shaderKey); if (!shader) continue;
-                shader.applyRenderState(gl);
 
-                shader.bind(gl);
-                if (shader.uloc.view)       gl.uniformMatrix4fv(shader.uloc.view,       false, this.camera.view);
-                if (shader.uloc.projection) gl.uniformMatrix4fv(shader.uloc.projection, false, this.camera.projection);
+                shader.applyRenderState(gl).bind(gl);
+                this.#bindCamera(shader);
 
-                // 0 stride = shader has no instanceData (drawn purely via gl_InstanceID).
-                const layout = shader.instanceLayout;
-                const stride = layout.strideFloats;
-
-                for (const [modelKey, instList] of staticBatch) {
+                for (const [modelKey, instList] of modelMap) {
                     const model = this.models.get(modelKey); if (!model) continue;
-                    const mesh_s = this.#assets.mesh.get(model.meshKey); if (!mesh_s) continue;
-                    let flat = null;
-                    if (stride > 0) {
-                        flat = new Float32Array(instList.length * stride);
-                        for (let i = 0; i < instList.length; i++)
-                            packInstanceRow(flat, i * stride, instList[i], layout);
-                        gl.bindBuffer(gl.ARRAY_BUFFER, mesh_s.instanceVBO);
-                        gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
-                    }
-                    this.#bindMorphWeightTex(mesh_s, model, shader, instList);
-                    gl.bindVertexArray(mesh_s.vao);
-                    for (const d of mesh_s.defaulted) gl.vertexAttrib4f(d.loc, ...d.default);
-                    this.#drawPrimitives(mesh_s, model, shader, instList.length);
-                    gl.bindVertexArray(null);
-                }
+                    const mesh  = this.#assets.mesh.get(model.meshKey); if (!mesh) continue;
+                    const skel  = model.skeletonKey ? this.#assets.skeleton.get(model.skeletonKey) : null;
 
-                // Skinned path - per-instance bone palette upload.
-                const oneInstance = stride > 0 ? new Float32Array(stride) : null;
-                for (const [modelKey, instList] of skinnedBatch) {
-                    const model = this.models.get(modelKey); if (!model) continue;
-                    const mesh_sk = this.#assets.mesh.get(model.meshKey); if (!mesh_sk) continue;
-                    const skel_sk = model.skeletonKey ? this.#assets.skeleton.get(model.skeletonKey) : null;
-                    gl.bindVertexArray(mesh_sk.vao);
-                    for (const d of mesh_sk.defaulted) gl.vertexAttrib4f(d.loc, ...d.default);
+                    EzRender.withVAO(gl, mesh.vao, () => {
+                        EzRender.setConstantAttribs(gl, mesh.defaulted);
 
-                    for (const inst of instList) {
-                        if (oneInstance) {
-                            packInstanceRow(oneInstance, 0, inst, layout);
-                            gl.bindBuffer(gl.ARRAY_BUFFER, mesh_sk.instanceVBO);
-                            gl.bufferData(gl.ARRAY_BUFFER, oneInstance, gl.DYNAMIC_DRAW);
+                        for (const chunk of this.#chunkInstances(shader, instList)) {
+                            const packed = EzRender.packInstances(
+                                chunk.map(i => i.data), shader.instanceLayout);
+                            if (packed) EzRender.uploadVBO(gl, mesh.instanceVBO, packed);
+
+                            if (skel) this.#bindBones(shader, skel, chunk[0].bonePoses, model);
+                            this.#bindMorphWeights(shader, mesh, model, chunk);
+
+                            for (let pi = 0; pi < mesh.primitives.length; pi++) {
+                                const prim = mesh.primitives[pi];
+                                this.#bindMaterial(shader, prim.material);
+                                this.#bindMorphPrim(shader, prim);
+                                EzRender.drawPrimitive(gl, mesh, pi, chunk.length);
+                            }
                         }
-
-                        if (shader.uloc.bonesTex != null && skel_sk && inst.bonePoses) {
-                            gl.activeTexture(gl.TEXTURE0 + _EZ_TEX_UNIT_BONES);
-                            this.#uploadBoneTex(skel_sk, model, inst.bonePoses);
-                            gl.uniform1i(shader.uloc.bonesTex, _EZ_TEX_UNIT_BONES);
-                        }
-                        this.#bindMorphWeightTex(mesh_sk, model, shader, [inst]);
-                        this.#drawPrimitives(mesh_sk, model, shader, 1);
-                    }
-                    gl.bindVertexArray(null);
+                    });
                 }
             }
 
-            // Restore safe defaults so canvas alpha:true transparency doesn't have a brain aneurism
-            gl.depthMask(true);
-            gl.enable(gl.DEPTH_TEST);
-            gl.enable(gl.BLEND);
-            gl.enable(gl.CULL_FACE);
-            gl.cullFace(gl.BACK);
-            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            EzRender.restoreDefaultState(gl);
         }
 
-
-        #drawPrimitives(mesh, model, shader, instanceCount) {
-            const gl = this.#gl;
-            const morph = shader.uloc.morph;
-            const hasMorph = morph.count != null;
-            for (const prim of mesh.primitives) {
-                const { material } = prim;
-
-                const tex = material.albedo ? this.textures.get(material.albedo) : null;
-                gl.activeTexture(gl.TEXTURE0 + _EZ_TEX_UNIT_ALBEDO);
-                gl.bindTexture(gl.TEXTURE_2D, tex ? tex.glTex : this.#whiteTex);
-                if (shader.uloc.albedo != null) gl.uniform1i(shader.uloc.albedo, _EZ_TEX_UNIT_ALBEDO);
-                if (shader.uloc.fill   != null) gl.uniform4fv(shader.uloc.fill, material.fill);
-
-                if (hasMorph) {
-                    const m = prim.morph;
-                    gl.uniform1i(morph.count,        m ? m.targetCount  : 0);
-                    gl.uniform1i(morph.weightOffset, m ? m.weightOffset : 0);
-                    gl.uniform1i(morph.vertexBase,   m ? m.vertexBase   : 0);
-                    for (const ch of morph.channels) {
-                        if (ch.loc == null) continue;
-                        gl.activeTexture(gl.TEXTURE0 + ch.unit);
-                        const deltaTex = m ? m.channels.get(ch.unit - _EZ_TEX_UNIT_MORPH_DELTA) : null;
-                        gl.bindTexture(gl.TEXTURE_2D, deltaTex || this.#morphDummyDelta);
-                        gl.uniform1i(ch.loc, ch.unit);
-                    }
-                }
-
-                _drawPrim(gl, prim, mesh, instanceCount);
-            }
+        #bindCamera(shader) {
+            EzRender.setUniforms(this.#gl, shader.program, [
+                { loc: shader.uloc.view,       type: "mat4", value: this.camera.view },
+                { loc: shader.uloc.projection, type: "mat4", value: this.camera.projection },
+            ]);
         }
 
-        #bindMorphWeightTex(mesh, model, shader, instances) {
-            const gl = this.#gl, loc = shader.uloc.morph.weightTex;
-            if (loc == null) return;
-            gl.activeTexture(gl.TEXTURE0 + _EZ_TEX_UNIT_MORPH_WEIGHT);
-            if (mesh.morphTotalWeights <= 0) {
-                gl.bindTexture(gl.TEXTURE_2D, this.#morphDummyWeight);
-            } else {
-                const W = mesh.morphTotalWeights, H = instances.length;
-                const data = new Float32Array(W * H);
-                for (let i = 0; i < H; i++) {
-                    if (instances[i].morphWeights) data.set(instances[i].morphWeights, i * W);
-                }
-                model.morphWeightTex = simpleTex(gl, model.morphWeightTex, gl.R32F, gl.RED, gl.FLOAT, W, H, data);
-            }
-            gl.uniform1i(loc, _EZ_TEX_UNIT_MORPH_WEIGHT);
+        #bindMaterial(shader, material) {
+            const gl  = this.#gl;
+            const tex = material.albedo ? this.textures.get(material.albedo) : null;
+            EzRender.bindSampler(gl, shader.uloc.albedo, _EZ_TEX_UNIT_ALBEDO,
+                                   tex ? tex.glTex : this.#whiteTex);
+            EzRender.setUniforms(gl, shader.program, [
+                { loc: shader.uloc.fill, type: "vec4", value: material.fill },
+            ]);
         }
 
-        #uploadBoneTex(skel, model, bonePoses) {
+        #bindBones(shader, skel, bonePoses, model) {
+            const loc = shader.uloc.bonesTex;
+            if (loc == null || !bonePoses) return;
             const gl = this.#gl;
             const palette = skel.computePalette(bonePoses);
-            const n = skel.bones.length;
-            model.boneTex = simpleTex(gl, model.boneTex, gl.RGBA32F, gl.RGBA, gl.FLOAT, 4, n, palette);
+            model.boneTex = EzRender.uploadTexture2D(gl, model.boneTex,
+                gl.RGBA32F, gl.RGBA, gl.FLOAT, 4, skel.bones.length, palette);
+            EzRender.bindSampler(gl, loc, _EZ_TEX_UNIT_BONES, model.boneTex);
+        }
+
+        #bindMorphWeights(shader, mesh, model, instances) {
+            const loc = shader.uloc.morph.weightTex;
+            if (loc == null) return;
+            const gl = this.#gl;
+            if (mesh.morphTotalWeights <= 0) {
+                EzRender.bindSampler(gl, loc, _EZ_TEX_UNIT_MORPH_WEIGHT, this.#morphDummyWeight);
+                return;
+            }
+            const W = mesh.morphTotalWeights, H = instances.length;
+            const data = new Float32Array(W * H);
+            for (let i = 0; i < H; i++)
+                if (instances[i].morphWeights) data.set(instances[i].morphWeights, i * W);
+            model.morphWeightTex = EzRender.uploadTexture2D(gl, model.morphWeightTex,
+                gl.R32F, gl.RED, gl.FLOAT, W, H, data);
+            EzRender.bindSampler(gl, loc, _EZ_TEX_UNIT_MORPH_WEIGHT, model.morphWeightTex);
+        }
+
+        #bindMorphPrim(shader, prim) {
+            const morph = shader.uloc.morph;
+            if (morph.count == null) return;
+            const gl = this.#gl;
+            const m  = prim.morph;
+            EzRender.setUniforms(gl, shader.program, [
+                { loc: morph.count,        type: "int", value: m ? m.targetCount  : 0 },
+                { loc: morph.weightOffset, type: "int", value: m ? m.weightOffset : 0 },
+                { loc: morph.vertexBase,   type: "int", value: m ? m.vertexBase   : 0 },
+            ]);
+            for (const ch of morph.channels) {
+                if (ch.loc == null) continue;
+                const deltaTex = m ? m.channels.get(ch.unit - _EZ_TEX_UNIT_MORPH_DELTA) : null;
+                EzRender.bindSampler(gl, ch.loc, ch.unit, deltaTex || this.#morphDummyDelta);
+            }
+        }
+
+        #chunkInstances(shader, instances) {
+            const perInstance = shader.uloc.bonesTex != null;
+            return perInstance ? instances.map(i => [i]) : [instances];
         }
     }
 
@@ -1878,6 +1896,7 @@ EzSkeleton3D
     window.EzShader3D      = EzShader3D;
     window.EzMesh3D        = EzMesh3D;
     window.EzSkeleton3D    = EzSkeleton3D;
+    window.EzRender        = EzRender;
     window.EzCanvas3D      = EzCanvas3D;
 
 })();
