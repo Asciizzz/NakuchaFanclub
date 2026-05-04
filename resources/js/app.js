@@ -5,6 +5,8 @@ import './lib/EzParallax.js';
 import './lib/EzFloater.js';
 import './lib/glitchAnimation.js';
 
+import './global/Nakurin.js';
+
 import './welcome/particles.js';
 import './welcome/welcome.js';
 import './welcome/circular.js';

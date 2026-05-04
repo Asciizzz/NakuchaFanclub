@@ -231,11 +231,13 @@
 
     function makeMatProps(gltf, textureKeys) {
         return function matProps(matIdx) {
-            if (matIdx == null || !gltf.materials) return { albedo: null, fill: [1, 1, 1, 1] };
+            if (matIdx == null || !gltf.materials) return { albedo: null, albedoTexIdx: null, fill: [1, 1, 1, 1] };
             const pbr = (gltf.materials[matIdx].pbrMetallicRoughness || {});
+            const texIdx = pbr.baseColorTexture != null ? pbr.baseColorTexture.index : null;
             return {
-                fill:   pbr.baseColorFactor || [1, 1, 1, 1],
-                albedo: pbr.baseColorTexture != null ? (textureKeys[pbr.baseColorTexture.index] || null) : null,
+                fill:         pbr.baseColorFactor || [1, 1, 1, 1],
+                albedo:       texIdx != null ? (textureKeys[texIdx] || null) : null,
+                albedoTexIdx: texIdx,
             };
         };
     }
@@ -251,6 +253,7 @@
             morphTangentChannel = null,
             attributes    = DEFAULT_ATTRIBUTES,
             autoAdd,
+            bitmaps       = false,
         } = opts;
 
         const morphPosCh = morphPositionChannel ?? morphChannel;
@@ -268,6 +271,16 @@
         // Textures (only if we have an ez to register them on)
         const textureKeys = await registerTextures(gltf, ez, modelKey, loadTextureBitmap);
         const matProps    = makeMatProps(gltf, textureKeys);
+
+        // Optionally return decoded bitmaps (keyed by gltf texture index).
+        // Useful for consumers that manage their own GL textures without `ez`.
+        let bitmapsOut = null;
+        if (bitmaps && gltf.textures?.length) {
+            bitmapsOut = {};
+            await Promise.all(gltf.textures.map(async (_, ti) => {
+                bitmapsOut[ti] = await loadTextureBitmap(ti);
+            }));
+        }
 
         // Geometry — bake node world transforms
         const STRIDE = DEFAULT_STRIDE;
@@ -363,7 +376,7 @@
                 primitiveDescs.push({
                     indexOffset: idxOff,
                     indexCount:  idxCount,
-                    material:    { albedo: mp.albedo, fill: mp.fill },
+                    material:    { albedo: mp.albedo, albedoTexIdx: mp.albedoTexIdx, fill: mp.fill },
                     morphTargets,
                 });
                 vertexBase += vcount;
@@ -416,6 +429,7 @@
             primMorphInfo,
             meshDefaultWeights,
             textureKeys,
+            bitmaps:            bitmapsOut,
             added,
         };
     }

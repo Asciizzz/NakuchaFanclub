@@ -43,6 +43,48 @@
             width: 100% !important; height: 100% !important; display: block;
         }
 
+        /* ── Camera HUD overlay ───────────────────────────────────────────── */
+        .cam-hud {
+            position: fixed;
+            right: 14px; bottom: 14px;
+            z-index: 20;
+            min-width: 200px;
+            background: rgba(19, 21, 26, 0.88);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--text);
+            user-select: none;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            overflow: hidden;
+        }
+        .cam-hud-head {
+            padding: 6px 10px;
+            font-size: 9px;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+        .cam-hud-head:hover { color: var(--text); }
+        .cam-hud-arrow { font-size: 8px; opacity: .7; transition: transform .15s; }
+        .cam-hud.collapsed .cam-hud-arrow { transform: rotate(-90deg); }
+        .cam-hud.collapsed .cam-hud-body  { display: none; }
+        .cam-hud.collapsed { min-width: 0; }
+        .cam-hud-body {
+            padding: 8px 10px;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            column-gap: 10px; row-gap: 3px;
+            line-height: 1.4;
+        }
+        .cam-hud-body .k { color: var(--text-dim); }
+        .cam-hud-body .v { color: var(--text); text-align: right; white-space: nowrap; }
+
         #ui {
             position: fixed; inset: 0; z-index: 10;
             display: flex;
@@ -752,6 +794,19 @@
 
 <div id="canvas-wrap"></div>
 
+<div id="cam-hud" class="cam-hud">
+    <div class="cam-hud-head" id="cam-hud-head">
+        <span>Camera</span>
+        <span class="cam-hud-arrow">▼</span>
+    </div>
+    <div class="cam-hud-body">
+        <span class="k">Pos</span>     <span class="v" id="ch-pos">0.00, 0.00, 0.00</span>
+        <span class="k">Yaw</span>     <span class="v" id="ch-yaw">0.00°</span>
+        <span class="k">Pitch</span>   <span class="v" id="ch-pit">0.00°</span>
+        <span class="k">Fwd</span>     <span class="v" id="ch-fwd">0.00, 0.00, -1.00</span>
+    </div>
+</div>
+
 <div id="ui">
     <!-- ── Left panel ── -->
     <div class="panel" id="left-panel">
@@ -895,14 +950,10 @@ const FRAG_MAIN = `
 // MODELS TO LOAD — edit this object freely
 // -------------------------
 const MODELS = {
-    "Oguri": "Models/Oguri.glb",
-    "Shiroko": "Models/Shiroko.glb",
-    "Kirby": "Models/Kirby.glb",
-    "Frog": "Models/Frog.glb",
-    "NintendoSwitch": "Models/NintendoSwitch.glb",
-    "Isometric": "Models/Isometric.glb",
-    "Yste": "Models/Yste.glb",
-    "Test": "Models/Test.glb",
+    "Frog": "../public/Models/Frog.glb",
+    "NintendoSwitch": "../public/Models/NintendoSwitch.glb",
+    "Isometric": "../public/Models/Isometric.glb",
+    "Nakurin": "../public/Models/Nakurin.glb",
 };
 
 // -------------------------
@@ -1233,6 +1284,16 @@ const MODELS = {
         }
     }, { passive: false });
 
+    // ── Camera HUD (collapsible) ──────────────────────────────────────────
+    const camHud      = document.getElementById("cam-hud");
+    const camHudHead  = document.getElementById("cam-hud-head");
+    const hudPosEl    = document.getElementById("ch-pos");
+    const hudYawEl    = document.getElementById("ch-yaw");
+    const hudPitEl    = document.getElementById("ch-pit");
+    const hudFwdEl    = document.getElementById("ch-fwd");
+    camHudHead.addEventListener("click", () => camHud.classList.toggle("collapsed"));
+    const f2 = (n) => (n >= 0 ? " " : "") + n.toFixed(2);
+
     // ── Camera movement ───────────────────────────────────────────────────
     let lastT = performance.now();
     function frame(now) {
@@ -1252,6 +1313,17 @@ const MODELS = {
             ez.camera.translate([forward[0]*dz*m + right[0]*dx*m, forward[1]*dz*m + right[1]*dx*m + dy*m, forward[2]*dz*m + right[2]*dx*m]);
         }
         ez.render();
+
+        // Refresh HUD once per frame (cheap DOM writes, only when not collapsed).
+        if (!camHud.classList.contains("collapsed")) {
+            const p   = ez.camera.position;
+            const ypr = EzMath.Quat.toEulerYPR(ez.camera.orientation);
+            hudPosEl.textContent = `${f2(p[0])}, ${f2(p[1])}, ${f2(p[2])}`;
+            hudYawEl.textContent = `${f2(ypr.yaw)}°`;
+            hudPitEl.textContent = `${f2(ypr.pitch)}°`;
+            hudFwdEl.textContent = `${f2(forward[0])}, ${f2(forward[1])}, ${f2(forward[2])}`;
+        }
+
         requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
@@ -1335,7 +1407,11 @@ const MODELS = {
     // ── Apply helpers ──────────────────────────────────────────────────────
     function applyBone(ik, bi, state) {
         const { pos, rot, scale } = state;
-        const q = EzMath.Quat.fromEulerZYX([rot[2] * Math.PI/180, rot[1] * Math.PI/180, rot[0] * Math.PI/180]);
+        // rot is [Xdeg, Ydeg, Zdeg]. fromEulerZYX takes [ex, ey, ez] in the
+        // same X-Y-Z order (the "ZYX" in the name refers to multiplication
+        // order: Rz * Ry * Rx), so pass the sliders natural-order. Match
+        // applyTransform() below.
+        const q = EzMath.Quat.fromEulerZYX([rot[0] * Math.PI/180, rot[1] * Math.PI/180, rot[2] * Math.PI/180]);
         const boneOpt = { bone: { id: bi, transform: { position: pos, rotation: q, scale } } };
         ez.writeInstance(ik, boneOpt);
         const oik = outlineInstances.get(ik);
@@ -1543,8 +1619,8 @@ const MODELS = {
         rotGroup   = makeVec3Field("Euler (deg)", [0, 0, 0], { onChange: applyTransform });
 
         basicPane.appendChild(posGroup.el);
-        basicPane.appendChild(scaleGroup.el);
         basicPane.appendChild(rotGroup.el);
+        basicPane.appendChild(scaleGroup.el);
 
         const divider = document.createElement("div");
         divider.className = "field-divider";
