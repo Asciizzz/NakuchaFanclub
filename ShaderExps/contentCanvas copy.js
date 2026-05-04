@@ -1,13 +1,13 @@
-const ez3d = new EzCanvas3D("bubbles");
-const container = document.querySelector("#jellytank");
-const gl = ez3d.getCanvas().getContext('webgl2');
+const ez3d = new EzCanvas3D("content");
+const container = document.querySelector("#welcome");
+const gl = ez3d.gl;
 
 ez3d.mount(container);
 ez3d.resize(window.innerWidth, window.innerHeight);
 new ResizeObserver(() => ez3d.settings.fitContainer()).observe(container);
 
-ez3d.camera.set({ position: [0, 0, 10], near: 0.01, far: 200, orthographic: true });
-
+ez3d.camera.set({ position: [0, 0, 10], near: 0.1, far: 200, fov: 50 });
+ 
 class Bubbles {
     static CFGS = {
         targetCount: 100,
@@ -124,7 +124,7 @@ class Bubbles {
                 vec3 col = bodyColor * diffuse
                         + vec3(1.0) * spec;           // near-invisible glint
 
-                float innerAlpha = 0.2;
+                float innerAlpha = 0.1;
                 float rimAlpha   = fresnel * 0.28;
                 float alpha = clamp(innerAlpha + rimAlpha + spec * 0.4, 0.0, 1.0);
                 alpha *= v_color.a;
@@ -414,8 +414,149 @@ class Effects {
 
 
 
+// ── Environment: thin wrapper around EzCanvas3D for a single GLB model ──────
+class Environment {
+    static SHADER_KEY = "env_lit";
+    static #shaderRegistered = false;
+
+    static #ensureShader(ez) {
+        if (Environment.#shaderRegistered) return;
+        ez.shaders.add(Environment.SHADER_KEY, new EzShader3D().describe({
+            renderCfg: { blend: true },
+            uniKeys: [
+                { name: "u_light", type: "vec3" },
+            ],
+            onbind: (gl, program) => {
+                gl.uniform3fv(gl.getUniformLocation(program, "u_light"), [0.3, 1.0, 0.5]);
+            },
+            vertex: {
+                attributes: [
+                    { name: "a_position",   size: 3, default: [0,0,0,0] },
+                    { name: "a_normal",     size: 3, default: [0,1,0,0] },
+                    { name: "a_uv",         size: 2, default: [0,0,0,0] },
+                    { name: "a_boneID",     size: 4, default: [0,0,0,0] },
+                    { name: "a_boneWeight", size: 4, default: [0,0,0,0] },
+                ],
+                instanceData: [
+                    { name: "a_instMat4",  type: "mat4" },
+                    { name: "a_instColor", type: "vec4", default: [1,1,1,1] }
+                ],
+                morphChannels: ["u_morphPosTex"],
+                hasSkeleton: true,
+                defaultKeys: { view: "u_view", projection: "u_proj" },
+                outputs: [
+                    { name: "v_normal", type: "vec3" },
+                    { name: "v_uv",     type: "vec2" },
+                    { name: "v_color",  type: "vec4" },
+                ],
+                main: `
+                    vec3 pos    = a_position + applyMorph(0, morphVertexLocal());
+                    mat4 skin   = computeSkin(a_boneID, a_boneWeight);
+                    mat4 model  = a_instMat4 * skin;
+                    gl_Position = u_proj * u_view * model * vec4(pos, 1.0);
+                    v_normal    = normalize(mat3(model) * a_normal);
+                    v_uv        = a_uv;
+                    v_color     = a_instColor;
+                `,
+            },
+            fragment: {
+                defaultKeys: { fill: "u_fill", albedo: "u_albedo" },
+                outputColor: "fragColor",
+                main: `
+                    vec3 lightDir = normalize(u_light);
+                    float diff = max(dot(normalize(v_normal), lightDir), 0.0);
+
+                    vec4  albedo = texture(u_albedo, v_uv) * u_fill;
+                    albedo *= v_color;
+
+                    if (albedo.r + albedo.g + albedo.b < 0.3) {
+                        albedo.rgb = v_color.rgb;
+                    }
+
+                    fragColor    = vec4(albedo.rgb, albedo.a);
+                `,
+            },
+        }));
+        Environment.#shaderRegistered = true;
+    }
+
+    constructor(ez) {
+        this.ez     = ez;
+        this.models = new Map();   // modelKey -> { data, instances:Set }
+    }
+
+    async load(modelKey, url) {
+        Environment.#ensureShader(this.ez);
+        const data = await EzLoaderBeta.load(url, {
+            ez:           this.ez,
+            modelKey,
+            shaderKey:    Environment.SHADER_KEY,
+            morphChannel: "u_morphPosTex",
+        });
+        if (!data.added) throw new Error(`[Environment] models.add("${modelKey}") failed`);
+        this.models.set(modelKey, { data, instances: new Set() });
+        return data;
+    }
+
+    has(modelKey)  { return this.models.has(modelKey); }
+    get(modelKey)  { return this.models.get(modelKey) ?? null; }
+
+    addInstance(modelKey, init = null) {
+        const entry = this.models.get(modelKey);
+        if (!entry) return null;
+        const k = this.ez.addInstance(modelKey, init);
+        if (k) entry.instances.add(k);
+        return k;
+    }
+
+    write(key, opts) { return this.ez.writeInstance(key, opts); }
+    read(key)        { return this.ez.readInstance(key); }
+    remove(key) {
+        for (const e of this.models.values()) e.instances.delete(key);
+        return this.ez.removeInstance(key);
+    }
+}
+
 const bubbles = new Bubbles(gl, ez3d.camera);
 const effects = new Effects(gl, ez3d.camera);
+const environment = new Environment(ez3d);
+(async () => {
+    await environment.load("Test", "/Models/Frog.glb");
+    environment.addInstance("Test", {
+        data: {
+            a_instMat4: {
+                // position: [0, -1.5, 7],
+                // rotation: EzMath.Quat.fromEulerYPR(90, -5, 5),
+                // scale:    [0.24, 0.24, 0.24],
+                position: [0, 0, 7],
+                rotation: EzMath.Quat.fromEulerYPR(0, 0, 0),
+                scale:    [1, 1, 1]
+            },
+            a_instColor: [1, 1, 1, 1],
+        },
+    });
+
+    // …more loads / instances here
+})().catch(console.error);
+
+let contentDegree = {
+    current: { yaw: 0, pitch: 10 },
+    desired: { yaw: 0, pitch: 10 }
+}
+document.addEventListener('mousemove', e => {
+    const nx = (e.clientX / window.innerWidth  - 0.5);
+    contentDegree.desired.yaw = nx * 1;   
+});
+
+const contentContainer = document.querySelector("#reveal .reveal-content");
+const pitchRange = [0, 8];
+const pitchStart = 10;
+contentContainer.addEventListener('scroll', () => {
+    const scrollPercent = contentContainer.scrollTop / (contentContainer.scrollHeight - contentContainer.clientHeight);
+    contentDegree.desired.pitch = scrollPercent * (pitchRange[1] - pitchRange[0]) + pitchStart + pitchRange[0];
+});
+
+
 
 let lastT = null;
 function frame(ts) {
@@ -423,22 +564,18 @@ function frame(ts) {
     const dt = Math.min((ts - lastT) / 1000, 0.05);
     lastT = ts;
 
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    effects.run(dt);
-    gl.clear(gl.DEPTH_BUFFER_BIT);
+    // ez3d.render({ clear: false });
     bubbles.run(dt);
+    effects.run(dt);
+
+    // Smooth interpolation
+    contentDegree.current.yaw += (contentDegree.desired.yaw - contentDegree.current.yaw) * 0.1;
+    contentDegree.current.pitch += (contentDegree.desired.pitch - contentDegree.current.pitch) * 0.1;
+
+    ez3d.camera.set({
+        orientation: EzMath.Quat.fromEulerYPR(contentDegree.current.yaw, contentDegree.current.pitch, 0)
+    });
 
     requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-
-document.addEventListener('mousemove', e => {
-    const nx = (e.clientX / window.innerWidth  - 0.5); // -0.5 .. 0.5
-    const ny = (e.clientY / window.innerHeight - 0.5);
-    // Absolute yaw/pitch in degrees (tweak the multipliers to taste).
-    const yawDeg   = nx * 1;
-    const pitchDeg = -ny * 0.5;
-    ez3d.camera.set({
-        orientation: EzMath.Quat.fromEulerYPR(yawDeg, pitchDeg, 0)
-    });
-});

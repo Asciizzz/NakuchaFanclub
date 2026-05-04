@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shader Experiment Template</title>
+
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        background-color: #000;
+        font-family: 'Courier New', monospace;
+        color: #aaa;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    #canvas {
+        position: fixed;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+    }
+</style>
+
+</head>
+<body>
+</body>
+
+<script src="EzCanvas3D.js"></script>
+<script>
+const CFG = {
+    camera: {
+        moveSpeed: 3.0,
+        sprintSpeed: 8.0,
+        lookSpeed: 0.15,
+        wheelZoomSpeed: 0.1,
+    },
+};
+
+const ez3d = new EzCanvas3D("canvas");
+const container = document.querySelector("body");
+ez3d.mount(container);
+ez3d.settings.fitContainer();
+new ResizeObserver(() => ez3d.settings.fitContainer()).observe(container);
+
+const gl = ez3d.gl;
+const canvas = ez3d.canvas;
+const camera = ez3d.camera;
+
+const keys = Object.create(null);
+window.addEventListener("keydown", e => {
+    keys[e.code] = true;
+
+    if (e.code === "KeyL") {
+        camera.orthographic = !camera.orthographic;
+    }
+});
+
+window.addEventListener("keyup", e => {
+    keys[e.code] = false;
+});
+
+canvas.addEventListener("click", e => {
+    if (e.button !== 0) return;
+    if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock();
+    }
+});
+
+document.addEventListener("pointerlockchange", () => {
+    canvas.style.cursor = document.pointerLockElement === canvas ? "none" : "default";
+});
+
+canvas.addEventListener("mousemove", e => {
+    if (document.pointerLockElement !== canvas) return;
+    camera.rotate(-e.movementX * CFG.camera.lookSpeed, -e.movementY * CFG.camera.lookSpeed);
+});
+
+canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const dir = Math.sign(e.deltaY);
+    if (camera.orthographic) {
+        camera.orthoSize = EzMath.clamp(
+            camera.orthoSize * (1 + dir * CFG.camera.wheelZoomSpeed),
+            0.1,
+            1000
+        );
+    } else {
+        camera.fov = EzMath.clamp(
+            camera.fov * (1 + dir * CFG.camera.wheelZoomSpeed),
+            10,
+            120
+        );
+    }
+}, { passive: false });
+
+
+
+
+
+let lastT = performance.now();
+function frame(now) {
+    const dt = Math.min((now - lastT) / 1000, 0.05);
+    lastT = now;
+
+    // ── Camera movement ──
+    const speed = keys["ShiftLeft"] ? CFG.camera.sprintSpeed : CFG.camera.moveSpeed;
+    const { forward, right } = camera.vectors;
+
+    let dx = 0, dy = 0, dz = 0;
+    if (keys["KeyW"]) dz += 1;
+    if (keys["KeyS"]) dz -= 1;
+    if (keys["KeyD"]) dx += 1;
+    if (keys["KeyA"]) dx -= 1;
+    if (keys["Space"]) dy += 1;
+    if (keys["ControlLeft"]) dy -= 1;
+
+    if (dx || dy || dz) {
+        const mov = EzMath.Vec3.scale(EzMath.Vec3.add(
+            EzMath.Vec3.scale(forward, dz),
+            EzMath.Vec3.add(EzMath.Vec3.scale(right, dx), [0, dy, 0])
+        ), speed * dt);
+        camera.translate(mov);
+    }
+
+    // ── Render ──
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</html>

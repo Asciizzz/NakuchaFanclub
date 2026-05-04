@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader Experiment Template</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #222;
+            font-family: 'Courier New', monospace;
+            color: #aaa;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #canvas {
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+
+</head>
+<body>
+</body>
+
+<script src="EzCanvas3D.js"></script>
+<script>
+const CFG = {
+    camera: {
+        moveSpeed: 3.0,
+        sprintSpeed: 8.0,
+        lookSpeed: 0.05,
+        wheelZoomSpeed: 0.1,
+    },
+};
+
+const ez3d = new EzCanvas3D("canvas");
+const container = document.querySelector("body");
+ez3d.mount(container);
+ez3d.settings.fitContainer();
+new ResizeObserver(() => ez3d.settings.fitContainer()).observe(container);
+ez3d.camera.set({ position: [0, 0, 6], near: 0.1, far: 1000, fov: 50 });
+
+const gl = ez3d.gl;
+const canvas = ez3d.canvas;
+const camera = ez3d.camera;
+
+const shaderFill = new EzShader3D().describe({
+    renderCfg: { blend: true, cull: 'front' },
+    uniKeys: [
+        { name: "u_light", type: "vec3" },
+    ],
+    vertex: {
+        attributes: [
+            { name: "a_position",   size: 3, default: [0,0,0,0] },
+            { name: "a_normal",     size: 3, default: [0,1,0,0] },
+            { name: "a_uv",         size: 2, default: [0,0,0,0] }
+        ],
+        instanceData: [
+            { name: "a_instMat4",  type: "mat4" },
+            { name: "a_instColor", type: "vec4", default: [1,1,1,1] }
+        ],
+        defaultKeys: { view: "u_view", projection: "u_proj" },
+        outputs: [
+            { name: "v_normal", type: "vec3" },
+            { name: "v_uv",     type: "vec2" },
+            { name: "v_color",  type: "vec4" },
+        ],
+        main: `
+            vec3 pos    = a_position;
+            mat4 model  = a_instMat4;
+            gl_Position = u_proj * u_view * model * vec4(pos, 1.0);
+            v_normal    = normalize(mat3(model) * a_normal);
+            v_uv        = a_uv;
+            v_color     = a_instColor;
+        `,
+    },
+    fragment: {
+        defaultKeys: { fill: "u_fill" },
+        outputColor: "fragColor",
+        main: `
+            fragColor = vec4(v_color.rgb, v_color.a);
+        `,
+    },
+}).compile(gl);
+
+const shaderOutline = new EzShader3D().describe({
+    renderCfg: { blend: true, cull: 'front' },
+    uniKeys: [
+        { name: "u_outlineWidth", type: "float" },
+    ],
+    onbind: (gl, program) => {
+        EzRender.setUniform(gl, program, "float", "u_outlineWidth", 0.1);
+    },
+    vertex: {
+        attributes: [
+            { name: "a_position",   size: 3, default: [0,0,0,0] },
+            { name: "a_normal",     size: 3, default: [0,1,0,0] },
+            { name: "a_uv",         size: 2, default: [0,0,0,0] }
+        ],
+        instanceData: [
+            { name: "a_instMat4",  type: "mat4" },
+            { name: "a_instColor", type: "vec4", default: [1,1,1,1] }
+        ],
+        defaultKeys: { view: "u_view", projection: "u_proj" },
+        outputs: [
+            { name: "v_color",  type: "vec4" },
+        ],
+        main: `
+            vec3 pos    = a_position;
+            mat4 model  = a_instMat4;
+            
+            // Transform to world space first
+            vec3 worldPos = (model * vec4(pos, 1.0)).xyz;
+            
+            // Get world-space normal and displace outward
+            vec3 worldNormal = normalize(mat3(model) * a_normal);
+            worldPos += worldNormal * u_outlineWidth;
+            
+            gl_Position = u_proj * u_view * vec4(worldPos, 1.0);
+            v_color     = vec4(1.0, 1.0, 1.0, 1.0);
+        `,
+    },
+    fragment: {
+        defaultKeys: { fill: "u_fill" },
+        outputColor: "fragColor",
+        main: `
+            fragColor = v_color;
+        `,
+    },
+}).compile(gl);
+
+// Create box geometry with outward-facing vertex normals
+// Each vertex normal points away from the box center (stylized toon shading)
+const boxVerts = new Float32Array([
+    // +X face (normal always towards +X for this face, but varies per vertex)
+    0.5, -0.5, -0.5,  1, -1, -1,   0, 0,  // corner (1, -1, -1)
+    0.5,  0.5, -0.5,  1,  1, -1,   0, 1,  // corner (1, 1, -1)
+    0.5,  0.5,  0.5,  1,  1,  1,   1, 1,  // corner (1, 1, 1)
+    0.5, -0.5,  0.5,  1, -1,  1,   1, 0,  // corner (1, -1, 1)
+
+    // -X face
+   -0.5, -0.5,  0.5, -1, -1,  1,   0, 0,  // corner (-1, -1, 1)
+   -0.5,  0.5,  0.5, -1,  1,  1,   0, 1,  // corner (-1, 1, 1)
+   -0.5,  0.5, -0.5, -1,  1, -1,   1, 1,  // corner (-1, 1, -1)
+   -0.5, -0.5, -0.5, -1, -1, -1,   1, 0,  // corner (-1, -1, -1)
+
+    // +Y face
+   -0.5,  0.5, -0.5, -1,  1, -1,   0, 0,  // corner (-1, 1, -1)
+   -0.5,  0.5,  0.5, -1,  1,  1,   0, 1,  // corner (-1, 1, 1)
+    0.5,  0.5,  0.5,  1,  1,  1,   1, 1,  // corner (1, 1, 1)
+    0.5,  0.5, -0.5,  1,  1, -1,   1, 0,  // corner (1, 1, -1)
+
+    // -Y face
+   -0.5, -0.5,  0.5, -1, -1,  1,   0, 0,  // corner (-1, -1, 1)
+   -0.5, -0.5, -0.5, -1, -1, -1,   0, 1,  // corner (-1, -1, -1)
+    0.5, -0.5, -0.5,  1, -1, -1,   1, 1,  // corner (1, -1, -1)
+    0.5, -0.5,  0.5,  1, -1,  1,   1, 0,  // corner (1, -1, 1)
+
+    // +Z face
+    -0.5, -0.5,  0.5, -1, -1,  1,   0, 0,  // corner (-1, -1, 1)
+     0.5, -0.5,  0.5,  1, -1,  1,   1, 0,  // corner (1, -1, 1)
+     0.5,  0.5,  0.5,  1,  1,  1,   1, 1,  // corner (1, 1, 1)
+    -0.5,  0.5,  0.5, -1,  1,  1,   0, 1,  // corner (-1, 1, 1)
+
+    // -Z face
+     0.5, -0.5, -0.5,  1, -1, -1,   0, 0,  // corner (1, -1, -1)
+    -0.5, -0.5, -0.5, -1, -1, -1,   1, 0,  // corner (-1, -1, -1)
+    -0.5,  0.5, -0.5, -1,  1, -1,   1, 1,  // corner (-1, 1, -1)
+     0.5,  0.5, -0.5,  1,  1, -1,   0, 1,  // corner (1, 1, -1)
+]);
+const boxIndices = new Uint16Array([
+     0,  1,  2,  0,  2,  3,
+     4,  5,  6,  4,  6,  7,
+     8,  9, 10,  8, 10, 11,
+    12, 13, 14, 12, 14, 15,
+    16, 17, 18, 16, 18, 19,
+    20, 21, 22, 20, 22, 23,
+]);
+
+// Create mesh with primitive definition
+const boxMesh = EzMesh3D.fromDesc(gl, shaderFill, "box", {
+    attributes: [
+        { name: "a_position",   size: 3 },
+        { name: "a_normal",     size: 3 },
+        { name: "a_uv",         size: 2 },
+    ],
+    vertices: boxVerts,
+    indices: boxIndices,
+    primitives: [
+        {
+            indexOffset: 0,
+            indexCount: boxIndices.length,
+            material: { fill: [1, 1, 1, 1] }
+        }
+    ]
+});
+
+// Create a second mesh for outline using the outline shader
+const boxMeshOutline = EzMesh3D.fromDesc(gl, shaderOutline, "boxOutline", {
+    attributes: [
+        { name: "a_position",   size: 3 },
+        { name: "a_normal",     size: 3 },
+        { name: "a_uv",         size: 2 },
+    ],
+    vertices: boxVerts,
+    indices: boxIndices,
+    primitives: [
+        {
+            indexOffset: 0,
+            indexCount: boxIndices.length,
+            material: { fill: [1, 1, 1, 1] }
+        }
+    ]
+});
+
+const boxInstances = [
+    { scale: 1.0, color: [0.95, 0.55, 1.00, 1] },
+].map(entry => ({
+    a_instMat4: EzMath.Mat4.compose([0, 0, 0], [0, 0, 0, 1], [entry.scale, entry.scale, entry.scale]),
+    a_instColor: new Float32Array(entry.color),
+}));
+
+EzRender.uploadVBO(gl, boxMesh.instanceVBO, EzRender.packInstances(boxInstances, shaderFill.instanceLayout));
+EzRender.uploadVBO(gl, boxMeshOutline.instanceVBO, EzRender.packInstances(boxInstances, shaderOutline.instanceLayout));
+
+let lastT = performance.now();
+function frame(now) {
+    const dt = Math.min((now - lastT) / 1000, 0.05);
+    lastT = now;
+
+    const speed = keys["ShiftLeft"] ? CFG.camera.sprintSpeed : CFG.camera.moveSpeed;
+    const { forward, right } = camera.vectors;
+
+    let dx = 0, dy = 0, dz = 0;
+    if (keys["KeyW"]) dz += 1;
+    if (keys["KeyS"]) dz -= 1;
+    if (keys["KeyD"]) dx += 1;
+    if (keys["KeyA"]) dx -= 1;
+    if (keys["Space"]) dy += 1;
+    if (keys["ControlLeft"]) dy -= 1;
+
+    if (dx || dy || dz) {
+        const mov = [
+            (forward[0] * dz + right[0] * dx) * speed * dt,
+            (forward[1] * dz + right[1] * dx + dy) * speed * dt,
+            (forward[2] * dz + right[2] * dx) * speed * dt,
+        ];
+        camera.translate(mov);
+    }
+
+    // -- Render --
+    EzRender.applyState(gl, { clear: ['color', 'depth'] });
+
+    // Pass 1: Outline (displaced backfaces)
+    shaderOutline.applyRenderState(gl).bind(gl, shaderOutline.onbind);
+    EzRender.setUniforms(gl, shaderOutline.program, [
+        { name: "u_view", type: "mat4", value: camera.view },
+        { name: "u_proj", type: "mat4", value: camera.projection },
+    ]);
+    EzRender.withVAO(gl, boxMeshOutline.vao, () => {
+        EzCanvas3D.drawPrimitive(gl, boxMeshOutline, 0, boxInstances.length);
+    });
+    EzRender.restoreDefaultState(gl);
+
+    // Pass 2: Fill (frontfaces)
+    shaderFill.applyRenderState(gl).bind(gl, shaderFill.onbind);
+    EzRender.setUniforms(gl, shaderFill.program, [
+        { name: "u_view", type: "mat4", value: camera.view },
+        { name: "u_proj", type: "mat4", value: camera.projection },
+    ]);
+    EzRender.withVAO(gl, boxMesh.vao, () => {
+        EzCanvas3D.drawPrimitive(gl, boxMesh, 0, boxInstances.length);
+    });
+    EzRender.restoreDefaultState(gl);
+
+    requestAnimationFrame(frame);
+}
+
+
+
+const keys = Object.create(null);
+window.addEventListener("keydown", e => {
+    keys[e.code] = true;
+
+    if (e.code === "KeyL") {
+        camera.orthographic = !camera.orthographic;
+    }
+});
+
+window.addEventListener("keyup", e => {
+    keys[e.code] = false;
+});
+
+canvas.addEventListener("click", e => {
+    if (e.button !== 0) return;
+    if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock();
+    }
+});
+
+document.addEventListener("pointerlockchange", () => {
+    canvas.style.cursor = document.pointerLockElement === canvas ? "none" : "default";
+});
+
+canvas.addEventListener("mousemove", e => {
+    if (document.pointerLockElement !== canvas) return;
+    camera.rotate(-e.movementX * CFG.camera.lookSpeed, -e.movementY * CFG.camera.lookSpeed);
+});
+
+canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const dir = Math.sign(e.deltaY);
+    if (camera.orthographic) {
+        camera.orthoSize = EzMath.clamp(
+            camera.orthoSize * (1 + dir * CFG.camera.wheelZoomSpeed),
+            0.1,
+            1000
+        );
+    } else {
+        camera.fov = EzMath.clamp(
+            camera.fov * (1 + dir * CFG.camera.wheelZoomSpeed),
+            10,
+            120
+        );
+    }
+}, { passive: false });
+
+requestAnimationFrame(frame);
+</script>
+</html>

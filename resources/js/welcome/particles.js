@@ -1,3 +1,4 @@
+// That particles that appear everytime you move your mouse
 (function() {
     if (!window.EzCanvas2D) return;
 

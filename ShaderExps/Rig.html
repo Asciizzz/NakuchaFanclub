@@ -1,0 +1,2057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Rig Editor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        /* ── Reset & tokens ──────────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:       #0d0e11;
+            --surface:  #13151a;
+            --surface2: #1a1d25;
+            --surface3: #21252f;
+            --border:   rgba(255,255,255,.07);
+            --border2:  rgba(255,255,255,.12);
+            --text:     #c8cad4;
+            --text-dim: #5a5e72;
+            --text-mid: #8b8fa8;
+            --accent:   #3d85ff;
+            --accent-glow: rgba(61,133,255,.18);
+            --danger:   #ff4d6a;
+            --green:    #3dffb0;
+            --panel-w:  260px;
+        }
+
+        body {
+            background: var(--bg);
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 12px;
+            color: var(--text);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* ── Layout ──────────────────────────────────────────────────────── */
+        #canvas-wrap {
+            position: fixed; inset: 0; z-index: 0;
+        }
+        #canvas-wrap canvas {
+            width: 100% !important; height: 100% !important; display: block;
+        }
+
+        #ui {
+            position: fixed; inset: 0; z-index: 10;
+            display: flex;
+            pointer-events: none;
+        }
+
+        /* ── Shared panel base ────────────────────────────────────────────── */
+        .panel {
+            pointer-events: all;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            flex-shrink: 0;
+        }
+
+        .panel-header {
+            padding: 14px 14px 10px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .panel-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            font-weight: 500;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        /* ── Left panel: model list ──────────────────────────────────────── */
+        #left-panel {
+            width: var(--panel-w);
+            border-right: 1px solid var(--border);
+        }
+
+        #left-panel .panel-header {
+            padding-bottom: 12px;
+            flex-shrink: 0;
+        }
+
+        #model-list-wrap {
+            flex: 0 0 60%;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        #model-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px;
+        }
+
+        /* ── FX panel ─────────────────────────────────────────────────────── */
+        #fx-panel {
+            flex: 0 0 40%;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #fx-panel .panel-header {
+            padding: 10px 14px 8px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        /* ── FX shared widget primitives (used inside shader-item bodies) ──── */
+        .fx-section-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            font-weight: 500;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .fx-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .fx-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            color: var(--text-mid);
+            flex: 0 0 72px;
+        }
+        .fx-slider {
+            flex: 1;
+            accent-color: var(--accent);
+            height: 2px;
+            cursor: pointer;
+        }
+        .fx-val {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+            width: 28px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .fx-color {
+            width: 28px; height: 18px;
+            border-radius: 3px;
+            border: 1px solid var(--border2);
+            cursor: pointer;
+            flex-shrink: 0;
+            background: none;
+            padding: 0;
+        }
+        /* Dual-thumb range: two stacked inputs sharing a track. */
+        .fx-dual-range {
+            position: relative;
+            flex: 1;
+            height: 16px;
+            display: flex;
+            align-items: center;
+        }
+        .fx-dual-track {
+            position: absolute;
+            left: 0; right: 0;
+            height: 2px;
+            background: var(--border2);
+            border-radius: 1px;
+        }
+        .fx-dual-fill {
+            position: absolute;
+            height: 2px;
+            background: var(--accent);
+            border-radius: 1px;
+        }
+        .fx-dual-input {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 16px;
+            margin: 0;
+            background: transparent;
+            pointer-events: none; /* Track itself ignores; thumb re-enables below. */
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .fx-dual-input:focus { outline: none; }
+        .fx-dual-input::-webkit-slider-runnable-track { background: transparent; border: none; height: 2px; }
+        .fx-dual-input::-moz-range-track            { background: transparent; border: none; height: 2px; }
+        .fx-dual-input::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            pointer-events: auto;
+            width: 11px; height: 11px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid var(--surface2);
+            cursor: pointer;
+            margin-top: -5px;
+        }
+        .fx-dual-input::-moz-range-thumb {
+            pointer-events: auto;
+            width: 11px; height: 11px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid var(--surface2);
+            cursor: pointer;
+        }
+
+        /* ── Shader-item: collapsible entry inside the Shader tab ─────────── */
+        .shader-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .shader-item {
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            overflow: hidden;
+            user-select: none;
+        }
+        .shader-item-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            cursor: pointer;
+            transition: background .12s;
+        }
+        .shader-item-head:hover { background: var(--surface3); }
+        .shader-item-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            flex-shrink: 0;
+            transition: background .15s, box-shadow .15s;
+        }
+        .shader-item.active .shader-item-dot {
+            background: var(--accent);
+            box-shadow: 0 0 6px var(--accent-glow);
+        }
+        .shader-item-name {
+            flex: 1;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--text-mid);
+            letter-spacing: .04em;
+        }
+        .shader-item.active .shader-item-name { color: var(--accent); }
+        .shader-item-arrow {
+            font-size: 8px;
+            color: var(--text-dim);
+            transition: transform .15s;
+            flex-shrink: 0;
+        }
+        .shader-item.open .shader-item-arrow { transform: rotate(90deg); }
+        .shader-item-body {
+            display: none;
+            padding: 8px 10px 10px;
+            border-top: 1px solid var(--border);
+            background: var(--surface);
+            flex-direction: column;
+            gap: 5px;
+        }
+        .shader-item.open .shader-item-body { display: flex; }
+
+        #fx-panel > .tab-pane-container { flex: 1; min-height: 0; }
+        #fx-tab-shader { padding: 8px; }
+
+        .model-entry {
+            border-radius: 5px;
+            margin-bottom: 4px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .model-entry-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: var(--surface2);
+            cursor: pointer;
+            user-select: none;
+            transition: background .15s;
+        }
+        .model-entry-head:hover { background: var(--surface3); }
+
+        .model-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            flex-shrink: 0;
+            transition: background .2s;
+        }
+        .model-entry.loaded .model-dot { background: var(--green); }
+        .model-entry.loading .model-dot {
+            background: var(--accent);
+            animation: pulse 1s ease-in-out infinite;
+        }
+        .model-entry.error .model-dot { background: var(--danger); }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+        .model-key {
+            flex: 1;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .model-toggle-arrow {
+            font-size: 9px;
+            color: var(--text-dim);
+            transition: transform .15s;
+            flex-shrink: 0;
+        }
+        .model-entry.open .model-toggle-arrow { transform: rotate(90deg); }
+
+        .model-instance-list {
+            display: none;
+            padding: 4px 6px 6px;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            flex-direction: column;
+            gap: 3px;
+        }
+        .model-entry.open .model-instance-list { display: flex; }
+
+        .instance-row {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: background .12s, border-color .12s;
+        }
+        .instance-row:hover { background: var(--surface2); }
+        .instance-row.selected {
+            background: var(--accent-glow);
+            border-color: rgba(61,133,255,.3);
+        }
+
+        .instance-row-key {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--text-mid);
+            flex: 1;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .instance-row.selected .instance-row-key { color: var(--accent); }
+
+        .inst-color-swatch {
+            width: 10px; height: 10px;
+            border-radius: 2px;
+            border: 1px solid rgba(255,255,255,.15);
+            flex-shrink: 0;
+        }
+
+        /* Add instance button */
+        .add-inst-btn {
+            display: flex; align-items: center; justify-content: center; gap: 5px;
+            margin: 4px 0 2px;
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px dashed rgba(61,133,255,.3);
+            background: transparent;
+            color: var(--accent);
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+            width: 100%;
+        }
+        .add-inst-btn:hover {
+            background: var(--accent-glow);
+            border-color: rgba(61,133,255,.5);
+        }
+
+        /* ── Right panel: instance editor ────────────────────────────────── */
+        #right-panel {
+            width: var(--panel-w);
+            border-left: 1px solid var(--border);
+            border-right: none;
+            margin-left: auto;
+        }
+
+        #inst-editor-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .no-selection {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: var(--text-dim);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            padding: 24px;
+            text-align: center;
+            line-height: 1.6;
+        }
+        .no-selection svg { opacity: .25; }
+
+        /* ── Tab navigation ──────────────────────────────────────────────── */
+        .tab-bar {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+            flex-shrink: 0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 7px 4px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            font-weight: 500;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: color .12s, border-color .12s;
+            white-space: nowrap;
+        }
+        .tab-btn:hover { color: var(--text-mid); }
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-pane-container {
+            flex: 1;
+            min-height: 0;
+            position: relative;
+        }
+
+        .tab-pane {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px 8px;
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+        }
+        .tab-pane.active { display: flex; }
+        .tab-pane::-webkit-scrollbar { width: 4px; }
+        .tab-pane::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+
+        /* ── Transform inputs ────────────────────────────────────────────── */
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .field-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 1px;
+        }
+
+        .vec-row {
+            display: grid;
+            grid-template-columns: 12px 1fr 12px 1fr 12px 1fr;
+            gap: 3px;
+            align-items: center;
+        }
+
+        .vec-axis {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            font-weight: 500;
+            text-align: center;
+        }
+        .vec-axis.x { color: #ff6b6b; }
+        .vec-axis.y { color: #6bff9e; }
+        .vec-axis.z { color: #6baaff; }
+        .vec-axis.w { color: var(--text-dim); }
+
+        /* ── Drag-scrub input (ImGui / Godot style) ──────────────────────── */
+        .drag-input {
+            position: relative;
+            background: var(--surface3);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            height: 22px;
+            overflow: hidden;
+            cursor: ew-resize;
+            user-select: none;
+            transition: border-color .12s;
+        }
+        .drag-input:hover { border-color: var(--border2); }
+        .drag-input.editing { cursor: text; border-color: var(--accent); background: var(--surface2); }
+        .drag-input.dragging { border-color: var(--accent); cursor: ew-resize; }
+
+        /* Fill bar that shows drag progress visually */
+        .drag-input-fill {
+            position: absolute; inset: 0;
+            background: rgba(61,133,255,.10);
+            transform-origin: left;
+            pointer-events: none;
+        }
+        .drag-input.editing .drag-input-fill { display: none; }
+
+        /* Displayed value label */
+        .drag-input-label {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--text);
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .drag-input.editing .drag-input-label { display: none; }
+
+        /* Actual <input> hidden until editing */
+        .drag-input-field {
+            position: absolute; inset: 0;
+            background: transparent;
+            border: none;
+            outline: none;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--text);
+            padding: 0 5px;
+            width: 100%;
+            opacity: 0;
+            pointer-events: none;
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+        .drag-input-field::-webkit-outer-spin-button,
+        .drag-input-field::-webkit-inner-spin-button { -webkit-appearance: none; }
+        .drag-input.editing .drag-input-field { opacity: 1; pointer-events: all; }
+
+        .color-field-row {
+            display: flex; gap: 6px; align-items: center;
+        }
+        .color-preview {
+            width: 28px; height: 28px;
+            border-radius: 4px;
+            border: 1px solid var(--border2);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .color-inputs-grid {
+            display: grid;
+            grid-template-columns: 10px 1fr 10px 1fr 10px 1fr 10px 1fr;
+            gap: 3px;
+            flex: 1;
+            align-items: center;
+        }
+
+        /* Divider */
+        .field-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 2px 0;
+        }
+
+        /* ── Bone section ────────────────────────────────────────────────── */
+        /* Skeleton pane overrides: it manages its own internal layout */
+        #tab-pane-skeleton {
+            padding: 0;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .bone-transform-panel {
+            flex-shrink: 0;
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .bone-transform-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .bone-transform-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .bone-transform-name {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--accent);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 140px;
+        }
+        .bone-transform-none {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        .bone-reset-all-btn {
+            padding: 3px 8px;
+            background: var(--surface3);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text-dim);
+            font-size: 9px; cursor: pointer;
+            font-family: 'IBM Plex Sans', sans-serif;
+            transition: background .12s, color .12s;
+        }
+        .bone-reset-all-btn:hover { background: var(--surface); color: var(--text); }
+
+        .bone-hierarchy-wrap {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px;
+        }
+        .bone-hierarchy-wrap::-webkit-scrollbar { width: 4px; }
+        .bone-hierarchy-wrap::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+
+        .bone-list {
+            display: flex; flex-direction: column; gap: 1px;
+        }
+
+        .bone-item { border-radius: 3px; overflow: hidden; }
+
+        .bone-item-head {
+            display: flex; align-items: center; gap: 5px;
+            padding: 5px 7px;
+            background: transparent;
+            cursor: pointer;
+            user-select: none;
+            border-radius: 3px;
+            border: 1px solid transparent;
+            transition: background .12s, border-color .12s;
+        }
+        .bone-item-head:hover { background: var(--surface2); }
+        .bone-item-head.selected {
+            background: var(--accent-glow);
+            border-color: rgba(61,133,255,.3);
+        }
+        .bone-item-head.selected .bone-name { color: var(--accent); }
+
+        .bone-depth-line {
+            color: var(--text-dim); font-size: 9px;
+            font-family: 'IBM Plex Mono', monospace;
+            flex-shrink: 0;
+        }
+        .bone-name {
+            flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+            color: var(--text-mid);
+        }
+        .bone-arrow {
+            font-size: 8px; color: var(--text-dim);
+            transition: transform .12s; flex-shrink: 0;
+        }
+        .bone-item.open .bone-arrow { transform: rotate(90deg); }
+
+        /* ── Morph section ───────────────────────────────────────────────── */
+        .morph-filter-wrap {
+            display: flex; gap: 4px;
+        }
+        .morph-filter {
+            flex: 1;
+            background: var(--surface3);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 4px 7px;
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 10px;
+            color: var(--text);
+            outline: none;
+        }
+        .morph-filter:focus { border-color: var(--accent); }
+        .morph-reset-all-btn {
+            padding: 4px 8px;
+            background: var(--surface3);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text-dim);
+            font-size: 10px; cursor: pointer;
+            font-family: 'IBM Plex Sans', sans-serif;
+            transition: background .12s, color .12s;
+        }
+        .morph-reset-all-btn:hover { background: var(--surface2); color: var(--text); }
+
+        .morph-list {
+            display: flex; flex-direction: column; gap: 2px;
+        }
+
+        .morph-row {
+            display: grid;
+            grid-template-columns: 1fr 80px 32px;
+            align-items: center; gap: 6px;
+            padding: 3px 2px;
+            border-radius: 3px;
+        }
+        .morph-row:hover { background: var(--surface2); }
+        .morph-row.hidden { display: none; }
+        .morph-name {
+            font-size: 10px; color: var(--text-mid);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .morph-row.active .morph-name { color: var(--text); }
+        .morph-slider { accent-color: var(--accent); width: 100%; height: 2px; }
+        .morph-val {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px; color: var(--text-dim); text-align: right;
+        }
+
+        /* ── Scrollbars ──────────────────────────────────────────────────── */
+        #model-list::-webkit-scrollbar,
+        #inst-editor-wrap::-webkit-scrollbar { width: 4px; }
+        #model-list::-webkit-scrollbar-thumb,
+        #inst-editor-wrap::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+<div id="canvas-wrap"></div>
+
+<div id="ui">
+    <!-- ── Left panel ── -->
+    <div class="panel" id="left-panel">
+        <!-- Top 60%: model list -->
+        <div id="model-list-wrap">
+            <div class="panel-header">
+                <div class="panel-label">Models</div>
+            </div>
+            <div id="model-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Bottom 40%: FX panel (tabbed) -->
+        <div id="fx-panel">
+            <!-- Tab bar (extensible: add more tabs by appending .tab-btn[data-fx-tab=...] + matching .tab-pane#fx-tab-...) -->
+            <div class="tab-bar" id="fx-tab-bar">
+                <button class="tab-btn active" data-fx-tab="shader">Shader</button>
+            </div>
+            <div class="tab-pane-container">
+
+                <!-- Shader tab ────────────────────────────────────────────── -->
+                <div class="tab-pane active" id="fx-tab-shader">
+                    <div class="shader-list">
+
+                        <!-- Lit (main shader, always active) -->
+                        <div class="shader-item active open" data-shader="lit">
+                            <div class="shader-item-head" title="Single-click: collapse · Double-click / Right-click: select">
+                                <div class="shader-item-dot"></div>
+                                <div class="shader-item-name">Lit</div>
+                                <div class="shader-item-arrow">▶</div>
+                            </div>
+                            <div class="shader-item-body">
+                                <div class="fx-section-title">Light Direction</div>
+                                <div class="fx-row">
+                                    <span class="fx-label">X</span>
+                                    <input class="fx-slider" type="range" id="fx-light-x" min="-1" max="1" step="0.01" value="0.4">
+                                    <span class="fx-val" id="fx-light-x-val">.40</span>
+                                </div>
+                                <div class="fx-row">
+                                    <span class="fx-label">Y</span>
+                                    <input class="fx-slider" type="range" id="fx-light-y" min="-1" max="1" step="0.01" value="0.8">
+                                    <span class="fx-val" id="fx-light-y-val">.80</span>
+                                </div>
+                                <div class="fx-row">
+                                    <span class="fx-label">Z</span>
+                                    <input class="fx-slider" type="range" id="fx-light-z" min="-1" max="1" step="0.01" value="0.6">
+                                    <span class="fx-val" id="fx-light-z-val">.60</span>
+                                </div>
+                                <div class="fx-section-title" style="margin-top:6px;">Light Range</div>
+                                <div class="fx-row">
+                                    <span class="fx-label">Min&nbsp;/&nbsp;Max</span>
+                                    <div class="fx-dual-range">
+                                        <div class="fx-dual-track"></div>
+                                        <div class="fx-dual-fill" id="fx-light-range-fill"></div>
+                                        <input class="fx-dual-input" type="range" id="fx-light-range-min" min="0" max="1" step="0.01" value="1.00">
+                                        <input class="fx-dual-input" type="range" id="fx-light-range-max" min="0" max="1" step="0.01" value="1.00">
+                                    </div>
+                                    <span class="fx-val" id="fx-light-range-val" style="width:54px;">.92/1.0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Outline (overlay; toggle via dbl-click / right-click) -->
+                        <div class="shader-item" data-shader="outline">
+                            <div class="shader-item-head" title="Single-click: collapse · Double-click / Right-click: toggle">
+                                <div class="shader-item-dot"></div>
+                                <div class="shader-item-name">Outline</div>
+                                <div class="shader-item-arrow">▶</div>
+                            </div>
+                            <div class="shader-item-body">
+                                <div class="fx-row">
+                                    <span class="fx-label">Thickness</span>
+                                    <input class="fx-slider" type="range" id="fx-outline-thick" min="0.001" max="0.05" step="0.001" value="0.012">
+                                    <span class="fx-val" id="fx-outline-thick-val">.012</span>
+                                </div>
+                                <div class="fx-row">
+                                    <span class="fx-label">Color</span>
+                                    <input class="fx-color" type="color" id="fx-outline-color" value="#111111">
+                                    <input class="fx-slider" type="range" id="fx-outline-alpha" min="0" max="1" step="0.01" value="1">
+                                    <span class="fx-val" id="fx-outline-alpha-val">1.0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Right panel ── -->
+    <div class="panel" id="right-panel">
+        <div class="panel-header">
+            <div class="panel-label">Instance Editor</div>
+            <div id="inst-editor-key" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-mid);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+        </div>
+        <div id="inst-editor-wrap">
+            <div class="no-selection" id="no-selection-msg">
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="EzCanvas3D.js"></script>
+<script src="EzLoaderBeta.js"></script>
+<script>
+
+// -------------------------
+// SHADER
+// -------------------------
+const SHADER_KEY = "rig_lit";
+const MORPH_POS_CHANNEL = "u_morphPosTex";
+const MORPH_NRM_CHANNEL = "u_morphNrmTex";
+
+const VERT_MAIN = `
+    int  vtx = morphVertexLocal();
+    vec3 pos = a_position + applyMorph(0, vtx);
+    vec3 nrm = normalize(a_normal + applyMorph(1, vtx));
+    mat4 skin  = computeSkin(a_boneID, a_boneWeight);
+    mat4 model = a_instMat4 * skin;
+    gl_Position = u_projection * u_view * model * vec4(pos, 1.0);
+    v_worldNormal   = normalize(mat3(model) * nrm);
+    v_uv            = a_uv;
+    v_instanceColor = a_instColor;
+`;
+
+const FRAG_MAIN = `
+    vec3  L       = normalize(u_light);
+    float diffuse = max(dot(normalize(v_worldNormal), L), 0.0);
+    float light   = u_lightRange.x + (u_lightRange.y - u_lightRange.x) * diffuse;
+    vec4  albedo  = texture(u_albedo, v_uv) * u_fill * v_instanceColor;
+    
+    // if (albedo.a < 0.5) discard;
+    fragColor     = vec4(albedo.rgb * light, albedo.a);
+`;
+
+// -------------------------
+// MODELS TO LOAD — edit this object freely
+// -------------------------
+const MODELS = {
+    "Oguri": "Models/Oguri.glb",
+    "Shiroko": "Models/Shiroko.glb",
+    "Kirby": "Models/Kirby.glb",
+    "Frog": "Models/Frog.glb",
+    "NintendoSwitch": "Models/NintendoSwitch.glb",
+    "Isometric": "Models/Isometric.glb",
+    "Yste": "Models/Yste.glb",
+    "Test": "Models/Test.glb",
+};
+
+// -------------------------
+// MAIN
+// -------------------------
+(async () => {
+
+    // ── Engine ────────────────────────────────────────────────────────────
+    const wrap = document.getElementById("canvas-wrap");
+    const ez   = new EzCanvas3D("rig");
+    ez.mount(wrap);
+    ez.settings.fitContainer();
+    new ResizeObserver(() => ez.settings.fitContainer()).observe(wrap);
+
+    // ── Sky shader ────────────────────────────────────────────────────────
+    const SKY_SHADER_KEY = "__sky__";
+    ez.shaders.add(SKY_SHADER_KEY, new EzShader3D().describe({
+        renderCfg: { rQueue: 0, depthWrite: false, depthTest: false, blend: false },
+        uniKeys: [
+            { name: "u_invView", type: "mat4" },
+            { name: "u_invProj", type: "mat4" },
+        ],
+        onbind: (gl, program) => {
+            const cam = ez.camera;
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "u_invView"), false, EzMath.Mat4.invert(cam.view));
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "u_invProj"), false, EzMath.Mat4.invert(cam.projection));
+        },
+        vertex: {
+            attributes: [],
+            instanceData: [],
+            outputs: [{ name: "v_sc", type: "vec2" }],
+            main: `
+                const vec2 pos[3] = vec2[](
+                    vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0)
+                );
+                v_sc = pos[gl_VertexID];
+                gl_Position = vec4(v_sc, 0.999999, 1.0);
+            `,
+        },
+        fragment: {
+            outputColor: "fragColor",
+            main: `
+                vec4 eye    = u_invProj * vec4(v_sc, 1.0, 1.0);
+                vec3 rayDir = normalize((u_invView * vec4(eye.xy, -1.0, 0.0)).xyz);
+                float h = rayDir.y;
+                vec3 skyTop  = vec3(0.18, 0.45, 0.85);
+                vec3 horizon = vec3(0.85, 0.88, 0.95);
+                vec3 ground  = vec3(0.18, 0.18, 0.18);
+                vec3 color;
+                if (h >= 0.0) {
+                    color = mix(horizon, skyTop, smoothstep(0.0, 1.0, h));
+                } else {
+                    float t = smoothstep(0.0, -0.02, h);
+                    color = mix(horizon, ground, t);
+                }
+                fragColor = vec4(color, 1.0);
+            `,
+        },
+    }));
+
+    ez.models.add("__skyMesh__", {
+        defaultShader: SKY_SHADER_KEY,
+        primitives: [{ vertexCount: 3 }],
+    });
+    let skyInstKey = ez.addInstance("__skyMesh__");
+    let skyEnabled = true;
+
+    // ── Shared FX state (mutated by Shader-tab controls) ──────────────────
+    const fx = {
+        light:         [0.4, 0.8, 0.6],
+        lightRange:    [1.0, 1.00], // x=min ambient, y=max under full diffuse
+        outlineColor:  [0.067, 0.067, 0.067, 1.0],
+        outlineThick:  0.012,
+    };
+
+    const SHARED_ATTRS = {
+        attributes: [
+            { name: "a_position",   size: 3, default: [0,0,0,0] },
+            { name: "a_normal",     size: 3, default: [0,1,0,0] },
+            { name: "a_uv",         size: 2, default: [0,0,0,0] },
+            { name: "a_boneID",     size: 4, default: [0,0,0,0] },
+            { name: "a_boneWeight", size: 4, default: [0,0,0,0] },
+        ],
+        instanceData: [
+            { name: "a_instMat4",  type: "mat4" },
+            { name: "a_instColor", type: "vec4", default: [1,1,1,1] },
+        ],
+        morphChannels: [MORPH_POS_CHANNEL, MORPH_NRM_CHANNEL],
+        hasSkeleton: true,
+    };
+
+    // ── Lit shader (main) ─────────────────────────────────────────────────
+    ez.shaders.add(SHADER_KEY, new EzShader3D().describe({
+        renderCfg: { blend: true, rQueue: 1000, cull: 'back' },
+        uniKeys: [
+            { name: "u_light",      type: "vec3" },
+            { name: "u_lightRange", type: "vec2" },
+        ],
+        onbind: (gl, program) => {
+            EzRender.setUniform(gl, program, "vec3", "u_light", fx.light);
+            EzRender.setUniform(gl, program, "vec2", "u_lightRange", fx.lightRange);
+        },
+        vertex: {
+            ...SHARED_ATTRS,
+            defaultKeys: { view: "u_view", projection: "u_projection" },
+            outputs: [
+                { name: "v_uv",            type: "vec2" },
+                { name: "v_worldNormal",   type: "vec3" },
+                { name: "v_instanceColor", type: "vec4" },
+            ],
+            main: VERT_MAIN,
+        },
+        fragment: {
+            defaultKeys: { fill: "u_fill", albedo: "u_albedo" },
+            outputColor: "fragColor",
+            main: FRAG_MAIN,
+        },
+    }));
+
+    // ── Outline shader (overlay) ──────────────────────────────────────────
+    const OUTLINE_KEY = "rig_outline";
+    ez.shaders.add(OUTLINE_KEY, new EzShader3D().describe({
+        // MagicBox-style inverted hull pass: draw displaced backfaces before fill.
+        renderCfg: { blend: true, cull: 'front', rQueue: 999 },
+        uniKeys: [
+            { name: "u_outlineColor", type: "vec4"  },
+            { name: "u_outlineThick", type: "float" },
+        ],
+        onbind: (gl, program) => {
+            EzRender.setUniform(gl, program, "vec4", "u_outlineColor", fx.outlineColor);
+            EzRender.setUniform(gl, program, "float", "u_outlineThick", fx.outlineThick);
+        },
+        vertex: {
+            ...SHARED_ATTRS,
+            defaultKeys: { view: "u_view", projection: "u_projection" },
+            outputs: [],
+            main: `
+                int  vtx   = morphVertexLocal();
+                vec3 pos   = a_position + applyMorph(0, vtx);
+                vec3 nrm   = normalize(a_normal + applyMorph(1, vtx));
+                mat4 skin  = computeSkin(a_boneID, a_boneWeight);
+                mat4 mdl   = a_instMat4 * skin;
+                // Keep displacement in world space to match MagicBox behavior.
+                vec3 wNorm = normalize(mat3(mdl) * nrm);
+                vec3 wPos  = (mdl * vec4(pos, 1.0)).xyz + wNorm * u_outlineThick;
+                gl_Position = u_projection * u_view * vec4(wPos, 1.0);
+            `,
+        },
+        fragment: {
+            outputColor: "fragColor",
+            main: `
+                fragColor = u_outlineColor;
+            `,
+        },
+    }));
+
+    // ──────────────────────────────────────────────────────────────────────
+    // FX PANEL WIRING
+    // ──────────────────────────────────────────────────────────────────────
+
+    // ── Outline overlay state ─────────────────────────────────────────────
+    let outlineEnabled = false;
+    const outlineInstances = new Map(); // modelInstKey → outlineInstKey
+
+    function syncOutlineInstance(ik, modelKey, enable) {
+        if (enable) {
+            if (!outlineInstances.has(ik)) {
+                const oik = ez.addInstance(modelKey, { shader: OUTLINE_KEY });
+                outlineInstances.set(ik, oik);
+                const inst = ez.readInstance(ik);
+                if (inst) {
+                    const d = inst.data;
+                    if (d.a_instMat4)  ez.writeInstance(oik, { data: { a_instMat4:  d.a_instMat4  } });
+                    if (d.a_instColor) ez.writeInstance(oik, { data: { a_instColor: d.a_instColor } });
+                    if (inst.bonePoses) ez.writeInstance(oik, { bone: inst.bonePoses.map((m, id) => ({ id, transform: m })) });
+                    if (inst.morphWeights) ez.writeInstance(oik, { morph: inst.morphWeights });
+                }
+            }
+        } else {
+            const oik = outlineInstances.get(ik);
+            if (oik) { ez.removeInstance(oik); outlineInstances.delete(ik); }
+        }
+    }
+
+    function syncAllOutlines(enable) {
+        for (const [ik, meta] of instanceMeta)
+            syncOutlineInstance(ik, meta.modelKey, enable);
+    }
+
+    // ── Tab-bar wiring (scoped to #fx-panel; supports future tabs) ────────
+    document.querySelectorAll("#fx-tab-bar .tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const target = btn.dataset.fxTab;
+            document.querySelectorAll("#fx-tab-bar .tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+            document.querySelectorAll("#fx-panel .tab-pane").forEach(p => p.classList.toggle("active", p.id === `fx-tab-${target}`));
+        });
+    });
+
+    // ── Shader-item interactions ──────────────────────────────────────────
+    // Each shader-item is a preset; selection is mutually exclusive.
+    // single-click on header   → expand/collapse body
+    // dbl-click / right-click  → select this preset
+    let activeShader = "lit"; // matches the .active class in initial HTML
+
+    function selectShader(id) {
+        if (activeShader === id) return;
+        activeShader = id;
+        document.querySelectorAll(".shader-item").forEach(it => {
+            it.classList.toggle("active", it.dataset.shader === id);
+        });
+        // Preset-specific side-effects
+        outlineEnabled = (id === "outline");
+        syncAllOutlines(outlineEnabled);
+    }
+
+    document.querySelectorAll(".shader-item").forEach(item => {
+        const head = item.querySelector(".shader-item-head");
+        const id   = item.dataset.shader;
+        head.addEventListener("click",       () => item.classList.toggle("open"));
+        const select = e => { e.preventDefault(); selectShader(id); };
+        head.addEventListener("dblclick",    select);
+        head.addEventListener("contextmenu", select);
+    });
+
+    // ── Slider / color wiring ─────────────────────────────────────────────
+    function wireSlider(id, valId, decimals, setter) {
+        const sl = document.getElementById(id);
+        const vl = document.getElementById(valId);
+        sl.addEventListener("input", () => {
+            const v = parseFloat(sl.value);
+            vl.textContent = v.toFixed(decimals).replace(/^0\./, ".");
+            setter(v);
+        });
+    }
+
+    // Lit
+    wireSlider("fx-light-x", "fx-light-x-val", 2, v => fx.light[0] = v);
+    wireSlider("fx-light-y", "fx-light-y-val", 2, v => fx.light[1] = v);
+    wireSlider("fx-light-z", "fx-light-z-val", 2, v => fx.light[2] = v);
+
+    // Lit — dual-thumb light range (min ≤ max enforced).
+    (function wireLightRange() {
+        const minSl = document.getElementById("fx-light-range-min");
+        const maxSl = document.getElementById("fx-light-range-max");
+        const fill  = document.getElementById("fx-light-range-fill");
+        const val   = document.getElementById("fx-light-range-val");
+        const fmt   = n => n.toFixed(2).replace(/^0/, "");
+        function sync() {
+            let lo = parseFloat(minSl.value);
+            let hi = parseFloat(maxSl.value);
+            // Clamp so min never crosses max and vice versa.
+            if (lo > hi) {
+                if (document.activeElement === minSl) { lo = hi; minSl.value = lo; }
+                else                                  { hi = lo; maxSl.value = hi; }
+            }
+            fx.lightRange[0] = lo;
+            fx.lightRange[1] = hi;
+            fill.style.left  = (lo * 100) + "%";
+            fill.style.width = ((hi - lo) * 100) + "%";
+            val.textContent  = fmt(lo) + "/" + fmt(hi);
+        }
+        minSl.addEventListener("input", sync);
+        maxSl.addEventListener("input", sync);
+        sync();
+    })();
+
+    // Outline
+    wireSlider("fx-outline-thick", "fx-outline-thick-val", 3, v => fx.outlineThick    = v);
+    wireSlider("fx-outline-alpha", "fx-outline-alpha-val", 2, v => fx.outlineColor[3] = v);
+    document.getElementById("fx-outline-color").addEventListener("input", e => {
+        const hex = e.target.value;
+        fx.outlineColor[0] = parseInt(hex.slice(1,3),16)/255;
+        fx.outlineColor[1] = parseInt(hex.slice(3,5),16)/255;
+        fx.outlineColor[2] = parseInt(hex.slice(5,7),16)/255;
+    });
+
+    // ── State ─────────────────────────────────────────────────────────────
+    // modelKey → { url, status, skeleton, primMorphInfo, logicalMorphCount, morphTargetNames, instances }
+    const modelRegistry = new Map();
+    // instanceKey → { modelKey, boneState[[rx,ry,rz],...], morphState[Float32Array] }
+    const instanceMeta  = new Map();
+
+    let selectedInstKey = null;
+
+    // ── Input: camera ────────────────────────────────────────────────────
+    const canvas = ez.canvas;
+    canvas.tabIndex = 0;
+    const keys = Object.create(null);
+    window.addEventListener("keydown", e => {
+        keys[e.code] = true;
+        if (e.code === "KeyP") {
+            skyEnabled = !skyEnabled;
+            ez.writeInstance(skyInstKey, { display: skyEnabled });
+        }
+        if (e.code === "KeyL") {
+            ez.camera.orthographic = !ez.camera.orthographic;
+        }
+    });
+    window.addEventListener("keyup",   e => { keys[e.code] = false; });
+
+    // Left-click → pointer lock for camera look
+    canvas.addEventListener("click", e => {
+        if (e.button !== 0) return;
+        if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+    });
+    document.addEventListener("pointerlockchange", () => {
+        canvas.style.cursor = document.pointerLockElement === canvas ? "none" : "default";
+    });
+    canvas.addEventListener("mousemove", e => {
+        if (document.pointerLockElement !== canvas) return;
+
+        ez.camera.rotate(-e.movementX * 0.15, -e.movementY * 0.15);
+    });
+
+    // Wheel: perspective → fov, orthographic → orthoSize. Up = zoom in (smaller value).
+    canvas.addEventListener("wheel", e => {
+        e.preventDefault();
+        const cam = ez.camera;
+        const dir = Math.sign(e.deltaY);   // +1 = zoom out, -1 = zoom in
+        if (cam.orthographic) {
+            cam.orthoSize = EzMath.clamp(cam.orthoSize * (1 + dir * 0.1), 0.1, 1000);
+        } else {
+            cam.fov = EzMath.clamp(cam.fov + dir * 2, 5, 120);
+        }
+    }, { passive: false });
+
+    // ── Camera movement ───────────────────────────────────────────────────
+    let lastT = performance.now();
+    function frame(now) {
+        const dt = Math.min((now - lastT) / 1000, 0.05);
+        lastT = now;
+        const speed = keys["ShiftLeft"] ? 8 : 3;
+        const { forward, right } = ez.camera.vectors;
+        let dx = 0, dy = 0, dz = 0;
+        if (keys["KeyW"]) dz += 1;
+        if (keys["KeyS"]) dz -= 1;
+        if (keys["KeyD"]) dx += 1;
+        if (keys["KeyA"]) dx -= 1;
+        if (keys["Space"])       dy += 1;
+        if (keys["ControlLeft"]) dy -= 1;
+        if (dx || dy || dz) {
+            const m = speed * dt;
+            ez.camera.translate([forward[0]*dz*m + right[0]*dx*m, forward[1]*dz*m + right[1]*dx*m + dy*m, forward[2]*dz*m + right[2]*dx*m]);
+        }
+        ez.render();
+        requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    // -----------------------══
+    // GLB → EzCanvas3D loader (delegates to EzLoaderBeta)
+    // -----------------------══
+    async function loadAndRegisterModel(modelKey, url) {
+        const data = await EzLoaderBeta.load(url, {
+            ez,
+            modelKey,
+            shaderKey:    SHADER_KEY,
+            morphPositionChannel: MORPH_POS_CHANNEL,
+            morphNormalChannel:   MORPH_NRM_CHANNEL,
+        });
+        if (!data.added) throw new Error(`models.add("${modelKey}") failed`);
+        return {
+            skeleton:           data.skeleton,
+            primMorphInfo:      data.primMorphInfo,
+            logicalMorphCount:  data.logicalMorphCount,
+            morphTargetNames:   data.morphTargetNames,
+            meshDefaultWeights: data.meshDefaultWeights,
+        };
+    }
+
+    // -----------------------══
+    // Instance management
+    // -----------------------══
+    function spawnInstance(modelKey) {
+        const reg = modelRegistry.get(modelKey);
+        if (!reg || reg.status !== "loaded") return null;
+
+        const ik = ez.addInstance(modelKey, {
+            shader: SHADER_KEY,
+            data: {
+                a_instMat4: EzMath.Mat4.identity(),
+                a_instColor: [1, 1, 1, 1],
+            }
+        });
+
+        const { skeleton, primMorphInfo, logicalMorphCount, meshDefaultWeights } = reg;
+        const bc = skeleton ? skeleton.bones.length : 0;
+
+        if (logicalMorphCount > 0) {
+            for (let pi = 0; pi < primMorphInfo.length; pi++) {
+                const info = primMorphInfo[pi];
+                if (!info) continue;
+                const def = meshDefaultWeights[pi];
+                if (def && def.length > 0) ez.writeInstance(ik, { morph: { offset: info.offset, weights: def } });
+            }
+        }
+
+        const morphDefaults = new Float32Array(logicalMorphCount);
+        for (const def of meshDefaultWeights) {
+            if (def && def.length > 0) { morphDefaults.set(def.subarray(0, Math.min(def.length, logicalMorphCount))); break; }
+        }
+
+        instanceMeta.set(ik, {
+            modelKey,
+            boneState: Array.from({ length: bc }, () => ({ pos: [0,0,0], rot: [0,0,0], scale: [1,1,1] })),
+            morphState: (() => { const a = new Float32Array(logicalMorphCount); if (morphDefaults) a.set(morphDefaults); return a; })(),
+        });
+
+        reg.instances.push(ik);
+        if (outlineEnabled) syncOutlineInstance(ik, modelKey, true);
+        return ik;
+    }
+
+    function removeInstance(ik) {
+        const meta = instanceMeta.get(ik);
+        if (!meta) return;
+        const reg = modelRegistry.get(meta.modelKey);
+        if (reg) reg.instances = reg.instances.filter(k => k !== ik);
+        instanceMeta.delete(ik);
+        syncOutlineInstance(ik, meta.modelKey, false);
+        ez.removeInstance(ik);
+        if (selectedInstKey === ik) { selectedInstKey = null; renderEditor(); }
+        rebuildModelEntry(meta.modelKey);
+    }
+
+    // ── Apply helpers ──────────────────────────────────────────────────────
+    function applyBone(ik, bi, state) {
+        const { pos, rot, scale } = state;
+        const q = EzMath.Quat.fromEulerZYX([rot[2] * Math.PI/180, rot[1] * Math.PI/180, rot[0] * Math.PI/180]);
+        const boneOpt = { bone: { id: bi, transform: { position: pos, rotation: q, scale } } };
+        ez.writeInstance(ik, boneOpt);
+        const oik = outlineInstances.get(ik);
+        if (oik) ez.writeInstance(oik, boneOpt);
+    }
+
+    function applyLogicalMorph(ik, modelKey, logicalIdx, val) {
+        const { primMorphInfo } = modelRegistry.get(modelKey);
+        for (const info of primMorphInfo) {
+            if (!info || logicalIdx >= info.count) continue;
+            const morphOpt = { morph: { offset: info.offset + logicalIdx, weights: [val] } };
+            ez.writeInstance(ik, morphOpt);
+            const oik = outlineInstances.get(ik);
+            if (oik) ez.writeInstance(oik, morphOpt);
+        }
+    }
+
+    // -----------------------══
+    // UI — Left panel (model list)
+    // -----------------------══
+    const modelListEl = document.getElementById("model-list");
+
+    function colorToHex(rgba) {
+        const to255 = v => Math.round(Math.max(0, Math.min(1, v)) * 255);
+        return `#${to255(rgba[0]).toString(16).padStart(2,'0')}${to255(rgba[1]).toString(16).padStart(2,'0')}${to255(rgba[2]).toString(16).padStart(2,'0')}`;
+    }
+
+    function instanceColor(ik) {
+        try {
+            const inst = ez.readInstance(ik);
+            return inst?.data?.color || [1,1,1,1];
+        } catch { return [1,1,1,1]; }
+    }
+
+    function rebuildModelEntry(modelKey) {
+        const existingEl = modelListEl.querySelector(`[data-model-key="${CSS.escape(modelKey)}"]`);
+        const reg = modelRegistry.get(modelKey);
+        if (!reg) return;
+
+        const entry = existingEl || document.createElement("div");
+        entry.className = `model-entry ${reg.status}${reg._open ? " open" : ""}`;
+        entry.dataset.modelKey = modelKey;
+        entry.innerHTML = "";
+
+        // Head
+        const head = document.createElement("div");
+        head.className = "model-entry-head";
+        head.innerHTML = `
+            <div class="model-dot"></div>
+            <div class="model-key">${modelKey}</div>
+            <div class="model-toggle-arrow">▶</div>
+        `;
+        head.addEventListener("click", () => {
+            reg._open = !reg._open;
+            entry.classList.toggle("open", reg._open);
+        });
+        entry.appendChild(head);
+
+        // Instance list
+        const instList = document.createElement("div");
+        instList.className = "model-instance-list";
+
+        if (reg.status === "loaded") {
+            for (const ik of reg.instances) {
+                const row = document.createElement("div");
+                row.className = `instance-row${selectedInstKey === ik ? " selected" : ""}`;
+                row.dataset.instKey = ik;
+
+                const rgba = instanceColor(ik);
+                row.innerHTML = `
+                    <div class="inst-color-swatch" style="background:${colorToHex(rgba)};"></div>
+                    <div class="instance-row-key">${ik}</div>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-dim);cursor:pointer;flex-shrink:0" class="del-btn">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                `;
+                row.addEventListener("click", e => {
+                    if (e.target.closest(".del-btn")) { removeInstance(ik); return; }
+                    selectInstance(ik);
+                });
+                instList.appendChild(row);
+            }
+
+            const addBtn = document.createElement("button");
+            addBtn.className = "add-inst-btn";
+            addBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg> Add Instance`;
+            addBtn.addEventListener("click", () => {
+                const ik = spawnInstance(modelKey);
+                if (ik) { reg._open = true; rebuildModelEntry(modelKey); }
+            });
+            instList.appendChild(addBtn);
+        } else if (reg.status === "loading") {
+            instList.innerHTML = `<div style="padding:8px;color:var(--text-dim);font-size:10px;font-family:'IBM Plex Mono',monospace;">Loading…</div>`;
+        } else if (reg.status === "error") {
+            instList.innerHTML = `<div style="padding:8px;color:var(--danger);font-size:10px;font-family:'IBM Plex Mono',monospace;">Failed to load</div>`;
+        }
+
+        entry.appendChild(instList);
+        if (!existingEl) modelListEl.appendChild(entry);
+    }
+
+    // -----------------------══
+    // UI — Right panel (instance editor)
+    // -----------------------══
+    const editorWrap    = document.getElementById("inst-editor-wrap");
+    const noSelectionEl = document.getElementById("no-selection-msg");
+    const editorKeyEl   = document.getElementById("inst-editor-key");
+
+    function selectInstance(ik) {
+        selectedInstKey = ik;
+        // Update left panel selection highlights
+        modelListEl.querySelectorAll(".instance-row").forEach(r => r.classList.toggle("selected", r.dataset.instKey === String(ik)));
+        renderEditor();
+    }
+
+    function renderEditor() {
+        // Clear previous editor content (keep no-selection msg in DOM)
+        editorWrap.querySelectorAll(".tab-bar, .tab-pane-container").forEach(el => el.remove());
+
+        if (!selectedInstKey || !instanceMeta.has(selectedInstKey)) {
+            noSelectionEl.style.display = "flex";
+            editorKeyEl.textContent = "";
+            return;
+        }
+        noSelectionEl.style.display = "none";
+        editorKeyEl.textContent = selectedInstKey;
+
+        const ik   = selectedInstKey;
+        const meta = instanceMeta.get(ik);
+        const reg  = modelRegistry.get(meta.modelKey);
+
+        const hasBones  = reg.skeleton && reg.skeleton.bones.length > 0;
+        const hasMorphs = reg.logicalMorphCount > 0;
+
+        // ── Tab bar ───────────────────────────────────────────────────────
+        const tabBar = document.createElement("div");
+        tabBar.className = "tab-bar";
+
+        const tabs = [{ id: "basic", label: "Basic" }];
+        if (hasBones)  tabs.push({ id: "skeleton", label: "Skeleton" });
+        if (hasMorphs) tabs.push({ id: "morph",    label: "Morph" });
+
+        const panes = {};
+        tabs.forEach(t => {
+            const btn = document.createElement("button");
+            btn.className = "tab-btn" + (t.id === "basic" ? " active" : "");
+            btn.textContent = t.label;
+            btn.dataset.tab = t.id;
+            btn.addEventListener("click", () => {
+                tabBar.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+                Object.values(panes).forEach(p => p.classList.remove("active"));
+                panes[t.id].classList.add("active");
+            });
+            tabBar.appendChild(btn);
+
+            const pane = document.createElement("div");
+            pane.className = "tab-pane" + (t.id === "basic" ? " active" : "");
+            pane.id = `tab-pane-${t.id}`;
+            panes[t.id] = pane;
+        });
+
+        editorWrap.appendChild(tabBar);
+        const paneContainer = document.createElement("div");
+        paneContainer.className = "tab-pane-container";
+        tabs.forEach(t => paneContainer.appendChild(panes[t.id]));
+        editorWrap.appendChild(paneContainer);
+
+        // ── Basic tab: Transform + Color ──────────────────────────────────
+        const basicPane = panes["basic"];
+
+        let currentMat   = EzMath.Mat4.identity();
+        let currentColor = [1,1,1,1];
+        try {
+            const inst = ez.readInstance(ik);
+            if (inst?.data?.a_instMat4)      currentMat = inst.data.a_instMat4;
+            else if (inst?.data?.transform)   currentMat = inst.data.transform;
+            if (inst?.data?.a_instColor)      currentColor = inst.data.a_instColor;
+            else if (inst?.data?.color)       currentColor = inst.data.color;
+        } catch {}
+
+        let posGroup, scaleGroup, rotGroup;
+
+        function applyTransform() {
+            if (!posGroup || !scaleGroup || !rotGroup) return;
+            const pos   = posGroup.get();
+            const scale = scaleGroup.get();
+            const euler = rotGroup.get();
+            const q = EzMath.Quat.fromEulerZYX([
+                euler[0] * Math.PI / 180,
+                euler[1] * Math.PI / 180,
+                euler[2] * Math.PI / 180,
+            ]);
+            const mat = EzMath.Mat4.compose(pos, q, scale);
+            ez.writeInstance(ik, { data: { a_instMat4: mat } });
+            const oik = outlineInstances.get(ik);
+            if (oik) ez.writeInstance(oik, { data: { a_instMat4: mat } });
+        }
+
+        posGroup   = makeVec3Field("Position", [currentMat[12], currentMat[13], currentMat[14]], { onChange: applyTransform });
+        const sx = Math.hypot(currentMat[0], currentMat[1], currentMat[2]);
+        const sy = Math.hypot(currentMat[4], currentMat[5], currentMat[6]);
+        const sz = Math.hypot(currentMat[8], currentMat[9], currentMat[10]);
+        scaleGroup = makeVec3Field("Scale", [sx, sy, sz], { onChange: applyTransform });
+        rotGroup   = makeVec3Field("Euler (deg)", [0, 0, 0], { onChange: applyTransform });
+
+        basicPane.appendChild(posGroup.el);
+        basicPane.appendChild(scaleGroup.el);
+        basicPane.appendChild(rotGroup.el);
+
+        const divider = document.createElement("div");
+        divider.className = "field-divider";
+        basicPane.appendChild(divider);
+
+        const colorGroup = makeColorField("Color", currentColor, (rgba) => {
+            ez.writeInstance(ik, { data: { a_instColor: rgba }});
+            const row = modelListEl.querySelector(`[data-inst-key="${CSS.escape(String(ik))}"]`);
+            if (row) {
+                const swatch = row.querySelector(".inst-color-swatch");
+                if (swatch) swatch.style.background = colorToHex(rgba);
+            }
+        });
+        basicPane.appendChild(colorGroup.el);
+
+        // ── Skeleton tab: fixed transform panel + hierarchy ───────────────
+        if (hasBones) {
+            const skeletonPane = panes["skeleton"];
+            const bc = reg.skeleton.bones.length;
+
+            // Compute depths for indentation
+            const depths = new Array(bc).fill(0);
+            for (let i = 1; i < bc; i++) {
+                const p = reg.skeleton.bones[i].parent;
+                depths[i] = p >= 0 ? depths[p] + 1 : 0;
+            }
+
+            // Track which bone is selected in this pane
+            let selectedBoneIdx = null;
+            const boneHeadEls = [];
+
+            // ── Fixed transform panel ──────────────────────────────────────
+            const transformPanel = document.createElement("div");
+            transformPanel.className = "bone-transform-panel";
+
+            const tfHeader = document.createElement("div");
+            tfHeader.className = "bone-transform-header";
+
+            const tfTitle = document.createElement("span");
+            tfTitle.className = "bone-transform-title";
+            tfTitle.textContent = "Bone Transform";
+
+            const tfName = document.createElement("span");
+            tfName.className = "bone-transform-none";
+            tfName.textContent = "none selected";
+
+            tfHeader.appendChild(tfTitle);
+            tfHeader.appendChild(tfName);
+            transformPanel.appendChild(tfHeader);
+
+            // Pos / Rot / Scale fields — always present, disabled until a bone selected
+            let bfPos, bfRot, bfScale;
+            let suppressWriteBone = false;
+
+            function setFieldsEnabled(enabled) {
+                [bfPos, bfRot, bfScale].forEach(f => {
+                    f.el.querySelectorAll(".drag-input").forEach(el => {
+                        el.style.opacity = enabled ? "1" : "0.35";
+                        el.style.pointerEvents = enabled ? "" : "none";
+                    });
+                });
+            }
+
+            function loadBoneIntoPanel(bi) {
+                suppressWriteBone = true;
+                const bs = meta.boneState[bi];
+                bfPos.set(bs.pos);
+                bfRot.set(bs.rot);
+                bfScale.set(bs.scale);
+                suppressWriteBone = false;
+                tfName.textContent = reg.skeleton?.bones[bi]?.name || `Bone ${bi}`;
+                tfName.className = "bone-transform-name";
+                setFieldsEnabled(true);
+            }
+
+            function writeBone() {
+                if (selectedBoneIdx === null || suppressWriteBone) return;
+                const bs = meta.boneState[selectedBoneIdx];
+                bs.pos   = bfPos.get();
+                bs.rot   = bfRot.get();
+                bs.scale = bfScale.get();
+                applyBone(ik, selectedBoneIdx, bs);
+            }
+
+            function makeBoneFields() {
+                bfPos   = makeVec3Field("Position", [0,0,0], { step: 0.01, decimals: 3, onChange: writeBone });
+                bfRot   = makeVec3Field("Rotation", [0,0,0], { step: 0.5,  decimals: 1, onChange: writeBone });
+                bfScale = makeVec3Field("Scale",    [1,1,1], { step: 0.01, decimals: 3, onChange: writeBone });
+                transformPanel.appendChild(bfPos.el);
+                transformPanel.appendChild(bfRot.el);
+                transformPanel.appendChild(bfScale.el);
+
+                const tfFooter = document.createElement("div");
+                tfFooter.style.cssText = "display:flex;gap:4px;";
+
+                const resetBtn = document.createElement("button");
+                resetBtn.className = "bone-reset-all-btn";
+                resetBtn.textContent = "Reset bone";
+                resetBtn.addEventListener("click", () => {
+                    if (selectedBoneIdx === null) return;
+                    meta.boneState[selectedBoneIdx] = { pos: [0,0,0], rot: [0,0,0], scale: [1,1,1] };
+                    loadBoneIntoPanel(selectedBoneIdx);
+                    applyBone(ik, selectedBoneIdx, meta.boneState[selectedBoneIdx]);
+                });
+                tfFooter.appendChild(resetBtn);
+                transformPanel.appendChild(tfFooter);
+
+                setFieldsEnabled(false);
+            }
+
+            makeBoneFields();
+            skeletonPane.appendChild(transformPanel);
+
+            // ── Hierarchy ─────────────────────────────────────────────────
+            const hierarchyWrap = document.createElement("div");
+            hierarchyWrap.className = "bone-hierarchy-wrap";
+
+            const boneList = document.createElement("div");
+            boneList.className = "bone-list";
+
+            // Build child map
+            const children = Array.from({ length: bc }, () => []);
+            for (let i = 0; i < bc; i++) {
+                const p = reg.skeleton.bones[i].parent;
+                if (p >= 0) children[p].push(i);
+            }
+
+            // Create all bone item elements indexed by bone id
+            const boneItemEls = [];
+            for (let bi = 0; bi < bc; bi++) {
+                const item = document.createElement("div");
+                item.className = "bone-item";
+                boneItemEls.push(item);
+            }
+
+            // DFS traversal so DOM order matches visual hierarchy
+            const dfsOrder = [];
+            function dfsVisit(bi) { dfsOrder.push(bi); children[bi].forEach(dfsVisit); }
+            for (let i = 0; i < bc; i++) { if (reg.skeleton.bones[i].parent < 0) dfsVisit(i); }
+
+            for (const bi of dfsOrder) {
+                const item = boneItemEls[bi];
+                const hasChildren = children[bi].length > 0;
+
+                const itemHead = document.createElement("div");
+                itemHead.className = "bone-item-head";
+                itemHead.style.paddingLeft = `${6 + depths[bi] * 12}px`;
+                itemHead.innerHTML = `
+                    <span class="bone-depth-line" style="font-size:9px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;flex-shrink:0;">${hasChildren ? "▶" : "·"}</span>
+                    <span class="bone-name">${reg.skeleton?.bones[bi]?.name || `Bone ${bi}`}</span>
+                `;
+                boneHeadEls.push(itemHead);
+
+                const arrowEl = itemHead.querySelector(".bone-depth-line");
+
+                itemHead.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    if (!hasChildren) return;
+                    const isOpen = item.classList.toggle("open");
+                    arrowEl.textContent = isOpen ? "▼" : "▶";
+                    function setSubtreeVisible(parentIdx, visible) {
+                        children[parentIdx].forEach(ci => {
+                            boneItemEls[ci].style.display = visible ? "" : "none";
+                            if (visible && boneItemEls[ci].classList.contains("open")) {
+                                setSubtreeVisible(ci, true);
+                            } else if (!visible) {
+                                setSubtreeVisible(ci, false);
+                            }
+                        });
+                    }
+                    setSubtreeVisible(bi, isOpen);
+                });
+
+                itemHead.addEventListener("contextmenu", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    boneHeadEls.forEach(h => h.classList.remove("selected"));
+                    itemHead.classList.add("selected");
+                    selectedBoneIdx = bi;
+                    loadBoneIntoPanel(bi);
+                });
+
+                item.appendChild(itemHead);
+                if (depths[bi] > 0) item.style.display = "none";
+                boneList.appendChild(item);
+            }
+
+            hierarchyWrap.appendChild(boneList);
+            skeletonPane.appendChild(hierarchyWrap);
+        }
+
+        // ── Morph tab: Morphs (all pre-rendered) ──────────────────────────
+        if (hasMorphs) {
+            const morphPane = panes["morph"];
+
+            const filterWrap = document.createElement("div");
+            filterWrap.className = "morph-filter-wrap";
+
+            const filterInput = document.createElement("input");
+            filterInput.type = "text"; filterInput.placeholder = "Filter…";
+            filterInput.className = "morph-filter";
+
+            const resetAllBtn = document.createElement("button");
+            resetAllBtn.className = "morph-reset-all-btn";
+            resetAllBtn.textContent = "Reset";
+
+            filterWrap.appendChild(filterInput);
+            filterWrap.appendChild(resetAllBtn);
+            morphPane.appendChild(filterWrap);
+
+            const morphList = document.createElement("div");
+            morphList.className = "morph-list";
+
+            const rows = [];
+            for (let li = 0; li < reg.logicalMorphCount; li++) {
+                const row = document.createElement("div");
+                row.className = `morph-row${Math.abs(meta.morphState[li]) > 0.001 ? " active" : ""}`;
+
+                const nameEl = document.createElement("span");
+                nameEl.className = "morph-name";
+                nameEl.textContent = reg.morphTargetNames?.[li] || `Target ${li}`;
+                nameEl.title = nameEl.textContent;
+
+                const sl = document.createElement("input");
+                sl.type = "range"; sl.min = -1; sl.max = 1; sl.step = 0.01;
+                sl.value = meta.morphState[li];
+                sl.className = "morph-slider";
+
+                const val = document.createElement("span");
+                val.className = "morph-val";
+                val.textContent = meta.morphState[li].toFixed(2);
+
+                const _li = li;
+                sl.addEventListener("input", () => {
+                    const v = parseFloat(sl.value);
+                    meta.morphState[_li] = v;
+                    val.textContent = v.toFixed(2);
+                    row.classList.toggle("active", Math.abs(v) > 0.001);
+                    applyLogicalMorph(ik, meta.modelKey, _li, v);
+                });
+                sl.addEventListener("dblclick", () => {
+                    sl.value = 0;
+                    meta.morphState[_li] = 0;
+                    val.textContent = "0.00";
+                    row.classList.remove("active");
+                    applyLogicalMorph(ik, meta.modelKey, _li, 0);
+                });
+
+                row.appendChild(nameEl); row.appendChild(sl); row.appendChild(val);
+                morphList.appendChild(row);
+                rows.push({ row, n: nameEl.textContent.toLowerCase(), sl, val });
+            }
+            morphPane.appendChild(morphList);
+
+            filterInput.addEventListener("input", () => {
+                const q = filterInput.value.toLowerCase().trim();
+                for (const r of rows) r.row.classList.toggle("hidden", q !== "" && !r.n.includes(q));
+            });
+            resetAllBtn.addEventListener("click", () => {
+                meta.morphState.fill(0);
+                for (const r of rows) { r.sl.value = 0; r.val.textContent = "0.00"; r.row.classList.remove("active"); }
+                for (const info of reg.primMorphInfo) {
+                    if (!info) continue;
+                    const zeroMorph = { morph: { offset: info.offset, weights: new Float32Array(info.count) } };
+                    ez.writeInstance(ik, zeroMorph);
+                    const oik = outlineInstances.get(ik);
+                    if (oik) ez.writeInstance(oik, zeroMorph);
+                }
+            });
+        }
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────
+
+    /**
+     * makeDragInput(opts) → { el, get(), set(v) }
+     *
+     * Velocity-based auto-scrub (like middle-click auto-scroll):
+     *   - Mousedown locks the origin. The value then continuously
+     *     changes at a rate proportional to how far the mouse is
+     *     from that origin — hold still to stop, drag further to go faster.
+     *   - A small deadzone (~4px) around the origin gives zero velocity.
+     *   - Speed is exponential outside the deadzone so small offsets are
+     *     precise and large offsets are fast.
+     *   - Double-click to type a raw number; Enter/Escape to confirm/cancel.
+     *
+     * opts: { value, step, decimals, clamp:[min,max]|null, onChange }
+     */
+    function makeDragInput({ value = 0, step = 0.01, decimals = 3, clamp = null, onChange = null } = {}) {
+        let current = value;
+
+        const el = document.createElement("div");
+        el.className = "drag-input";
+
+        const fill  = document.createElement("div");
+        fill.className = "drag-input-fill";
+
+        const label = document.createElement("div");
+        label.className = "drag-input-label";
+
+        const field = document.createElement("input");
+        field.type = "number";
+        field.className = "drag-input-field";
+        field.step = step;
+
+        el.appendChild(fill);
+        el.appendChild(label);
+        el.appendChild(field);
+
+        function fmt(v) { return v.toFixed(decimals); }
+        function applyClamp(v) { return clamp ? Math.max(clamp[0], Math.min(clamp[1], v)) : v; }
+
+        function setVal(v) {
+            current = applyClamp(v);
+            label.textContent = fmt(current);
+            field.value = fmt(current);
+            if (onChange) onChange(current);
+        }
+
+        setVal(value);
+
+        // ── Velocity auto-scrub ───────────────────────────────────────────
+        const DEADZONE = 4;   // px — zero velocity inside this radius
+        const BASE_SPEED = step * 60; // units/sec at 1px outside deadzone
+
+        let originX   = null;  // mousedown X
+        let currentX  = null;  // latest mousemove X
+        let rafId     = null;
+        let lastTime  = null;
+
+        function velocityFromOffset(dx) {
+            const sign = Math.sign(dx);
+            const abs  = Math.abs(dx);
+            if (abs <= DEADZONE) return 0;
+            const t = abs - DEADZONE;
+            // Exponential growth: gentle at first, fast further out.
+            // ~1 step/s at 1px beyond deadzone, ~100 steps/s at 80px.
+            return sign * BASE_SPEED * Math.pow(t, 1.6) * 0.012;
+        }
+
+        function tick(now) {
+            if (originX === null) return;
+            const dt = lastTime === null ? 0 : (now - lastTime) / 1000;
+            lastTime = now;
+
+            const dx  = currentX - originX;
+            const vel = velocityFromOffset(dx);
+            if (vel !== 0 && dt > 0) setVal(current + vel * dt);
+
+            // Fill bar: show direction + rough magnitude
+            const fillPct = Math.max(-1, Math.min(1, dx / 120));
+            if (fillPct >= 0) {
+                fill.style.left = "50%"; fill.style.right = `${(1 - fillPct) * 50}%`;
+            } else {
+                fill.style.left = `${(1 + fillPct) * 50}%`; fill.style.right = "50%";
+            }
+
+            rafId = requestAnimationFrame(tick);
+        }
+
+        el.addEventListener("mousedown", e => {
+            if (el.classList.contains("editing")) return;
+            if (e.button !== 0) return;
+            e.preventDefault();
+            originX  = e.clientX;
+            currentX = e.clientX;
+            lastTime = null;
+            el.classList.add("dragging");
+            rafId = requestAnimationFrame(tick);
+        });
+
+        window.addEventListener("mousemove", e => {
+            if (originX === null) return;
+            currentX = e.clientX;
+        });
+
+        window.addEventListener("mouseup", e => {
+            if (originX === null) return;
+            const moved = Math.abs(e.clientX - originX) > DEADZONE;
+            cancelAnimationFrame(rafId);
+            originX = null; currentX = null; lastTime = null; rafId = null;
+            el.classList.remove("dragging");
+            fill.style.left = "0"; fill.style.right = "0";
+        });
+
+        // ── Double-click → text edit ──────────────────────────────────────
+        el.addEventListener("dblclick", () => {
+            el.classList.add("editing");
+            field.value = fmt(current);
+            field.focus();
+            field.select();
+        });
+
+        field.addEventListener("blur", () => {
+            const v = parseFloat(field.value);
+            if (!isNaN(v)) setVal(v);
+            el.classList.remove("editing");
+        });
+
+        field.addEventListener("keydown", e => {
+            if (e.key === "Enter")  { field.blur(); }
+            if (e.key === "Escape") { el.classList.remove("editing"); setVal(current); }
+        });
+
+        return {
+            el,
+            get: () => current,
+            set: (v) => setVal(v),
+        };
+    }
+
+    function makeVec3Field(label, defaults = [0,0,0], { step = 0.01, speed = 0.5, decimals = 3, onChange = null } = {}) {
+        const el = document.createElement("div");
+        el.className = "field-group";
+        el.innerHTML = `<div class="field-label">${label}</div>`;
+
+        const row = document.createElement("div");
+        row.className = "vec-row";
+        el.appendChild(row);
+
+        const drags = [];
+        ["x","y","z"].forEach((axis, i) => {
+            const lbl = document.createElement("span");
+            lbl.className = `vec-axis ${axis}`;
+            lbl.textContent = axis.toUpperCase();
+            row.appendChild(lbl);
+
+            const d = makeDragInput({ value: defaults[i] ?? 0, step, speed, decimals, onChange: onChange ? () => onChange() : null });
+            row.appendChild(d.el);
+            drags.push(d);
+        });
+
+        return {
+            el,
+            get: () => drags.map(d => d.get()),
+            set: (vals) => drags.forEach((d, i) => d.set(vals[i] ?? 0)),
+        };
+    }
+
+    function makeColorField(label, defaults = [1,1,1,1], onChangeExt = null) {
+        const el = document.createElement("div");
+        el.className = "field-group";
+        el.innerHTML = `<div class="field-label">${label}</div>`;
+
+        const row = document.createElement("div");
+        row.className = "color-field-row";
+
+        const preview = document.createElement("div");
+        preview.className = "color-preview";
+        preview.style.background = colorToHex(defaults);
+
+        const grid = document.createElement("div");
+        grid.className = "color-inputs-grid";
+
+        const drags = [];
+        ["R","G","B","A"].forEach((lbl, i) => {
+            const lblEl = document.createElement("span");
+            lblEl.className = "vec-axis";
+            lblEl.style.cssText = "font-size:9px;color:var(--text-dim);";
+            lblEl.textContent = lbl;
+            grid.appendChild(lblEl);
+
+            const d = makeDragInput({
+                value: defaults[i] ?? 1,
+                step: 0.01, speed: 0.4, decimals: 2,
+                clamp: [0, 1],
+                onChange: () => {
+                    const rgba = drags.map(d => d.get());
+                    preview.style.background = colorToHex(rgba);
+                    if (onChangeExt) onChangeExt(rgba);
+                },
+            });
+            grid.appendChild(d.el);
+            drags.push(d);
+        });
+
+        row.appendChild(preview);
+        row.appendChild(grid);
+        el.appendChild(row);
+
+        return {
+            el,
+            get: () => drags.map(d => d.get()),
+        };
+    }
+
+    // -----------------------══
+    // Boot: load all models
+    // -----------------------══
+    for (const [modelKey, url] of Object.entries(MODELS)) {
+        modelRegistry.set(modelKey, {
+            url, status: "loading",
+            skeleton: null, primMorphInfo: [],
+            logicalMorphCount: 0, morphTargetNames: null, meshDefaultWeights: [],
+            instances: [],
+            _open: false,
+        });
+        rebuildModelEntry(modelKey);
+
+        loadAndRegisterModel(modelKey, url).then(result => {
+            const reg = modelRegistry.get(modelKey);
+            Object.assign(reg, result, { status: "loaded" });
+            rebuildModelEntry(modelKey);
+        }).catch(err => {
+            console.error(`[Rig] Failed to load "${modelKey}":`, err);
+            modelRegistry.get(modelKey).status = "error";
+            rebuildModelEntry(modelKey);
+        });
+    }
+
+})().catch(console.error);
+</script>
+</body>
+</html>

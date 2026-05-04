@@ -52,8 +52,9 @@ const WELCOME_LEFT_SIDE_CONFIG = {
     },
 };
 
-// EzCanvas2D runtime (replaces old JellyTank + Starglitter scripts)
+// EzCanvas2D runtime
 (function() {
+    return;
     if (!window.EzCanvas2D) return;
 
     const toRange = (min, max) => min + Math.random() * (max - min);
@@ -1033,103 +1034,6 @@ function animateStaggeredSequence(spans, options, revealCallback) {
             welcomeParallax.refresh();
         });
     }
-})();
-
-// Shared circle reveal + copied tank controller for content sections
-(function() {
-    const mainCanv = window.mainJellyCanv ?? null;
-    if (!mainCanv) return;
-
-    const sectionLinks = [
-        { inputId: "toggle-biography", sectionId: "biography" },
-        { inputId: "toggle-introduction", sectionId: "introduction" },
-        { inputId: "toggle-news", sectionId: "news" },
-        { inputId: "toggle-discography", sectionId: "discography" },
-        { inputId: "toggle-merch", sectionId: "merch" },
-    ];
-
-    const sections = [];
-    for (const link of sectionLinks) {
-        const input = document.getElementById(link.inputId);
-        const section = document.getElementById(link.sectionId);
-        if (!input || !section) continue;
-
-        sections.push({
-            input,
-            section,
-            closeTimerId: null,
-        });
-    }
-
-    if (sections.length === 0) return;
-
-    const isSectionOpen = (item) => item.input.checked;
-
-    const openSection = (item) => {
-        if (item.closeTimerId != null) {
-            clearTimeout(item.closeTimerId);
-            item.closeTimerId = null;
-        }
-        // Sections are transparent — the main jelly canvas shows through.
-        // No per-section canvas needed; the main tank keeps running.
-    };
-
-    const closeSection = (item) => {
-        if (item.closeTimerId != null) {
-            clearTimeout(item.closeTimerId);
-            item.closeTimerId = null;
-        }
-        // Sections are transparent — nothing to tear down canvas-wise.
-    };
-
-    const syncSections = () => {
-        for (const item of sections) {
-            if (isSectionOpen(item)) {
-                openSection(item);
-            } else {
-                closeSection(item);
-            }
-        }
-    };
-
-    const setRevealOriginFromEvent = (e) => {
-        // Sync origin on each section (used by section's own mask)
-        for (const item of sections) {
-            const rect = item.section.getBoundingClientRect();
-            const localX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-            const localY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
-
-            item.section.style.setProperty("--reveal-x", `${localX}px`);
-            item.section.style.setProperty("--reveal-y", `${localY}px`);
-        }
-
-        // Sync origin on #welcome so its inverted mask uses the same click point
-        const welcome = document.getElementById("welcome");
-        if (welcome) {
-            const rect = welcome.getBoundingClientRect();
-            const localX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-            const localY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
-            welcome.style.setProperty("--reveal-x", `${localX}px`);
-            welcome.style.setProperty("--reveal-y", `${localY}px`);
-        }
-    };
-
-    document.addEventListener("pointermove", setRevealOriginFromEvent, true);
-    document.addEventListener("pointerdown", setRevealOriginFromEvent, true);
-
-    const syncInputIds = ["toggle-none", ...sectionLinks.map((link) => link.inputId)];
-    const syncInputs = new Set();
-    for (const inputId of syncInputIds) {
-        const input = document.getElementById(inputId);
-        if (!input) continue;
-        syncInputs.add(input);
-    }
-
-    for (const input of syncInputs) {
-        input.addEventListener("change", syncSections);
-    }
-
-    syncSections();
 })();
 
 // Custom floaters (context + tooltip)

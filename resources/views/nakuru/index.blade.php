@@ -21,13 +21,7 @@
 </head>
 
 <body>
-    <input type="radio" name="toggle" id="toggle-none" hidden checked>
-    <input type="radio" name="toggle" id="toggle-introduction" hidden>
-    <input type="radio" name="toggle" id="toggle-news" hidden>
-    <input type="radio" name="toggle" id="toggle-discography" hidden>
-    <input type="radio" name="toggle" id="toggle-merch" hidden>
-
-    <input type="checkbox" id="toggle-biography" hidden>
+    <input type="checkbox" name="toggle" id="toggle-reveal" hidden>
 
     <header>
         <h1>Nakucha Fanclub</h1>
@@ -40,79 +34,42 @@
             <a href="#">Merch</a>
         </nav>
     </header>
-    <div id="jellytank"></div>
+
+    <div id="global-canvas"></div>
 
     <div id="welcome">
-        <input type="checkbox" id="toggle-popup" hidden>
+        <!-- We are absolutely going to redesign this entire thing from scratch -->
 
-        <div class="scene" aria-hidden="true">
-            <img class="background" src="{{ asset('assets/images/welcome_background.png') }}" alt="">
-            <div id="starglitter"></div>
-            <img class="nakuru" src="{{ asset('assets/images/welcome_nakuru.png') }}" alt="">
-            <img class="foreground" src="{{ asset('assets/images/welcome_foreground.png') }}" alt="">
-        </div>
+        <input type="checkbox" id="toggle-popup" hidden>
 
         <div class="left-side">
             <h2 id="insane-effect-1">News from our beloved</h2>
-            <label for="toggle-biography" id="nakuru-name-1"></label>
+            <label for="toggle-reveal" id="nakuru-name-1">
+            </label>
             <label for="toggle-popup">
                 <p class="not-hover">We got you covered!</p>
             </label>
         </div>
-
-        <div class="right-side">
-            <label for="toggle-introduction" class="introduction">
-                <div class="introduction-div">Introduction</div>
-            </label>
-            <label for="toggle-news" class="news">
-                <div class="news-div">News</div>
-            </label>
-            <label for="toggle-discography" class="discography">
-                <div class="discography-div">Discography</div>
-            </label>
-            <label for="toggle-merch" class="merch">
-                <div class="merch-div">Merch</div>
-            </label>
-        </div>
     </div>
 
-    <div id="biography" class="reveal-section">
-        <div class="reveal-section-content">
+    <div id="reveal">
+        <div class="reveal-content">
             <h2>Biography</h2>
-            <p>Your biography content goes here</p>
-            <label for="toggle-biography" class="reveal-close-btn">Close</label>
-        </div>
-    </div>
-
-    <div id="introduction" class="reveal-section">
-        <div class="reveal-section-content">
-            <h2>Introduction</h2>
-            <p></p>
-            <label for="toggle-none" class="reveal-close-btn">Close</label>
-        </div>
-    </div>
-
-    <div id="news" class="reveal-section">
-        <div class="reveal-section-content">
-            <h2>News</h2>
-            <p></p>
-            <label for="toggle-none" class="reveal-close-btn">Close</label>
-        </div>
-    </div>
-
-    <div id="discography" class="reveal-section">
-        <div class="reveal-section-content">
-            <h2>Discography</h2>
-            <p></p>
-            <label for="toggle-none" class="reveal-close-btn">Close</label>
-        </div>
-    </div>
-
-    <div id="merch" class="reveal-section">
-        <div class="reveal-section-content">
-            <h2>Merch</h2>
-            <p></p>
-            <label for="toggle-none" class="reveal-close-btn">Close</label>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            <p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p><p>Test</p>
+            
+            <label for="toggle-reveal" class="reveal-close-btn">Close</label>
         </div>
     </div>
 
