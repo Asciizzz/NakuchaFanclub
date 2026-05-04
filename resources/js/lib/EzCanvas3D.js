@@ -1571,11 +1571,31 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
 
         #instanceCounter = 0;
 
+        #logicalWidth  = 800;
+        #logicalHeight = 600;
+        #pixelRatio    = 1;
+        #maxPixelRatio = 2;
+        #msaaEnabled   = false;
+
         camera = null;
 
         settings = {
             width: () => this.#canvas.width,
             height: () => this.#canvas.height,
+            logicalWidth: () => this.#logicalWidth,
+            logicalHeight: () => this.#logicalHeight,
+            pixelRatio: () => this.#pixelRatio,
+            setPixelRatio: (ratio) => {
+                this.#pixelRatio = this.#clampPixelRatio(ratio);
+                this.#applyViewportSize();
+                return this.#pixelRatio;
+            },
+            aaInfo: () => ({
+                mode: "msaa+ssaa",
+                msaa: this.#msaaEnabled,
+                pixelRatio: this.#pixelRatio,
+                maxPixelRatio: this.#maxPixelRatio,
+            }),
             fitContainer: () => {
                 const parent = this.#canvas.parentElement;
                 if (!parent) return;
@@ -1584,7 +1604,7 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             }
         };
 
-        constructor(name) {
+        constructor(name, opts = {}) {
             this.name = name || "canvas";
             const c = document.createElement("canvas");
             c.width  = 800;
@@ -1592,9 +1612,17 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             c.style.background = "transparent";
             this.#canvas = c;
 
-            const gl = c.getContext("webgl2", { alpha: true });
+            const antialias = typeof opts.antialias === "boolean" ? opts.antialias : true;
+            const gl = c.getContext("webgl2", { alpha: true, antialias });
             if (!gl) throw new Error(`${TAGC3D} WebGL2 not supported`);
             this.#gl = gl;
+
+            this.#maxPixelRatio = (typeof opts.maxPixelRatio === "number" && Number.isFinite(opts.maxPixelRatio))
+                ? Math.max(1, opts.maxPixelRatio)
+                : 2;
+            const initialPR = opts.pixelRatio ?? (typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1);
+            this.#pixelRatio = this.#clampPixelRatio(initialPR);
+            this.#msaaEnabled = !!gl.getContextAttributes()?.antialias;
 
             gl.enable(gl.DEPTH_TEST);
             gl.enable(gl.CULL_FACE);
@@ -1607,7 +1635,28 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             this.#morphDummyWeight = _dummyTex(gl, gl.R32F,   gl.RED,  gl.FLOAT,         new Float32Array([0]));
 
             this.camera = new EzCamera3D();
+            this.#applyViewportSize();
             this.#registerAssets();
+        }
+
+        #clampPixelRatio(v) {
+            const n = Number(v);
+            if (!Number.isFinite(n) || n <= 0) return 1;
+            return EzMath.clamp(n, 0.5, this.#maxPixelRatio);
+        }
+
+        #applyViewportSize() {
+            const drawW = Math.max(1, Math.round(this.#logicalWidth * this.#pixelRatio));
+            const drawH = Math.max(1, Math.round(this.#logicalHeight * this.#pixelRatio));
+
+            this.#canvas.style.width = `${this.#logicalWidth}px`;
+            this.#canvas.style.height = `${this.#logicalHeight}px`;
+
+            if (this.#canvas.width !== drawW) this.#canvas.width = drawW;
+            if (this.#canvas.height !== drawH) this.#canvas.height = drawH;
+
+            this.#gl.viewport(0, 0, drawW, drawH);
+            if (this.camera) this.camera.aspect = this.#logicalWidth / Math.max(1e-6, this.#logicalHeight);
         }
 
         #registerAssets() {
@@ -1749,9 +1798,9 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
         }
         unmount()   { this.#canvas.parentElement?.removeChild(this.#canvas);   return this; }
         resize(w, h) {
-            this.#canvas.width = w; this.#canvas.height = h;
-            this.#gl.viewport(0, 0, w, h);
-            this.camera.aspect = w / h;
+            this.#logicalWidth = Math.max(1, Math.round(w));
+            this.#logicalHeight = Math.max(1, Math.round(h));
+            this.#applyViewportSize();
             return this;
         }
 

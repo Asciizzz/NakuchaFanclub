@@ -912,7 +912,11 @@ const MODELS = {
 
     // ── Engine ────────────────────────────────────────────────────────────
     const wrap = document.getElementById("canvas-wrap");
-    const ez   = new EzCanvas3D("rig");
+    const ez   = new EzCanvas3D("rig", { 
+        antialias: true,      // request MSAA from backend
+        pixelRatio: 1.5,      // supersampled backbuffer
+        maxPixelRatio: 2
+    });
     ez.mount(wrap);
     ez.settings.fitContainer();
     new ResizeObserver(() => ez.settings.fitContainer()).observe(wrap);
