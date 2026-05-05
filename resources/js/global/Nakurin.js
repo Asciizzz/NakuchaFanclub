@@ -221,57 +221,6 @@
         get modelMat() {
             return EzMath.Mat4.compose(this.position, this.rotation, this.scale);
         }
-
-        walk(opts = {}) {
-            const cadence  = opts.cadence  ?? 1.6;
-            const stride   = opts.stride   ?? 0.7;
-            const bob      = opts.bob      ?? 0.04;
-            const kneeBend = opts.kneeBend ?? 1.4;
-            const t        = opts.t != null ? opts.t : this.t;
-
-            const phase = t * cadence;
-
-            const easedSine = (x, p = 0.65) => {
-                const s = Math.sin(x * Math.PI * 2);
-                return Math.sign(s) * Math.pow(Math.abs(s), p);
-            };
-
-            const easeInOutCubic = (x) => x < 0.5
-                ? 4 * x * x * x
-                : 1 - Math.pow(-2 * x + 2, 3) / 2;
-
-            const sR = easedSine(phase);
-            const sL = -sR;
-
-            const flex = (s) => {
-                const k = Math.max(0, s);                   // 0..1
-                return easeInOutCubic(k) * kneeBend * stride;
-            };
-
-            const dipPhase = (Math.cos(phase * Math.PI * 4) + 1) * 0.5; // 0..1, peaks at strikes
-            const hipY = -easeInOutCubic(dipPhase) * bob;
-
-            const twist = sR * 0.18;
-
-            this.setBone("Hip", { position: [0, hipY, 0], euler: [0, twist * 0.4, 0] });
-
-            this.setBone("ThighRight", { euler: [-sR * stride, 0, 0] });
-            this.setBone("ThighLeft",  { euler: [-sL * stride, 0, 0] });
-            this.setBone("ShinRight",  { euler: [ flex(sR),    0, 0] });
-            this.setBone("ShinLeft",   { euler: [ flex(sL),    0, 0] });
-
-            // const armDrop   = opts.armDrop   ?? -1.35; // ≈ -77°  (arms near sides)
-            // const elbowBend = opts.elbowBend ?? -1.55; // ≈ -89°  (L-shape)
-            // this.setBone("ShoulderRight", { euler: [armDrop, 0,  aR] });
-            // this.setBone("ShoulderLeft",  { euler: [armDrop, 0, -aL] });
-            // this.setBone("ForearmRight",  { euler: [elbowBend, 0, 0] });
-            // this.setBone("ForearmLeft",   { euler: [elbowBend, 0, 0] });
-
-            this.setBone("Chest", { euler: [0, -twist, 0] });
-            this.setBone("Head",  { euler: [0,  twist * 0.5, 0] });
-
-            return this;
-        }
     }
 
 
@@ -288,14 +237,11 @@
         #boneNameMap = new Map();
 
         #bonesTex    = null;
-        // Per-shader pack buffers. Keyed by shader.instanceLayout (WeakMap) so
-        // growth is amortized across frames without clashing between passes.
         #packBuffers = new WeakMap();
         #bonesArr    = null;
 
-        // Texture resources (managed internally, no EzCanvas3D asset manager).
-        #textures      = [];   // WebGLTexture indexed by gltf texture idx
-        #whiteTex      = null; // 1x1 white fallback for untextured primitives
+        #textures      = [];
+        #whiteTex      = null;
         #primAlbedoTex = [];   // WebGLTexture per fill-mesh primitive index
 
         #ready   = false;
@@ -397,7 +343,7 @@
         }
 
         spawn(init = {}) {
-            if (!this.#ready) throw new Error("[Nakusea] spawn() called before init() resolved");
+            if (!this.#ready) return null;
             const n = new Nakurin(init);
             n._sea      = this;
             n.bonePoses = Array.from({ length: this.boneCount }, EzMath.Mat4.identity);

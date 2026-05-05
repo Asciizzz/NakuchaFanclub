@@ -18,9 +18,7 @@ sea.init().then(() => {
     sea.spawn({
         position: [0, 0, 0],
         rotation: EzMath.Quat.fromEulerYPR(45, 0, 0),
-        behavior: (self) => {
-            self.walk( { kneeBend: 2.3, cadence: 2.3 } )
-        }
+        behavior: (self) => {}
     });
 }).catch(err => console.error("[contentCanvas] Nakusea init failed:", err));
 
