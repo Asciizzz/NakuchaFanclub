@@ -446,24 +446,17 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
                 return [s0*ax+s1*bx, s0*ay+s1*by, s0*az+s1*bz, s0*aw+s1*bw];
             },
 
-            // Inverse of fromEulerYPR: q = Ry(yaw) * Rx(pitch) * Rz_neg(roll),
-            // i.e. intrinsic Y-X-(-Z) with roll axis = [0,0,-1]. Returns degrees.
             toEulerYPR([x, y, z, w]) {
                 const r2d = 180 / Math.PI;
-                // R[1][2] = 2(yz - wx) = -sin(pitch)
                 const sp = 2 * (w * x - y * z);            // = sin(pitch)
                 const pitch = Math.abs(sp) >= 0.999999
                     ? Math.sign(sp) * 90
                     : Math.asin(sp) * r2d;
                 if (Math.abs(sp) >= 0.999999) {
-                    // Gimbal lock: cos(pitch) ≈ 0. Fold roll into yaw, set roll = 0.
-                    // Use R[0][1] = 2(xy - wz) and R[0][0] = 1 - 2(y²+z²).
                     const yaw = Math.atan2(-2 * (x * y - w * z), 1 - 2 * (y * y + z * z)) * r2d;
                     return { yaw, pitch, roll: 0 };
                 }
-                // yaw = atan2(R[0][2], R[2][2])
                 const yaw = Math.atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y)) * r2d;
-                // roll = -atan2(R[1][0], R[1][1])  (negated because roll axis is -Z)
                 const roll = -Math.atan2(2 * (x * y + w * z), 1 - 2 * (x * x + z * z)) * r2d;
                 return { yaw, pitch, roll };
             },
@@ -821,6 +814,9 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             return program;
         }
     }
+
+// Every thing below this line is highly specialized for 3D-object-driven rendering
+// --------------------------------------------------------------------------------
 
     class EzShader3D extends EzShader {
         attributes     = [];   // [{ name, size, loc, default }]
