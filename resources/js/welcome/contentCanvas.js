@@ -14,13 +14,12 @@ camera.set({ position: [0, 1.2, 4.5], near: 0.1, far: 100, fov: 45, aspect: ez3d
 camera.lookAt([0, 0.0, 0]);
 
 const sea = new Nakusea(gl);
-
 sea.init().then(() => {
     sea.spawn({
         position: [0, 0, 0],
         rotation: EzMath.Quat.fromEulerYPR(45, 0, 0),
         behavior: (self) => {
-            self.walk( { kneeBend: 2.3 } )
+            self.walk( { kneeBend: 2.3, cadence: 2.3 } )
         }
     });
 }).catch(err => console.error("[contentCanvas] Nakusea init failed:", err));
