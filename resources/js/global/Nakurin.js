@@ -162,30 +162,41 @@
         static MODEL_URL = "/Models/Nakurin.glb";
 
         // pose
-        position = [0, 0, 0];
-        rotation = [0, 0, 0, 1];
-        scale    = [1, 1, 1];
-        color    = [1, 1, 1, 1];
+        position = new Vec3(0, 0, 0);
+        rotation = new Quat();
+        scale    = new Vec3(1, 1, 1);
+        color    = new Vec4(1, 1, 1, 1);
         // .rgb = outline color, .w = outline thickness (world units).
-        outlineColor = [0, 0, 0, 0.01];
+        outlineColor = new Vec4(0, 0, 0, 0.01);
         behavior = null;
         variables = {}; // for behavior
-        bonePoses = null;
+        bonePoses = null; // Mat4[]
         t = 0;
 
         _sea = null;
 
         constructor(init = {}) {
-            if (init.position) this.position = [init.position[0], init.position[1], init.position[2]];
-            if (init.rotation) this.rotation = [init.rotation[0], init.rotation[1], init.rotation[2], init.rotation[3]];
-            if (init.scale != null) {
-                this.scale = Array.isArray(init.scale)
-                    ? [init.scale[0], init.scale[1], init.scale[2]]
-                    : [init.scale, init.scale, init.scale];
+            if (init.position != null) {
+                if (init.position.kind === Vec3.KIND) this.position.copy(init.position);
+                else this.position.set(init.position);
             }
-            if (init.color)        this.color        = [...init.color];
-            if (init.outlineColor) this.outlineColor = [...init.outlineColor];
-            if (init.behavior)     this.behavior     = init.behavior;
+            if (init.rotation != null) {
+                if (init.rotation.kind === Quat.KIND) this.rotation.copy(init.rotation);
+                else this.rotation.set(init.rotation);
+                EzMath.normalize(this.rotation, this.rotation);
+            }
+            if (init.scale != null) {
+                if (init.scale.kind === Vec3.KIND) {
+                    this.scale.copy(init.scale);
+                } else if (typeof init.scale === 'number') {
+                    this.scale.data[0] = this.scale.data[1] = this.scale.data[2] = init.scale;
+                } else {
+                    this.scale.set(init.scale);
+                }
+            }
+            if (init.color        != null) this.color.set(init.color);
+            if (init.outlineColor != null) this.outlineColor.set(init.outlineColor);
+            if (init.behavior)             this.behavior = init.behavior;
         }
 
         boneID(idOrName) {
@@ -202,14 +213,13 @@
             if (!this.bonePoses) return this;
             const id = this.boneID(idOrName);
             if (id < 0 || id >= this.bonePoses.length) return this;
-            this.bonePoses[id] = EzMath.Mat4.resolveTransform(transform, this.bonePoses[id]);
+            EzMath.resolveTransform(this.bonePoses[id], transform, this.bonePoses[id]);
             return this;
         }
 
         resetPose() {
             if (!this.bonePoses) return this;
-            for (let i = 0; i < this.bonePoses.length; i++)
-                this.bonePoses[i] = EzMath.Mat4.identity();
+            for (const m of this.bonePoses) m.identity();
             return this;
         }
 
@@ -218,8 +228,9 @@
             if (this.behavior) this.behavior(this, dt, this.t);
         }
 
+        #_modelMat = new Mat4();
         get modelMat() {
-            return EzMath.Mat4.compose(this.position, this.rotation, this.scale);
+            return EzMath.compose(this.#_modelMat, this.position, this.rotation, this.scale);
         }
     }
 
@@ -346,7 +357,7 @@
             if (!this.#ready) return null;
             const n = new Nakurin(init);
             n._sea      = this;
-            n.bonePoses = Array.from({ length: this.boneCount }, EzMath.Mat4.identity);
+            n.bonePoses = Array.from({ length: this.boneCount }, () => new Mat4());
             this.#instances.push(n);
             return n;
         }
@@ -408,9 +419,9 @@
             for (let i = 0; i < N; i++) {
                 const n    = this.#instances[i];
                 const base = i * strideF;
-                if (matOff >= 0) arr.set(n.modelMat,     base + matOff);
-                if (colOff >= 0) arr.set(n.color,        base + colOff);
-                if (oclOff >= 0) arr.set(n.outlineColor, base + oclOff);
+                if (matOff >= 0) arr.set(n.modelMat.data,     base + matOff);
+                if (colOff >= 0) arr.set(n.color.data,        base + colOff);
+                if (oclOff >= 0) arr.set(n.outlineColor.data, base + oclOff);
             }
             return arr.subarray(0, need);
         }
@@ -488,8 +499,8 @@
                 4, N * B, boneData
             );
 
-            this._cachedView = camera.view;
-            this._cachedProj = camera.projection;
+            this._cachedView = camera.view.data;
+            this._cachedProj = camera.projection.data;
 
             const outlineInst = this.#packInstancesFor(this.#shaderOutline);
             this.#drawPass(this.#shaderOutline, this.#meshOutline, outlineInst, null);

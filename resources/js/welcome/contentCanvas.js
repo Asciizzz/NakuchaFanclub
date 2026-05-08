@@ -15,9 +15,10 @@ camera.lookAt([0, 0.0, 0]);
 
 const sea = new Nakusea(gl);
 sea.init().then(() => {
+    const spawnRot = EzMath.fromEulerYPR(new Quat(), 45, 0, 0);
     sea.spawn({
         position: [0, 0, 0],
-        rotation: EzMath.Quat.fromEulerYPR(45, 0, 0),
+        rotation: spawnRot,
         behavior: (self) => {}
     });
 }).catch(err => console.error("[contentCanvas] Nakusea init failed:", err));
