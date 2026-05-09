@@ -3,7 +3,7 @@
 	src: url('../assets/fonts/Outfit-VariableFont_wght.ttf') format('truetype');
 }
 
-/* Registered custom properties — must be @property for CSS transition to work on them */
+/* Registered custom properties - must be @property for CSS transition to work on them */
 @property --reveal-radius {
 	syntax: "<length>";
 	inherits: false;

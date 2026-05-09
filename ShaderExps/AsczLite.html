@@ -1,0 +1,1945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>AsczLite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+        --bg:         #0d0e11;
+        --surface:    #13151a;
+        --surface2:   #1a1d25;
+        --surface3:   #21252f;
+        --border:     rgba(255,255,255,.07);
+        --border2:    rgba(255,255,255,.12);
+        --text:       #c8cad4;
+        --text-dim:   #5a5e72;
+        --text-mid:   #8b8fa8;
+        --accent:     #3d85ff;
+        --accent-glow:rgba(61,133,255,.18);
+        --green:      #3dffb0;
+        --orange:     #ff9b3d;
+        --danger:     #ff4d6a;
+        --left-w:     270px;
+        --right-w:    310px;
+    }
+
+    body {
+        background: var(--bg);
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 12px;
+        color: var(--text);
+        overflow: hidden;
+        height: 100vh;
+    }
+
+    #canvas-wrap     { position: fixed; inset: 0; z-index: 0; }
+    #canvas-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
+
+    #ui {
+        position: fixed; inset: 0; z-index: 10;
+        display: flex;
+        pointer-events: none;
+    }
+
+    .panel {
+        pointer-events: all;
+        background: var(--surface);
+        border: 0 solid var(--border);
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        flex-shrink: 0;
+    }
+    #left-panel  { width: var(--left-w);  border-right-width: 1px; }
+    #right-panel { width: var(--right-w); border-left-width:  1px; margin-left: auto; }
+
+    .sect {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .sect:last-child { border-bottom: none; }
+    .sect-head {
+        display: flex; align-items: center; gap: 6px;
+        padding: 9px 12px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px; letter-spacing: .14em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        cursor: pointer;
+        user-select: none;
+        flex-shrink: 0;
+        background: var(--surface);
+        transition: color .12s, background .12s;
+    }
+    .sect-head:hover { color: var(--text); background: var(--surface2); }
+    .sect-head .arrow {
+        font-size: 8px;
+        transition: transform .15s;
+    }
+    .sect.collapsed .sect-head .arrow { transform: rotate(-90deg); }
+    .sect-body {
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        padding: 6px;
+    }
+    .sect.collapsed .sect-body { display: none; }
+
+    .sect.flex-share { flex: 1 1 0; min-height: 80px; }
+    .sect.flex-fixed { flex: 0 0 auto; }
+
+    .sect-body::-webkit-scrollbar,
+    #inspector-body::-webkit-scrollbar { width: 4px; height: 4px; }
+    .sect-body::-webkit-scrollbar-thumb,
+    #inspector-body::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+
+    .cam-hud {
+        position: fixed;
+        right: calc(var(--right-w) + 14px);
+        bottom: 14px;
+        z-index: 20;
+        min-width: 200px;
+        background: rgba(19, 21, 26, .88);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        user-select: none;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        overflow: hidden;
+    }
+    .cam-hud-head {
+        padding: 6px 10px;
+        font-size: 9px;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        cursor: pointer;
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 1px solid var(--border);
+    }
+    .cam-hud-head:hover { color: var(--text); }
+    .cam-hud-arrow { font-size: 8px; opacity: .7; transition: transform .15s; }
+    .cam-hud.collapsed .cam-hud-arrow { transform: rotate(-90deg); }
+    .cam-hud.collapsed .cam-hud-body  { display: none; }
+    .cam-hud.collapsed { min-width: 0; }
+    .cam-hud-body {
+        padding: 8px 10px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        column-gap: 10px; row-gap: 3px;
+        line-height: 1.4;
+    }
+    .cam-hud-body .k { color: var(--text-dim); }
+    .cam-hud-body .v { color: var(--text); text-align: right; white-space: nowrap; }
+
+
+    .tree-row {
+        display: flex; align-items: center; gap: 4px;
+        padding: 3px 6px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        color: var(--text-mid);
+        line-height: 1.4;
+        transition: background .1s, color .1s;
+        white-space: nowrap;
+    }
+    .tree-row:hover    { background: var(--surface2); color: var(--text); }
+    .tree-row.selected { background: var(--accent-glow); color: var(--accent); }
+    .tree-arrow {
+        font-size: 8px;
+        color: var(--text-dim);
+        flex-shrink: 0;
+        width: 12px; text-align: center;
+    }
+    .tree-arrow.leaf { color: var(--surface3); }
+    .tree-label {
+        flex: 1;
+        overflow: hidden; text-overflow: ellipsis;
+    }
+    .tree-badge {
+        font-size: 8px;
+        padding: 1px 4px;
+        border-radius: 2px;
+        background: var(--surface3);
+        color: var(--text-dim);
+        flex-shrink: 0;
+        font-family: 'IBM Plex Mono', monospace;
+    }
+    .tree-badge.M { color: #ffcb6b; }
+    .tree-badge.S { color: #a3d4ff; }
+
+
+    .tree-row.dragging       { opacity: .35; }
+    .tree-row.drop-target    {
+        background: var(--accent-glow);
+        box-shadow: inset 0 0 0 1px rgba(61,133,255,.55);
+        color: var(--accent);
+    }
+    .tree-row.drop-forbid    {
+        background: rgba(255,77,106,.10);
+        box-shadow: inset 0 0 0 1px rgba(255,77,106,.45);
+        color: var(--danger);
+        cursor: not-allowed;
+    }
+
+    #hierarchy-tree { display: flex; flex-direction: column; }
+    .tree-empty-zone {
+        flex: 1;
+        min-height: 40px;
+        margin-top: 4px;
+        border: 1px dashed transparent;
+        border-radius: 4px;
+        transition: border-color .12s, background .12s;
+        user-select: none;
+        pointer-events: auto;
+    }
+    .tree-empty-zone.drop-active {
+        border-color: rgba(61,133,255,.55);
+        background: var(--accent-glow);
+    }
+
+    .model-btn {
+        display: flex; align-items: center; gap: 8px;
+        width: 100%;
+        padding: 6px 10px;
+        margin-bottom: 3px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text-mid);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        cursor: pointer;
+        text-align: left;
+        transition: background .12s, border-color .12s, color .12s;
+    }
+    .model-btn:hover { background: var(--surface3); color: var(--text); border-color: var(--border2); }
+    .model-btn:disabled { cursor: progress; opacity: .55; }
+    .model-btn .dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: var(--text-dim);
+        flex-shrink: 0;
+    }
+    .model-btn.loaded  .dot { background: var(--green); }
+    .model-btn.loading .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+    .model-btn.error   .dot { background: var(--danger); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+    #inspector-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+        min-height: 0;
+    }
+    .inspector-empty {
+        padding: 30px 20px;
+        text-align: center;
+        color: var(--text-dim);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        line-height: 1.6;
+    }
+    .insp-name {
+        padding: 10px 12px;
+        background: var(--surface2);
+        border-bottom: 1px solid var(--border);
+    }
+    .insp-name-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-bottom: 4px;
+    }
+    .insp-name-value {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        color: var(--accent);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .insp-section {
+        border-bottom: 1px solid var(--border);
+    }
+    .insp-section-head {
+        display: flex; align-items: center; gap: 6px;
+        padding: 8px 12px;
+        cursor: pointer;
+        user-select: none;
+        background: var(--surface);
+        transition: background .12s;
+    }
+    .insp-section-head:hover { background: var(--surface2); }
+    .insp-section-head .arrow { font-size: 8px; transition: transform .15s; color: var(--text-dim); }
+    .insp-section.collapsed .insp-section-head .arrow { transform: rotate(-90deg); }
+    .insp-section-head .title {
+        flex: 1;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--text);
+    }
+    .insp-section-body {
+        padding: 8px 10px 12px;
+        display: flex; flex-direction: column; gap: 8px;
+    }
+    .insp-section.collapsed .insp-section-body { display: none; }
+
+    .field-group {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+    .field-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-bottom: 1px;
+    }
+
+    .vec-row {
+        display: grid;
+        grid-template-columns: 12px 1fr 12px 1fr 12px 1fr;
+        gap: 3px;
+        align-items: center;
+    }
+    .vec-axis {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px; font-weight: 500;
+        text-align: center;
+    }
+    .vec-axis.x { color: #ff6b6b; }
+    .vec-axis.y { color: #6bff9e; }
+    .vec-axis.z { color: #6baaff; }
+
+    .drag-input {
+        position: relative;
+        background: var(--surface3);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        height: 22px;
+        overflow: hidden;
+        cursor: ew-resize;
+        user-select: none;
+        transition: border-color .12s;
+    }
+    .drag-input:hover  { border-color: var(--border2); }
+    .drag-input.editing  { cursor: text; border-color: var(--accent); background: var(--surface2); }
+    .drag-input.dragging { border-color: var(--accent); }
+    .drag-input.disabled { opacity: .35; pointer-events: none; }
+    .drag-input-fill {
+        position: absolute; inset: 0;
+        background: rgba(61,133,255,.10);
+        pointer-events: none;
+    }
+    .drag-input.editing .drag-input-fill { display: none; }
+    .drag-input-label {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        color: var(--text);
+        pointer-events: none;
+        white-space: nowrap;
+    }
+    .drag-input.editing .drag-input-label { display: none; }
+    .drag-input-field {
+        position: absolute; inset: 0;
+        background: transparent;
+        border: none;
+        outline: none;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        color: var(--text);
+        padding: 0 5px;
+        width: 100%;
+        opacity: 0;
+        pointer-events: none;
+        -moz-appearance: textfield;
+        appearance: textfield;
+    }
+    .drag-input-field::-webkit-outer-spin-button,
+    .drag-input-field::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .drag-input.editing .drag-input-field { opacity: 1; pointer-events: all; }
+
+    .color-row {
+        display: flex; gap: 6px; align-items: center;
+    }
+    .color-preview {
+        width: 28px; height: 28px;
+        border-radius: 4px;
+        border: 1px solid var(--border2);
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .color-grid {
+        display: grid;
+        grid-template-columns: 10px 1fr 10px 1fr 10px 1fr 10px 1fr;
+        gap: 3px;
+        flex: 1;
+        align-items: center;
+    }
+
+    .kv {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        align-items: center;
+        font-size: 10px;
+    }
+    .kv .k { color: var(--text-dim); font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .kv .v { color: var(--text); font-family: 'IBM Plex Mono', monospace; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .chk-row {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 10px;
+        color: var(--text-mid);
+        font-family: 'IBM Plex Mono', monospace;
+    }
+    .chk-row input[type="checkbox"] {
+        accent-color: var(--accent);
+        cursor: pointer;
+    }
+
+    .btn {
+        padding: 5px 10px;
+        background: var(--surface3);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        color: var(--text-mid);
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 10px;
+        cursor: pointer;
+        transition: background .12s, color .12s, border-color .12s;
+    }
+    .btn:hover    { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+    .btn.danger   { color: var(--danger); border-color: rgba(255,77,106,.25); }
+    .btn.danger:hover { background: rgba(255,77,106,.08); }
+    .btn.primary  { color: var(--accent); border-color: rgba(61,133,255,.3); }
+    .btn.primary:hover { background: var(--accent-glow); }
+
+    .fx-row {
+        display: flex; align-items: center; gap: 6px;
+        margin: 2px 0;
+    }
+    .fx-row .label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        color: var(--text-mid);
+        flex: 0 0 64px;
+    }
+    .fx-slider {
+        flex: 1;
+        accent-color: var(--accent);
+        height: 2px; cursor: pointer;
+    }
+    .fx-val {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        color: var(--text-dim);
+        width: 32px; text-align: right;
+        flex-shrink: 0;
+    }
+    .fx-color-input {
+        width: 28px; height: 18px;
+        border-radius: 3px;
+        border: 1px solid var(--border2);
+        cursor: pointer;
+        background: none;
+        padding: 0;
+        flex-shrink: 0;
+    }
+
+    .bone-list {
+        display: flex; flex-direction: column;
+        gap: 0;
+        max-height: 220px;
+        overflow-y: auto;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 3px;
+    }
+    .bone-list::-webkit-scrollbar { width: 4px; }
+    .bone-list::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+
+    .morph-filter {
+        flex: 1;
+        background: var(--surface3);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 4px 8px;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 10px;
+        color: var(--text);
+        outline: none;
+    }
+    .morph-filter:focus { border-color: var(--accent); }
+    .morph-list {
+        display: flex; flex-direction: column; gap: 2px;
+        max-height: 280px;
+        overflow-y: auto;
+    }
+    .morph-list::-webkit-scrollbar { width: 4px; }
+    .morph-list::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+    .morph-row {
+        display: grid;
+        grid-template-columns: 1fr 80px 32px;
+        align-items: center; gap: 6px;
+        padding: 3px 4px;
+        border-radius: 3px;
+        font-size: 10px;
+        color: var(--text-mid);
+    }
+    .morph-row:hover  { background: var(--surface2); }
+    .morph-row.active { color: var(--text); }
+    .morph-row.hidden { display: none; }
+    .morph-name {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-family: 'IBM Plex Mono', monospace;
+    }
+    .morph-slider {
+        accent-color: var(--accent);
+        height: 2px;
+    }
+    .morph-val {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        color: var(--text-dim);
+        text-align: right;
+    }
+
+    .toolbar {
+        display: flex; align-items: center; gap: 4px;
+        margin-left: auto;
+    }
+    .toolbar .icon-btn {
+        width: 22px; height: 22px;
+        display: flex; align-items: center; justify-content: center;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        color: var(--text-dim);
+        cursor: pointer;
+        font-size: 12px;
+        line-height: 1;
+        transition: color .12s, background .12s, border-color .12s;
+    }
+    .toolbar .icon-btn:hover { color: var(--text); background: var(--surface2); border-color: var(--border2); }
+
+    .divider {
+        height: 1px;
+        background: var(--border);
+        margin: 4px 0;
+    }
+    </style>
+</head>
+
+<body>
+    <div id="canvas-wrap"></div>
+
+    <div id="cam-hud" class="cam-hud">
+        <div class="cam-hud-head" id="cam-hud-head">
+            <span>Camera</span>
+            <span class="cam-hud-arrow">▼</span>
+        </div>
+        <div class="cam-hud-body">
+            <span class="k">Pos</span>   <span class="v" id="ch-pos">0.00, 0.00, 0.00</span>
+            <span class="k">Yaw</span>   <span class="v" id="ch-yaw">0.00°</span>
+            <span class="k">Pitch</span> <span class="v" id="ch-pit">0.00°</span>
+            <span class="k">Fwd</span>   <span class="v" id="ch-fwd">0.00, 0.00, -1.00</span>
+            <span class="k">FPS</span>   <span class="v" id="ch-fps">0</span>
+        </div>
+    </div>
+
+    <div id="ui">
+        <!-- LEFT: Hierarchy + Models + FX -->
+        <div class="panel" id="left-panel">
+
+            <!-- Scene hierarchy (flexes to fill) -->
+            <div class="sect flex-share" id="sect-hierarchy">
+                <div class="sect-head">
+                    <span class="arrow">▼</span>
+                    <span>Hierarchy</span>
+                    <div class="toolbar">
+                        <button class="icon-btn" id="hier-collapse-all" title="Collapse all">⇕</button>
+                    </div>
+                </div>
+                <div class="sect-body" id="hierarchy-tree"></div>
+            </div>
+
+            <!-- Models palette (auto height) -->
+            <div class="sect flex-fixed" id="sect-models">
+                <div class="sect-head">
+                    <span class="arrow">▼</span>
+                    <span>Models</span>
+                </div>
+                <div class="sect-body" id="model-palette" style="max-height: 200px;"></div>
+            </div>
+
+            <!-- Shader FX (auto height) -->
+            <div class="sect flex-fixed" id="sect-fx">
+                <div class="sect-head">
+                    <span class="arrow">▼</span>
+                    <span>Shaders</span>
+                </div>
+                <div class="sect-body" id="fx-controls"></div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT: Inspector -->
+        <div class="panel" id="right-panel">
+            <div class="sect-head" style="cursor: default;">
+                <span>Inspector</span>
+            </div>
+            <div id="inspector-body">
+                <div class="inspector-empty">Select a node in the hierarchy.</div>
+            </div>
+        </div>
+    </div>
+
+<script src="EzCanvas3D.js"></script>
+<script src="EzLoader.js"></script>
+<script src="EzProject.js"></script>
+<script>
+    "use strict";
+
+    const MODELS = {
+        "Frog":           "../public/Models/Frog.glb",
+        "NintendoSwitch": "../public/Models/NintendoSwitch.glb",
+        "Isometric":      "../public/Models/Isometric.glb",
+        "Nakurin":        "../public/Models/Nakurin.glb",
+        "Agnes":          "../public/Models/Agnes.glb",
+    };
+
+    const SHADER_LIT     = "lit";
+    const SHADER_OUTLINE = "outline";
+    const SHADER_SKY     = "sky";
+    const MESH_SKY       = "__sky__";
+    const MORPH_POS      = "u_morphPosTex";
+    const MORPH_NRM      = "u_morphNrmTex";
+
+(async () => {
+
+    const wrap     = document.getElementById("canvas-wrap");
+    const canvas3d = new EzCanvas3D("rig", { antialias: true, alpha: false, pixelRatio: 1.5, maxPixelRatio: 2 });
+    canvas3d.mount(wrap);
+    canvas3d.fitContainer();
+
+    const project = new EzProject(canvas3d);
+    project.camera.set({ aspect: canvas3d.info.aspectRatio, position: [0, 1.5, 5] });
+
+    new ResizeObserver(() => {
+        canvas3d.fitContainer();
+        project.camera.set({ aspect: canvas3d.info.aspectRatio });
+    }).observe(wrap);
+
+    // Scratch math instances (reused across frame)
+    const _v0 = new Vec3(), _v1 = new Vec3(), _v2 = new Vec3();
+    const _q0 = new Quat();
+    const _m0 = new Mat4();
+    const _yprV = new Vec3();
+    const _invView = new Mat4(), _invProj = new Mat4();
+
+    // Shared FX state - mutated from the FX panel.
+    const fx = {
+        light:        [0.4, 0.8, 0.6],
+        lightRange:   [0.92, 1.0],
+        outlineColor: [0.067, 0.067, 0.067, 1.0],
+        outlineThick: 0.012,
+        outlineEnabled: false,
+    };
+
+    function buildShader(spec) {
+        const shader = new EzShader();
+        shader.version(spec.version ?? "300 es");
+        shader.setRenderCfg(spec.renderCfg ?? null);
+        shader.setOnbind(spec.onbind ?? null);
+        shader.other.morphChannels = spec.morphChannels ?? [];
+
+        const applyStage = (stageIndex, stageSpec = {}) => {
+            shader.stage(stageIndex);
+            if (stageSpec.inputs?.length > 0)   shader.inputs(stageSpec.inputs);
+            if (stageSpec.outputs?.length > 0)  shader.outputs(stageSpec.outputs);
+            if (stageSpec.uniforms?.length > 0) shader.uniforms(stageSpec.uniforms);
+            if (stageSpec.methods?.length > 0)  shader.methods(stageSpec.methods);
+            if (stageSpec.main != null) shader.main(stageSpec.main);
+        };
+
+        applyStage(EzShader.STAGE.VERTEX, spec.vertex);
+        applyStage(EzShader.STAGE.FRAGMENT, spec.fragment);
+        return shader;
+    }
+
+    const sharedVertexInputs = [
+        { name: "a_position",   type: "vec3", default: [0,0,0,0] },
+        { name: "a_normal",     type: "vec3", default: [0,1,0,0] },
+        { name: "a_uv",         type: "vec2", default: [0,0,0,0] },
+        { name: "a_boneID",     type: "vec4", default: [0,0,0,0] },
+        { name: "a_boneWeight", type: "vec4", default: [0,0,0,0] },
+        { name: "a_instMat4",   type: "mat4", divisor: 1, slots: 4, default: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+        { name: "a_instColor",  type: "vec4", divisor: 1, default: [1,1,1,1] },
+    ];
+
+    const sharedVertexMethods = [
+        {
+            signature: "mat4 fetchBone(int i)",
+            body: `
+                return mat4(
+                    texelFetch(u_bonesTex, ivec2(0, i), 0),
+                    texelFetch(u_bonesTex, ivec2(1, i), 0),
+                    texelFetch(u_bonesTex, ivec2(2, i), 0),
+                    texelFetch(u_bonesTex, ivec2(3, i), 0)
+                );
+            `,
+        },
+        {
+            signature: "mat4 computeSkin(vec4 boneID, vec4 boneWeight)",
+            body: `
+                float wsum = boneWeight.x + boneWeight.y + boneWeight.z + boneWeight.w;
+                if (wsum < 0.0001) return mat4(1.0);
+                return boneWeight.x * fetchBone(int(boneID.x))
+                    + boneWeight.y * fetchBone(int(boneID.y))
+                    + boneWeight.z * fetchBone(int(boneID.z))
+                    + boneWeight.w * fetchBone(int(boneID.w));
+            `,
+        },
+        {
+            signature: "int morphVertexLocal()",
+            body: `return gl_VertexID - u_morphVertexBase;`,
+        },
+        {
+            signature: "float morphWeight(int targetIdx)",
+            body: `return texelFetch(u_morphWeightTex, ivec2(u_morphWeightOffset + targetIdx, gl_InstanceID), 0).r;`,
+        },
+        {
+            signature: "vec3 applyMorph(int channelIdx, int vertexLocal)",
+            body: `
+                vec3 d = vec3(0.0);
+                for (int t = 0; t < u_morphCount; t++) {
+                    float w = morphWeight(t);
+                    if (w == 0.0) continue;
+                    if (channelIdx == 0) d += w * texelFetch(u_morphDelta_0, ivec2(t, vertexLocal), 0).xyz;
+                    else if (channelIdx == 1) d += w * texelFetch(u_morphDelta_1, ivec2(t, vertexLocal), 0).xyz;
+                }
+                return d;
+            `,
+        },
+    ];
+
+    project.addShader(SHADER_LIT, buildShader({
+        renderCfg: { blend: true, rQueue: 1000, cull: 'back' },
+        morphChannels: [MORPH_POS, MORPH_NRM],
+        onbind: (gl, prog) => {
+            EzRender.setUniform(gl, prog, "vec3", "u_light", fx.light);
+            EzRender.setUniform(gl, prog, "vec2", "u_lightRange", fx.lightRange);
+        },
+        vertex: {
+            inputs: sharedVertexInputs,
+            outputs: [
+                { name: "v_uv",            type: "vec2" },
+                { name: "v_worldNormal",   type: "vec3" },
+                { name: "v_instanceColor", type: "vec4" },
+            ],
+            uniforms: [
+                { name: "u_view",               type: "mat4" },
+                { name: "u_projection",         type: "mat4" },
+                { name: "u_bonesTex",           type: "sampler2D", precision: "highp" },
+                { name: "u_morphWeightTex",     type: "sampler2D", precision: "highp" },
+                { name: "u_morphCount",         type: "int" },
+                { name: "u_morphWeightOffset",  type: "int" },
+                { name: "u_morphVertexBase",    type: "int" },
+                { name: "u_morphDelta_0",       type: "sampler2D", precision: "highp" },
+                { name: "u_morphDelta_1",       type: "sampler2D", precision: "highp" },
+                { name: "u_light",              type: "vec3" },
+                { name: "u_lightRange",         type: "vec2" },
+            ],
+            methods: sharedVertexMethods,
+            main: `
+                int  vtx   = morphVertexLocal();
+                vec3 pos   = a_position + applyMorph(0, vtx);
+                vec3 nrm   = normalize(a_normal + applyMorph(1, vtx));
+                mat4 skin  = computeSkin(a_boneID, a_boneWeight);
+                mat4 model = a_instMat4 * skin;
+                gl_Position    = u_projection * u_view * model * vec4(pos, 1.0);
+                v_worldNormal  = normalize(mat3(model) * nrm);
+                v_uv           = a_uv;
+                v_instanceColor= a_instColor;
+            `,
+        },
+        fragment: {
+            inputs: [
+                { name: "v_uv",            type: "vec2" },
+                { name: "v_worldNormal",   type: "vec3" },
+                { name: "v_instanceColor", type: "vec4" },
+            ],
+            outputs: [{ name: "fragColor", type: "vec4" }],
+            uniforms: [
+                { name: "u_fill",    type: "vec4" },
+                { name: "u_albedo",  type: "sampler2D", precision: "highp" },
+                { name: "u_light",   type: "vec3" },
+                { name: "u_lightRange", type: "vec2" },
+            ],
+            main: `
+                vec3  L       = normalize(u_light);
+                float diffuse = max(dot(normalize(v_worldNormal), L), 0.0);
+                float light   = u_lightRange.x + (u_lightRange.y - u_lightRange.x) * diffuse;
+                vec4  albedo  = texture(u_albedo, v_uv) * u_fill * v_instanceColor;
+                fragColor     = vec4(albedo.rgb * light, albedo.a);
+            `,
+        },
+    }));
+
+    project.addShader(SHADER_OUTLINE, buildShader({
+        renderCfg: { blend: true, cull: 'front', rQueue: 999 },
+        morphChannels: [MORPH_POS, MORPH_NRM],
+        onbind: (gl, prog) => {
+            EzRender.setUniform(gl, prog, "vec4",  "u_outlineColor", fx.outlineColor);
+            EzRender.setUniform(gl, prog, "float", "u_outlineThick", fx.outlineThick);
+        },
+        vertex: {
+            inputs: sharedVertexInputs,
+            outputs: [],
+            uniforms: [
+                { name: "u_view",               type: "mat4" },
+                { name: "u_projection",         type: "mat4" },
+                { name: "u_bonesTex",           type: "sampler2D", precision: "highp" },
+                { name: "u_morphWeightTex",     type: "sampler2D", precision: "highp" },
+                { name: "u_morphCount",         type: "int" },
+                { name: "u_morphWeightOffset",  type: "int" },
+                { name: "u_morphVertexBase",    type: "int" },
+                { name: "u_morphDelta_0",       type: "sampler2D", precision: "highp" },
+                { name: "u_morphDelta_1",       type: "sampler2D", precision: "highp" },
+                { name: "u_outlineThick",       type: "float" },
+            ],
+            methods: sharedVertexMethods,
+            main: `
+                int  vtx   = morphVertexLocal();
+                vec3 pos   = a_position + applyMorph(0, vtx);
+                vec3 nrm   = normalize(a_normal + applyMorph(1, vtx));
+                mat4 skin  = computeSkin(a_boneID, a_boneWeight);
+                mat4 mdl   = a_instMat4 * skin;
+                vec3 wNorm = normalize(mat3(mdl) * nrm);
+                vec3 wPos  = (mdl * vec4(pos, 1.0)).xyz + wNorm * u_outlineThick;
+                gl_Position = u_projection * u_view * vec4(wPos, 1.0);
+            `,
+        },
+        fragment: {
+            outputs: [{ name: "fragColor", type: "vec4" }],
+            uniforms: [{ name: "u_outlineColor", type: "vec4" }],
+            main: `fragColor = u_outlineColor;`,
+        },
+    }));
+
+    project.addShader(SHADER_SKY, buildShader({
+        renderCfg: { rQueue: 0, depthWrite: false, depthTest: false, blend: false },
+        onbind: (gl, prog) => {
+            EzMath.invert(_invView, project.camera.view);
+            EzMath.invert(_invProj, project.camera.projection);
+            gl.uniformMatrix4fv(gl.getUniformLocation(prog, "u_invView"), false, _invView.data);
+            gl.uniformMatrix4fv(gl.getUniformLocation(prog, "u_invProj"), false, _invProj.data);
+        },
+        vertex: {
+            inputs: [],
+            outputs: [{ name: "v_sc", type: "vec2" }],
+            main: `
+                const vec2 pos[3] = vec2[](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));
+                v_sc = pos[gl_VertexID];
+                gl_Position = vec4(v_sc, 0.999999, 1.0);
+            `,
+        },
+        fragment: {
+            inputs: [{ name: "v_sc", type: "vec2" }],
+            outputs: [{ name: "fragColor", type: "vec4" }],
+            uniforms: [
+                { name: "u_invView", type: "mat4" },
+                { name: "u_invProj", type: "mat4" },
+            ],
+            main: `
+                vec4 eye    = u_invProj * vec4(v_sc, 1.0, 1.0);
+                vec3 rayDir = normalize((u_invView * vec4(eye.xy, -1.0, 0.0)).xyz);
+                float h = rayDir.y;
+                vec3 skyTop  = vec3(0.18, 0.45, 0.85);
+                vec3 horizon = vec3(0.85, 0.88, 0.95);
+                vec3 ground  = vec3(0.18, 0.18, 0.18);
+                vec3 color   = h >= 0.0
+                    ? mix(horizon, skyTop, smoothstep(0.0, 1.0, h))
+                    : mix(horizon, ground, smoothstep(0.0, -0.02, h));
+                fragColor = vec4(color, 1.0);
+            `,
+        },
+    }));
+
+    project.defaultShaderKey = SHADER_LIT;
+
+    
+    const mainScene = project.createScene("Main");
+    project.setActiveScene(mainScene);
+
+    project.addMesh(MESH_SKY, { submeshes: [{ vertexCount: 3 }] });
+    const skyNode = mainScene.addNode("Sky");
+    skyNode.userData = { hidden: true };  // hide from hierarchy view
+    skyNode.meshRender = EzComponents.MeshRender({ meshKey: MESH_SKY, shaderKey: SHADER_SKY });
+
+    const modelDB = new Map();
+
+    async function loadModel(key, url) {
+        modelDB.set(key, { prefab: null, status: "loading" });
+        renderModelPalette();
+        try {
+            const data   = await EzLoader.load(url);
+            const prefab = project.addModel(data, { keyPrefix: key, sceneName: `__pf_${key}` });
+            modelDB.set(key, { prefab, status: "loaded" });
+        } catch (err) {
+            console.error(`[Rig] Failed to load "${key}":`, err);
+            modelDB.set(key, { prefab: null, status: "error", err: String(err) });
+        }
+        renderModelPalette();
+    }
+
+    function instantiate(modelKey, parent = mainScene.root) {
+        const entry  = modelDB.get(modelKey);
+        if (!entry || entry.status !== "loaded") return null;
+        const prefab = entry.prefab;
+        const modelRoot = prefab.root.children[0];   // EzLoader-built model root
+        if (!modelRoot) return null;
+        return cloneSubtree(modelRoot, mainScene, parent);
+    }
+
+    function cloneSubtree(srcNode, intoScene, parent) {
+        const map = new Map();
+        const rec = (src, p) => {
+            const dst = intoScene.addNode(src.name, p);
+            if (src.transform)  dst.transform.local.copy(src.transform.local);
+            if (src.meshRender) {
+                dst.meshRender = EzComponents.MeshRender({
+                    meshKey:      src.meshRender.meshKey,
+                    color:        src.meshRender.color,
+                    morphWeights: src.meshRender.morphWeights ? new Float32Array(src.meshRender.morphWeights) : null,
+                    visible:      src.meshRender.visible,
+                });
+            }
+            if (src.skeleton) {
+                dst.skeleton = EzComponents.Skeleton(src.skeleton.asset);
+                for (let i = 0; i < src.skeleton.localPose.length; i++)
+                    dst.skeleton.localPose[i].copy(src.skeleton.localPose[i]);
+            }
+            map.set(src, dst);
+            for (const c of src.children) rec(c, dst);
+            return dst;
+        };
+        const rootDst = rec(srcNode, parent);
+        for (const [src, dst] of map) {
+            if (dst.meshRender && src.meshRender?.skeletonNode)
+                dst.meshRender.skeletonNode = map.get(src.meshRender.skeletonNode) ?? null;
+        }
+        return rootDst;
+    }
+
+    /* ----------------
+       SELECTION + UI dispatch
+       ---------------- */
+    let selectedNode = null;
+    const expandedNodes = new WeakSet();
+    expandedNodes.add(mainScene.root);
+
+    function selectNode(node) {
+        selectedNode = node;
+        renderHierarchy();
+        renderInspector();
+    }
+
+    function isHidden(node) {
+        return node === mainScene.root || node?.userData?.hidden;
+    }
+
+    function deleteNode(node) {
+        if (!node || node === mainScene.root) return;
+        if (selectedNode === node) selectedNode = null;
+        mainScene.removeNode(node);
+        renderHierarchy();
+        renderInspector();
+    }
+
+    // Re-parent `node` under `newParent`, preserving its world transform by
+    // recomputing its local as `inverse(newParent.world) * node.world`.
+    // Refuses to move into self or any descendant (cycle).
+    function reparent(node, newParent) {
+        if (!node || !newParent || node === newParent || node === mainScene.root) return false;
+        for (let p = newParent; p; p = p.parent) if (p === node) return false;
+        if (node.parent === newParent) return true;     // no-op
+
+        if (node.transform && newParent.transform) {
+            const inv = new Mat4();
+            EzMath.invert(inv, newParent.transform.world);
+            EzMath.mult(node.transform.local, inv, node.transform.world);
+        }
+        if (node.parent) {
+            const i = node.parent.children.indexOf(node);
+            if (i >= 0) node.parent.children.splice(i, 1);
+        }
+        node.parent = newParent;
+        newParent.children.push(node);
+        return true;
+    }
+
+    /* ----------------
+       UI: HIERARCHY TREE - with drag/drop reparenting and model drops
+       -
+       Drag sources:
+           - hierarchy row (kind: "node",  payload: node ref)
+           - models palette (kind: "model", payload: modelKey)
+       Drop targets:
+           - tree row → drops as child of that node
+           - empty zone → drops as child of mainScene.root
+       ---------------- */
+    const hierarchyEl = document.getElementById("hierarchy-tree");
+
+    // Active drag state. Single-shot - cleared on dragend / drop.
+    const drag = { kind: null, node: null, modelKey: null };
+    function clearDrag() {
+        drag.kind = null; drag.node = null; drag.modelKey = null;
+        document.body.classList.remove("dragging-active");
+        hierarchyEl.querySelectorAll(".drop-target, .drop-forbid")
+            .forEach(el => el.classList.remove("drop-target", "drop-forbid"));
+        emptyZone.classList.remove("drop-active");
+    }
+
+    // Resolve the drop into an actual scene mutation.
+    function performDrop(targetParent) {
+        if (drag.kind === "node") {
+            if (reparent(drag.node, targetParent)) {
+                expandedNodes.add(targetParent);
+                renderHierarchy();
+            }
+        } else if (drag.kind === "model") {
+            const n = instantiate(drag.modelKey, targetParent);
+            if (n) {
+                expandedNodes.add(targetParent);
+                selectNode(n);
+            }
+        }
+    }
+
+    function renderHierarchy() {
+        hierarchyEl.innerHTML = "";
+        for (const c of mainScene.root.children) {
+            if (!isHidden(c)) renderTreeRow(c, 0, hierarchyEl);
+        }
+        // Always-present empty drop zone (root drop target).
+        hierarchyEl.appendChild(emptyZone);
+    }
+
+    function renderTreeRow(node, depth, container) {
+        if (isHidden(node)) return;
+        const row = document.createElement("div");
+        row.className = "tree-row";
+        if (selectedNode === node) row.classList.add("selected");
+        row.style.paddingLeft = (depth * 14 + 6) + "px";
+        row.draggable = true;
+
+        const arrow = document.createElement("span");
+        arrow.className = "tree-arrow";
+        const visibleKids = node.children.filter(c => !isHidden(c));
+        if (visibleKids.length) {
+            const open = expandedNodes.has(node);
+            arrow.textContent = open ? "▼" : "▶";
+            arrow.onclick = e => {
+                e.stopPropagation();
+                if (open) expandedNodes.delete(node); else expandedNodes.add(node);
+                renderHierarchy();
+            };
+        } else {
+            arrow.textContent = "·";
+            arrow.classList.add("leaf");
+        }
+        row.appendChild(arrow);
+
+        const label = document.createElement("span");
+        label.className = "tree-label";
+        label.textContent = node.name;
+        row.appendChild(label);
+
+        if (node.meshRender) {
+            const b = document.createElement("span");
+            b.className = "tree-badge M"; b.textContent = "M"; b.title = "MeshRender";
+            row.appendChild(b);
+        }
+        if (node.skeleton) {
+            const b = document.createElement("span");
+            b.className = "tree-badge S"; b.textContent = "S"; b.title = `Skeleton (${node.skeleton.asset.bones.length} bones)`;
+            row.appendChild(b);
+        }
+
+        row.onclick = () => selectNode(node);
+
+        // -- Drag source (this row represents `node`) --------------------
+        row.addEventListener("dragstart", e => {
+            e.stopPropagation();
+            drag.kind = "node"; drag.node = node;
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", node.name);
+            row.classList.add("dragging");
+            document.body.classList.add("dragging-active");
+        });
+        row.addEventListener("dragend", () => {
+            row.classList.remove("dragging");
+            clearDrag();
+        });
+
+        // -- Drop target ------------------------------------------------
+        const isForbidden = () =>
+            drag.kind === "node" &&
+            (drag.node === node || (function(n){ for (let p = node; p; p = p.parent) if (p === n) return true; return false; })(drag.node));
+
+        row.addEventListener("dragenter", e => {
+            if (!drag.kind) return;
+            e.preventDefault();
+            row.classList.add(isForbidden() ? "drop-forbid" : "drop-target");
+        });
+        row.addEventListener("dragover", e => {
+            if (!drag.kind) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = isForbidden() ? "none" : "move";
+        });
+        row.addEventListener("dragleave", e => {
+            // dragleave fires on entering child nodes too - only clear when
+            // leaving the row entirely.
+            if (e.currentTarget.contains(e.relatedTarget)) return;
+            row.classList.remove("drop-target", "drop-forbid");
+        });
+        row.addEventListener("drop", e => {
+            e.preventDefault(); e.stopPropagation();
+            if (!isForbidden()) performDrop(node);
+        });
+
+        container.appendChild(row);
+
+        if (visibleKids.length && expandedNodes.has(node)) {
+            for (const c of visibleKids) renderTreeRow(c, depth + 1, container);
+        }
+    }
+
+    // Empty drop zone - always rendered at the bottom of the tree.
+    // Visually quiet; only reveals itself while a drag is hovering over it.
+    const emptyZone = document.createElement("div");
+    emptyZone.className = "tree-empty-zone";
+    emptyZone.addEventListener("dragenter", e => {
+        if (!drag.kind) return;
+        e.preventDefault();
+        emptyZone.classList.add("drop-active");
+    });
+    emptyZone.addEventListener("dragover", e => {
+        if (!drag.kind) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+    });
+    emptyZone.addEventListener("dragleave", e => {
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        emptyZone.classList.remove("drop-active");
+    });
+    emptyZone.addEventListener("drop", e => {
+        e.preventDefault();
+        performDrop(mainScene.root);
+    });
+
+    document.getElementById("hier-collapse-all").onclick = () => {
+        // Only the scene root stays expanded.
+        for (const n of mainScene._nodes) expandedNodes.delete(n);
+        expandedNodes.add(mainScene.root);
+        renderHierarchy();
+    };
+
+    /* ----------------
+       UI: MODELS PALETTE
+       ---------------- */
+    const paletteEl = document.getElementById("model-palette");
+
+    function renderModelPalette() {
+        paletteEl.innerHTML = "";
+        for (const key of Object.keys(MODELS)) {
+            const entry = modelDB.get(key) ?? { status: "loading" };
+            const loaded = entry.status === "loaded";
+            const btn = document.createElement("button");
+            btn.className = `model-btn ${entry.status}`;
+            btn.disabled = !loaded;
+            btn.title = entry.status === "error"
+                ? `Error: ${entry.err}`
+                : (loaded ? "Click → spawn at root, drag → drop on a hierarchy node" : "Loading…");
+            btn.innerHTML = `<span class="dot"></span><span class="name">${key}</span>`;
+            btn.onclick = () => {
+                const n = instantiate(key);
+                if (n) { expandedNodes.add(mainScene.root); selectNode(n); }
+            };
+
+            // -- Drag source (loaded models only) ------------------------
+            if (loaded) {
+                btn.draggable = true;
+                btn.addEventListener("dragstart", e => {
+                    drag.kind = "model"; drag.modelKey = key;
+                    // Use "copyMove" so the drop succeeds against tree-row
+                    // dragover targets that report dropEffect="move".
+                    e.dataTransfer.effectAllowed = "copyMove";
+                    e.dataTransfer.setData("text/plain", key);
+                    document.body.classList.add("dragging-active");
+                });
+                btn.addEventListener("dragend", clearDrag);
+            }
+
+            paletteEl.appendChild(btn);
+        }
+    }
+
+    /* ----------------
+       UI: INSPECTOR
+       ---------------- */
+    const inspectorEl = document.getElementById("inspector-body");
+
+    function renderInspector() {
+        inspectorEl.innerHTML = "";
+        if (!selectedNode || isHidden(selectedNode)) {
+            inspectorEl.innerHTML = `<div class="inspector-empty">Select a node in the hierarchy.</div>`;
+            return;
+        }
+        inspectorEl.appendChild(makeNamePanel(selectedNode));
+        if (selectedNode.transform)  inspectorEl.appendChild(makeTransformSection(selectedNode));
+        if (selectedNode.meshRender) inspectorEl.appendChild(makeMeshRenderSection(selectedNode));
+        if (selectedNode.skeleton)   inspectorEl.appendChild(makeSkeletonSection(selectedNode));
+        const morphMesh = selectedNode.meshRender ? project.meshes.get(selectedNode.meshRender.meshKey) : null;
+        if (morphMesh && morphMesh.morphTargetCount > 0)
+            inspectorEl.appendChild(makeMorphSection(selectedNode, morphMesh));
+        inspectorEl.appendChild(makeActionsSection(selectedNode));
+    }
+
+    function makeNamePanel(node) {
+        const el = document.createElement("div");
+        el.className = "insp-name";
+        el.innerHTML = `
+            <div class="insp-name-label">Selected</div>
+            <div class="insp-name-value">${escapeHTML(node.name)}</div>
+        `;
+        return el;
+    }
+
+    function makeSection(title, builder, { collapsed = false } = {}) {
+        const sect = document.createElement("div");
+        sect.className = "insp-section" + (collapsed ? " collapsed" : "");
+        sect.innerHTML = `
+            <div class="insp-section-head">
+                <span class="arrow">▼</span>
+                <span class="title">${title}</span>
+            </div>
+        `;
+        const body = document.createElement("div");
+        body.className = "insp-section-body";
+        builder(body);
+        sect.appendChild(body);
+        sect.querySelector(".insp-section-head").onclick = () => sect.classList.toggle("collapsed");
+        return sect;
+    }
+
+    /* -- Transform ------------------------------------------------ */
+    function makeTransformSection(node) {
+        return makeSection("Transform", body => {
+            const m = node.transform.local.data;
+            const pos = [m[12], m[13], m[14]];
+            const sx = Math.hypot(m[0], m[1], m[2]);
+            const sy = Math.hypot(m[4], m[5], m[6]);
+            const sz = Math.hypot(m[8], m[9], m[10]);
+            const scl = [sx, sy, sz];
+            const rot = [0, 0, 0];   // not decomposed (lossy); user-edited delta from current
+
+            const apply = () => {
+                const p = posF.get(), r = rotF.get(), s = sclF.get();
+                _v0.data[0] = r[0] * Math.PI/180;
+                _v0.data[1] = r[1] * Math.PI/180;
+                _v0.data[2] = r[2] * Math.PI/180;
+                EzMath.fromEulerZYX(_q0, _v0);
+                _v1.data[0] = p[0]; _v1.data[1] = p[1]; _v1.data[2] = p[2];
+                _v2.data[0] = s[0]; _v2.data[1] = s[1]; _v2.data[2] = s[2];
+                EzMath.compose(_m0, _v1, _q0, _v2);
+                node.transform.local.data.set(_m0.data);
+            };
+
+            const posF = makeVec3Field("Position", pos, { onChange: apply });
+            const rotF = makeVec3Field("Rotation (deg)", rot, { step: 0.5, decimals: 1, onChange: apply });
+            const sclF = makeVec3Field("Scale", scl, { onChange: apply });
+            body.appendChild(posF.el);
+            body.appendChild(rotF.el);
+            body.appendChild(sclF.el);
+        });
+    }
+
+    /* -- MeshRender ----------------------------------------------- */
+    function makeMeshRenderSection(node) {
+        return makeSection("Mesh Render", body => {
+            const mr = node.meshRender;
+            const mesh = project.meshes.get(mr.meshKey);
+            body.appendChild(kvRow("Mesh",    mr.meshKey));
+            body.appendChild(kvRow("Submesh", mesh ? `${mesh.submeshes.length}` : "-"));
+            if (mr.skeletonNode) body.appendChild(kvRow("Skin", mr.skeletonNode.name));
+
+            body.appendChild(makeColorField("Tint", [...mr.color], rgba => {
+                for (let i = 0; i < 4; i++) mr.color[i] = rgba[i];
+            }).el);
+
+            body.appendChild(checkRow("Visible", mr.visible, v => { mr.visible = v; }));
+        });
+    }
+
+    /* -- Skeleton ------------------------------------------------- */
+    function makeSkeletonSection(node) {
+        return makeSection("Skeleton", body => {
+            const skel  = node.skeleton;
+            const bones = skel.asset.bones;
+            const bc    = bones.length;
+            body.appendChild(kvRow("Bones", String(bc)));
+
+            // Bone tree (DFS-ordered, click to select)
+            const list = document.createElement("div");
+            list.className = "bone-list";
+            body.appendChild(list);
+
+            const depths = new Array(bc).fill(0);
+            for (let i = 0; i < bc; i++) {
+                const p = bones[i].parent;
+                if (p >= 0) depths[i] = depths[p] + 1;
+            }
+
+            // Bone state - euler-decomposed view of localPose for each bone.
+            // Stored on the node so it persists across re-renders.
+            if (!node.userData) node.userData = {};
+            if (!node.userData.boneEuler) {
+                node.userData.boneEuler = bones.map(() => ({ pos:[0,0,0], rot:[0,0,0], scl:[1,1,1] }));
+                // seed pos/scl/rot from bind pose (extract rotation as YPR degrees)
+                for (let i = 0; i < bc; i++) {
+                    const lb = bones[i].localBind;
+                    if (lb) {
+                        const s = node.userData.boneEuler[i];
+                        s.pos[0] = lb[12]; s.pos[1] = lb[13]; s.pos[2] = lb[14];
+                        s.scl[0] = Math.hypot(lb[0], lb[1], lb[2]);
+                        s.scl[1] = Math.hypot(lb[4], lb[5], lb[6]);
+                        s.scl[2] = Math.hypot(lb[8], lb[9], lb[10]);
+                        // extract quaternion from rotation matrix (column-major)
+                        const m = lb;
+                        const m11 = m[0], m12 = m[4], m13 = m[8];
+                        const m21 = m[1], m22 = m[5], m23 = m[9];
+                        const m31 = m[2], m32 = m[6], m33 = m[10];
+                        let qx=0,qy=0,qz=0,qw=1;
+                        const trace = m11 + m22 + m33;
+                        if (trace > 0) {
+                            const s2 = Math.sqrt(trace + 1.0) * 2;
+                            qw = 0.25 * s2;
+                            qx = (m32 - m23) / s2;
+                            qy = (m13 - m31) / s2;
+                            qz = (m21 - m12) / s2;
+                        } else if (m11 > m22 && m11 > m33) {
+                            const s2 = Math.sqrt(1.0 + m11 - m22 - m33) * 2;
+                            qx = 0.25 * s2;
+                            qy = (m12 + m21) / s2;
+                            qz = (m13 + m31) / s2;
+                            qw = (m32 - m23) / s2;
+                        } else if (m22 > m33) {
+                            const s2 = Math.sqrt(1.0 + m22 - m11 - m33) * 2;
+                            qx = (m12 + m21) / s2;
+                            qy = 0.25 * s2;
+                            qz = (m23 + m32) / s2;
+                            qw = (m13 - m31) / s2;
+                        } else {
+                            const s2 = Math.sqrt(1.0 + m33 - m11 - m22) * 2;
+                            qx = (m13 + m31) / s2;
+                            qy = (m23 + m32) / s2;
+                            qz = 0.25 * s2;
+                            qw = (m21 - m12) / s2;
+                        }
+                        _q0.data[0] = qx; _q0.data[1] = qy; _q0.data[2] = qz; _q0.data[3] = qw;
+                        // convert to yaw/pitch/roll degrees and store
+                        EzMath.toEulerYPR(_v0, _q0);
+                        s.rot[0] = _v0.data[0]; s.rot[1] = _v0.data[1]; s.rot[2] = _v0.data[2];
+                    }
+                }
+            }
+
+            let selectedBoneIdx = -1;
+            let editor = null;
+
+            const rowEls = [];
+            for (let i = 0; i < bc; i++) {
+                const row = document.createElement("div");
+                row.className = "tree-row";
+                row.style.paddingLeft = (depths[i] * 12 + 4) + "px";
+                row.innerHTML = `
+                    <span class="tree-arrow leaf">·</span>
+                    <span class="tree-label">${escapeHTML(bones[i].name)}</span>
+                `;
+                const myIdx = i;
+                row.onclick = () => {
+                    selectedBoneIdx = myIdx;
+                    rowEls.forEach(r => r.classList.remove("selected"));
+                    row.classList.add("selected");
+                    refreshEditor();
+                };
+                list.appendChild(row);
+                rowEls.push(row);
+            }
+
+            const editorWrap = document.createElement("div");
+            body.appendChild(editorWrap);
+
+            const refreshEditor = () => {
+                editorWrap.innerHTML = "";
+                if (selectedBoneIdx < 0) {
+                    editorWrap.innerHTML = `<div class="kv"><span class="k">Bone</span><span class="v" style="color:var(--text-dim);">none selected</span></div>`;
+                    return;
+                }
+                const st = node.userData.boneEuler[selectedBoneIdx];
+                const apply = () => {
+                    const p = posF.get(), r = rotF.get(), s = sclF.get();
+                    st.pos = p; st.rot = r; st.scl = s;
+                    // interpret editor rotation as yaw/pitch/roll (degrees)
+                    EzMath.fromEulerYPR(_q0, r[0], r[1], r[2]);
+                    _v1.data[0] = p[0]; _v1.data[1] = p[1]; _v1.data[2] = p[2];
+                    _v2.data[0] = s[0]; _v2.data[1] = s[1]; _v2.data[2] = s[2];
+                    EzMath.compose(_m0, _v1, _q0, _v2);
+                    skel.localPose[selectedBoneIdx].data.set(_m0.data);
+                };
+
+                editorWrap.appendChild(kvRow("Editing", bones[selectedBoneIdx].name));
+                const posF = makeVec3Field("Position", [...st.pos], { step: 0.01, decimals: 3, onChange: apply });
+                const rotF = makeVec3Field("Rotation (deg)", [...st.rot], { step: 0.5, decimals: 1, onChange: apply });
+                const sclF = makeVec3Field("Scale",    [...st.scl], { step: 0.01, decimals: 3, onChange: apply });
+                editorWrap.appendChild(posF.el);
+                editorWrap.appendChild(rotF.el);
+                editorWrap.appendChild(sclF.el);
+
+                const reset = document.createElement("button");
+                reset.className = "btn";
+                reset.textContent = "Reset bone";
+                reset.onclick = () => {
+                    const lb = bones[selectedBoneIdx].localBind;
+                    if (!lb) return;
+                    skel.localPose[selectedBoneIdx].data.set(lb);
+                    // refresh user state from bind
+                    const s = node.userData.boneEuler[selectedBoneIdx];
+                    s.pos[0] = lb[12]; s.pos[1] = lb[13]; s.pos[2] = lb[14];
+                    s.rot = [0, 0, 0];
+                    s.scl[0] = Math.hypot(lb[0], lb[1], lb[2]);
+                    s.scl[1] = Math.hypot(lb[4], lb[5], lb[6]);
+                    s.scl[2] = Math.hypot(lb[8], lb[9], lb[10]);
+                    refreshEditor();
+                };
+                editorWrap.appendChild(reset);
+            };
+            refreshEditor();
+        }, { collapsed: true });
+    }
+
+    /* -- Morph targets ------------------------------------------- */
+    function makeMorphSection(node, mesh) {
+        return makeSection("Morph Targets", body => {
+            const w     = node.meshRender.morphWeights;
+            const names = mesh.morphTargetNames || [];
+            const N     = mesh.morphTargetCount;
+
+            const filterRow = document.createElement("div");
+            filterRow.style.cssText = "display:flex;gap:6px;";
+            const filter = document.createElement("input");
+            filter.type = "text";
+            filter.placeholder = "Filter…";
+            filter.className = "morph-filter";
+            const reset = document.createElement("button");
+            reset.className = "btn";
+            reset.textContent = "Reset";
+            filterRow.appendChild(filter);
+            filterRow.appendChild(reset);
+            body.appendChild(filterRow);
+
+            const list = document.createElement("div");
+            list.className = "morph-list";
+            body.appendChild(list);
+
+            const rows = [];
+            for (let i = 0; i < N; i++) {
+                const row = document.createElement("div");
+                row.className = "morph-row";
+                const name = names[i] ?? `Target ${i}`;
+
+                const nameEl = document.createElement("span");
+                nameEl.className = "morph-name";
+                nameEl.textContent = name; nameEl.title = name;
+
+                const sl = document.createElement("input");
+                sl.type = "range"; sl.min = -1; sl.max = 1; sl.step = 0.01;
+                sl.value = w[i]; sl.className = "morph-slider";
+
+                const val = document.createElement("span");
+                val.className = "morph-val";
+                val.textContent = w[i].toFixed(2);
+
+                const update = (v) => {
+                    w[i] = v;
+                    val.textContent = v.toFixed(2);
+                    row.classList.toggle("active", Math.abs(v) > 0.001);
+                };
+                update(w[i]);
+
+                sl.addEventListener("input", () => update(parseFloat(sl.value)));
+                sl.addEventListener("dblclick", () => { sl.value = 0; update(0); });
+
+                row.appendChild(nameEl);
+                row.appendChild(sl);
+                row.appendChild(val);
+                list.appendChild(row);
+                rows.push({ row, name: name.toLowerCase(), sl, val, update });
+            }
+
+            filter.addEventListener("input", () => {
+                const q = filter.value.toLowerCase().trim();
+                for (const r of rows) r.row.classList.toggle("hidden", q !== "" && !r.name.includes(q));
+            });
+            reset.addEventListener("click", () => {
+                for (let i = 0; i < N; i++) {
+                    rows[i].sl.value = 0;
+                    rows[i].update(0);
+                }
+            });
+        }, { collapsed: true });
+    }
+
+    /* -- Node-level actions --------------------------------------- */
+    function makeActionsSection(node) {
+        return makeSection("Actions", body => {
+            const del = document.createElement("button");
+            del.className = "btn danger";
+            del.textContent = "Delete node";
+            del.onclick = () => deleteNode(node);
+            body.appendChild(del);
+        }, { collapsed: true });
+    }
+
+    /* ----------------
+       UI: FX panel (Lit + Outline shader controls)
+       ---------------- */
+    function renderFXPanel() {
+        const root = document.getElementById("fx-controls");
+        root.innerHTML = "";
+
+        // Lit
+        root.appendChild(textHeader("Lit"));
+        for (const [axis, idx] of [["X",0],["Y",1],["Z",2]]) {
+            root.appendChild(sliderRow(`Light ${axis}`, fx.light[idx], -1, 1, 0.01, v => fx.light[idx] = v));
+        }
+        root.appendChild(sliderRow("Ambient",  fx.lightRange[0], 0, 1, 0.01, v => fx.lightRange[0] = Math.min(v, fx.lightRange[1])));
+        root.appendChild(sliderRow("Diffuse",  fx.lightRange[1], 0, 1, 0.01, v => fx.lightRange[1] = Math.max(v, fx.lightRange[0])));
+
+        root.appendChild(div());
+
+        // Outline
+        root.appendChild(textHeader("Outline"));
+        root.appendChild(checkRow("Enabled", fx.outlineEnabled, v => { fx.outlineEnabled = v; }));
+        root.appendChild(sliderRow("Thickness", fx.outlineThick, 0.001, 0.05, 0.001, v => fx.outlineThick = v, 3));
+        root.appendChild(sliderRow("Alpha",     fx.outlineColor[3], 0, 1, 0.01, v => fx.outlineColor[3] = v));
+
+        const colorRow = document.createElement("div");
+        colorRow.className = "fx-row";
+        colorRow.innerHTML = `<span class="label">Color</span>`;
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.className = "fx-color-input";
+        colorInput.value = rgbToHex(fx.outlineColor);
+        colorInput.style.flex = "1";
+        colorInput.style.height = "20px";
+        colorInput.addEventListener("input", e => {
+            const hex = e.target.value;
+            fx.outlineColor[0] = parseInt(hex.slice(1,3),16) / 255;
+            fx.outlineColor[1] = parseInt(hex.slice(3,5),16) / 255;
+            fx.outlineColor[2] = parseInt(hex.slice(5,7),16) / 255;
+        });
+        colorRow.appendChild(colorInput);
+        root.appendChild(colorRow);
+    }
+
+    function textHeader(text) {
+        const el = document.createElement("div");
+        el.className = "field-label";
+        el.style.marginTop = "2px";
+        el.textContent = text;
+        return el;
+    }
+
+    function sliderRow(label, value, min, max, step, onChange, decimals = 2) {
+        const row = document.createElement("div");
+        row.className = "fx-row";
+        row.innerHTML = `<span class="label">${label}</span>`;
+        const sl = document.createElement("input");
+        sl.type = "range"; sl.min = min; sl.max = max; sl.step = step; sl.value = value;
+        sl.className = "fx-slider";
+        const val = document.createElement("span");
+        val.className = "fx-val";
+        val.textContent = value.toFixed(decimals);
+        sl.addEventListener("input", () => {
+            const v = parseFloat(sl.value);
+            onChange(v);
+            val.textContent = v.toFixed(decimals);
+        });
+        row.appendChild(sl);
+        row.appendChild(val);
+        return row;
+    }
+
+    /* ----------------
+       UI: low-level helpers
+       ---------------- */
+    function div() {
+        const d = document.createElement("div");
+        d.className = "divider";
+        return d;
+    }
+
+    function escapeHTML(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+        }[c]));
+    }
+
+    function rgbToHex(rgba) {
+        const to255 = v => Math.round(Math.max(0, Math.min(1, v)) * 255);
+        return `#${to255(rgba[0]).toString(16).padStart(2,'0')}${to255(rgba[1]).toString(16).padStart(2,'0')}${to255(rgba[2]).toString(16).padStart(2,'0')}`;
+    }
+
+    function kvRow(k, v) {
+        const el = document.createElement("div");
+        el.className = "kv";
+        el.innerHTML = `<span class="k">${escapeHTML(k)}</span><span class="v" title="${escapeHTML(String(v))}">${escapeHTML(String(v))}</span>`;
+        return el;
+    }
+
+    function checkRow(label, checked, onChange) {
+        const el = document.createElement("label");
+        el.className = "chk-row";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!checked;
+        cb.addEventListener("change", () => onChange(cb.checked));
+        el.appendChild(cb);
+        const span = document.createElement("span");
+        span.textContent = label;
+        el.appendChild(span);
+        return el;
+    }
+
+    /* -- Drag-scrub input - velocity-based auto-scrub à la ImGui -------- */
+    function makeDragInput({ value = 0, step = 0.01, decimals = 3, clamp = null, onChange = null } = {}) {
+        let current = value;
+
+        const el    = document.createElement("div");
+        el.className = "drag-input";
+        const fill  = document.createElement("div"); fill.className = "drag-input-fill";
+        const label = document.createElement("div"); label.className = "drag-input-label";
+        const field = document.createElement("input");
+        field.type = "number"; field.className = "drag-input-field"; field.step = step;
+        el.appendChild(fill); el.appendChild(label); el.appendChild(field);
+
+        const fmt   = v => v.toFixed(decimals);
+        const clmp  = v => clamp ? Math.max(clamp[0], Math.min(clamp[1], v)) : v;
+        // `silent` skips onChange - used by the constructor's initial seed
+        // (caller already knows the value, and firing onChange there can
+        // touch other fields that haven't been constructed yet).
+        const setVal = (v, silent = false) => {
+            current = clmp(v);
+            label.textContent = fmt(current);
+            field.value       = fmt(current);
+            if (!silent && onChange) onChange(current);
+        };
+        setVal(value, true);
+
+        const DEAD = 4, BASE = step * 60;
+        const velFrom = dx => {
+            const a = Math.abs(dx);
+            if (a <= DEAD) return 0;
+            return Math.sign(dx) * BASE * Math.pow(a - DEAD, 1.6) * 0.012;
+        };
+
+        let originX = null, currentX = null, rafId = null, lastT = null;
+        const tick = now => {
+            if (originX === null) return;
+            const dt = lastT === null ? 0 : (now - lastT) / 1000;
+            lastT = now;
+            const dx  = currentX - originX;
+            const vel = velFrom(dx);
+            if (vel !== 0 && dt > 0) setVal(current + vel * dt);
+            const pct = Math.max(-1, Math.min(1, dx / 120));
+            if (pct >= 0) { fill.style.left = "50%"; fill.style.right = `${(1 - pct) * 50}%`; }
+            else          { fill.style.left = `${(1 + pct) * 50}%`; fill.style.right = "50%"; }
+            rafId = requestAnimationFrame(tick);
+        };
+
+        el.addEventListener("mousedown", e => {
+            if (el.classList.contains("editing") || e.button !== 0) return;
+            e.preventDefault();
+            originX = e.clientX; currentX = e.clientX; lastT = null;
+            el.classList.add("dragging");
+            rafId = requestAnimationFrame(tick);
+        });
+        window.addEventListener("mousemove", e => { if (originX !== null) currentX = e.clientX; });
+        window.addEventListener("mouseup",   () => {
+            if (originX === null) return;
+            cancelAnimationFrame(rafId);
+            originX = null; currentX = null; lastT = null; rafId = null;
+            el.classList.remove("dragging");
+            fill.style.left = "0"; fill.style.right = "0";
+        });
+        el.addEventListener("dblclick", () => {
+            el.classList.add("editing");
+            field.value = fmt(current);
+            field.focus(); field.select();
+        });
+        field.addEventListener("blur", () => {
+            const v = parseFloat(field.value);
+            if (!isNaN(v)) setVal(v);
+            el.classList.remove("editing");
+        });
+        field.addEventListener("keydown", e => {
+            if (e.key === "Enter")  field.blur();
+            if (e.key === "Escape") { el.classList.remove("editing"); setVal(current); }
+        });
+
+        return { el, get: () => current, set: setVal };
+    }
+
+    function makeVec3Field(label, defaults = [0,0,0], { step = 0.01, decimals = 3, onChange = null } = {}) {
+        const el = document.createElement("div");
+        el.className = "field-group";
+        el.innerHTML = `<div class="field-label">${escapeHTML(label)}</div>`;
+        const row = document.createElement("div");
+        row.className = "vec-row";
+        el.appendChild(row);
+        const drags = [];
+        ["x","y","z"].forEach((ax, i) => {
+            const lbl = document.createElement("span");
+            lbl.className = `vec-axis ${ax}`;
+            lbl.textContent = ax.toUpperCase();
+            row.appendChild(lbl);
+            const d = makeDragInput({ value: defaults[i] ?? 0, step, decimals, onChange: onChange ? () => onChange() : null });
+            row.appendChild(d.el);
+            drags.push(d);
+        });
+        return { el, get: () => drags.map(d => d.get()), set: vals => drags.forEach((d, i) => d.set(vals[i] ?? 0)) };
+    }
+
+    function makeColorField(label, defaults = [1,1,1,1], onChange = null) {
+        const el = document.createElement("div");
+        el.className = "field-group";
+        el.innerHTML = `<div class="field-label">${escapeHTML(label)}</div>`;
+        const row = document.createElement("div");
+        row.className = "color-row";
+        const preview = document.createElement("div");
+        preview.className = "color-preview";
+        preview.style.background = rgbToHex(defaults);
+        const grid = document.createElement("div");
+        grid.className = "color-grid";
+        const drags = [];
+        ["R","G","B","A"].forEach((ch, i) => {
+            const lbl = document.createElement("span");
+            lbl.className = "vec-axis";
+            lbl.style.cssText = "color: var(--text-dim);";
+            lbl.textContent = ch;
+            grid.appendChild(lbl);
+            const d = makeDragInput({
+                value: defaults[i] ?? 1,
+                step: 0.01, decimals: 2, clamp: [0, 1],
+                onChange: () => {
+                    const rgba = drags.map(d => d.get());
+                    preview.style.background = rgbToHex(rgba);
+                    if (onChange) onChange(rgba);
+                },
+            });
+            grid.appendChild(d.el);
+            drags.push(d);
+        });
+        row.appendChild(preview);
+        row.appendChild(grid);
+        el.appendChild(row);
+        return { el, get: () => drags.map(d => d.get()) };
+    }
+
+    /* ----------------
+       Section-toggle wiring (for left-panel headers)
+       ---------------- */
+    document.querySelectorAll(".sect").forEach(sect => {
+        const head = sect.querySelector(".sect-head");
+        // Avoid wiring the static Inspector header (cursor:default)
+        if (head && head.style.cursor !== "default" && !head.dataset.bound) {
+            head.dataset.bound = "1";
+            head.addEventListener("click", e => {
+                if (e.target.closest(".toolbar")) return;  // ignore toolbar clicks
+                sect.classList.toggle("collapsed");
+            });
+        }
+    });
+
+    /* ----------------
+       INPUT - keyboard, mouse, pointer-lock, wheel zoom
+       ---------------- */
+    const canvas = canvas3d.canvas;
+    canvas.tabIndex = 0;
+
+    const keys = Object.create(null);
+    window.addEventListener("keydown", e => {
+        keys[e.code] = true;
+        if (e.code === "KeyP") { skyNode.meshRender.visible = !skyNode.meshRender.visible; }
+        if (e.code === "KeyL") { project.camera.orthographic = !project.camera.orthographic; }
+        if (e.code === "Delete" && selectedNode) deleteNode(selectedNode);
+    });
+    window.addEventListener("keyup", e => { keys[e.code] = false; });
+
+    canvas.addEventListener("click", e => {
+        if (e.button === 0 && document.pointerLockElement !== canvas) canvas.requestPointerLock();
+    });
+    document.addEventListener("pointerlockchange", () => {
+        canvas.style.cursor = document.pointerLockElement === canvas ? "none" : "default";
+    });
+    canvas.addEventListener("mousemove", e => {
+        if (document.pointerLockElement !== canvas) return;
+        project.camera.rotate(-e.movementX * 0.15, -e.movementY * 0.15);
+    });
+    canvas.addEventListener("wheel", e => {
+        e.preventDefault();
+        const c = project.camera;
+        const dir = Math.sign(e.deltaY);
+        if (c.orthographic) c.orthoSize = EzMath.clamp(c.orthoSize * (1 + dir * 0.1), 0.1, 1000);
+        else                c.fov       = EzMath.clamp(c.fov + dir * 2, 5, 120);
+    }, { passive: false });
+
+    /* ----------------
+       CAMERA HUD wiring
+       ---------------- */
+    const camHud      = document.getElementById("cam-hud");
+    const camHudHead  = document.getElementById("cam-hud-head");
+    const hudPos      = document.getElementById("ch-pos");
+    const hudYaw      = document.getElementById("ch-yaw");
+    const hudPit      = document.getElementById("ch-pit");
+    const hudFwd      = document.getElementById("ch-fwd");
+    const hudFps      = document.getElementById("ch-fps");
+    camHudHead.addEventListener("click", () => camHud.classList.toggle("collapsed"));
+    const f2 = n => (n >= 0 ? " " : "") + n.toFixed(2);
+
+    /* ----------------
+       RENDER LOOP - camera control, optional outline pass, lit pass.
+       ---------------- */
+    let lastT = performance.now();
+    let fpsAccum = 0, fpsFrames = 0, fpsLast = 0;
+
+    function frame(now) {
+        const dt = Math.min((now - lastT) / 1000, 0.05);
+        lastT = now;
+
+        // Camera WASD/space/ctrl movement (only relevant when pointer-locked)
+        const speed = keys["ShiftLeft"] ? 8 : 3;
+        const f = project.camera.forward.data, r = project.camera.right.data;
+        let dx = 0, dy = 0, dz = 0;
+        if (keys["KeyW"]) dz += 1;
+        if (keys["KeyS"]) dz -= 1;
+        if (keys["KeyD"]) dx += 1;
+        if (keys["KeyA"]) dx -= 1;
+        if (keys["Space"])       dy += 1;
+        if (keys["ControlLeft"]) dy -= 1;
+        if (dx || dy || dz) {
+            const m = speed * dt;
+            project.camera.translate([
+                f[0]*dz*m + r[0]*dx*m,
+                f[1]*dz*m + r[1]*dx*m + dy*m,
+                f[2]*dz*m + r[2]*dx*m,
+            ]);
+        }
+
+        // Scene update - composes world transforms + skeleton palettes.
+        project.update(dt);
+
+        // Render. Outline (when enabled) is a separate pass with shader-key
+        // swap so the SAME nodes are drawn with the outline shader first
+        // (depth-on, cull=front), then the lit pass overdraws normally.
+        EzRender.applyState(project.gl, {
+            clearColor: [0.05, 0.055, 0.067, 1.0],
+            clear: ['color', 'depth'],
+        });
+
+        // Draw sky exactly once, then run mesh-only passes. Re-drawing sky in
+        // later passes can erase outline color while keeping outline depth.
+        project.render(project.camera, mainScene, {
+            clear: false,
+            nodeFilter: n => n === skyNode,
+        });
+
+        if (fx.outlineEnabled) {
+            const restore = [];
+            for (const n of mainScene._nodes) {
+                if (n === skyNode || !n.meshRender || !n.meshRender.visible) continue;
+                restore.push([n, n.meshRender.shaderKey]);
+                n.meshRender.shaderKey = SHADER_OUTLINE;
+            }
+            project.render(project.camera, mainScene, {
+                clear: false,
+                nodeFilter: n => n !== skyNode,
+            });
+            for (const [n, k] of restore) n.meshRender.shaderKey = k;
+        }
+
+        project.render(project.camera, mainScene, {
+            clear: false,
+            nodeFilter: n => n !== skyNode,
+        });
+
+        // HUD (cheap DOM writes, only when expanded)
+        fpsAccum += dt; fpsFrames++;
+        if (fpsAccum >= 0.25) {
+            fpsLast = fpsFrames / fpsAccum;
+            fpsAccum = 0; fpsFrames = 0;
+        }
+        if (!camHud.classList.contains("collapsed")) {
+            const pd = project.camera.position.data;
+            EzMath.toEulerYPR(_yprV, project.camera.orientation);
+            const yd = _yprV.data;
+            hudPos.textContent = `${f2(pd[0])}, ${f2(pd[1])}, ${f2(pd[2])}`;
+            hudYaw.textContent = `${f2(yd[0])}°`;
+            hudPit.textContent = `${f2(yd[1])}°`;
+            hudFwd.textContent = `${f2(f[0])}, ${f2(f[1])}, ${f2(f[2])}`;
+            hudFps.textContent = fpsLast.toFixed(1);
+        }
+
+        requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    renderHierarchy();
+    renderInspector();
+    renderModelPalette();
+    renderFXPanel();
+
+    for (const [key, url] of Object.entries(MODELS)) {
+        loadModel(key, url);
+    }
+
+})().catch(console.error);
+</script>
+
+</body>
+</html>

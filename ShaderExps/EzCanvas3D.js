@@ -4,232 +4,19 @@ By Asciiz
 
 Holy crap guys I actually made a proper 3D html webgl renderer instead of using canvas2d lmao
 
-EzCanvas3D
-|-- new EzCanvas3D(name)
-|-- mount(el) / unmount() / resize(w, h)
-|-- get: canvas, gl
-|-- settings
-|   |-- width() / height()
-|   |-- fitContainer()                       resize canvas to its parent's bounds
-|
-|-- .camera                                  your view into the world
-|   |-- Fields you can read or write directly:
-|   |   |-- position     [x, y, z]
-|   |   |-- orientation  quat [x, y, z, w]   (use EzMath.Quat helpers)
-|   |   |-- orthographic bool                (default false; true = orthographic projection)
-|   |   |-- fov          degrees             (default 45, perspective only)
-|   |   |-- orthoSize    world units         (default 5, orthographic only - half-height)
-|   |   |-- near / far   clip planes         (defaults 0.1 / 1000)
-|   |   |-- aspect       updated for you by resize() / settings.fitContainer()
-|   |-- Read-only derived values:
-|   |   |-- yaw / pitch / roll               degrees, decoded from orientation
-|   |   |-- forward / right / up             unit vectors in world space
-|   |   |-- vectors                          { forward, right, up }
-|   |   |-- view / projection                mat4 - auto-uploaded by render()
-|   |-- Methods:
-|   |   |-- set({ position?, orientation?, fov?, near?, far?, aspect?, orthographic?, orthoSize? })
-|   |   |-- rotate(yawDeg, pitchDeg, rollDeg)        incremental, in degrees
-|   |   |-- lookAt(target, up?=[0,1,0])              point at a world position
-|   |   |-- translate([dx, dy, dz])                  move in world space
-|   |-- To set an absolute yaw/pitch:
-|       ez.camera.set({ orientation: EzMath.Quat.fromEulerYPR(yaw, pitch, roll) });
-|
-|-- .assets                                  keyed registries for every resource
-|   |
-|   |-- Common surface (every namespace has these):
-|   |   |-- .add(key, value)                 true on success, false on error
-|   |   |-- .remove(key)                     cleans up GL resources where applicable
-|   |   |-- .read(key)                       safe read-only snapshot (where supported)
-|   |   |-- .has / .keys / .values / .entries / .size / [Symbol.iterator]
-|   |   |-- .[key] / ["key"]                 raw stored value (direct lookup)
-|   |
-|   |-- .shaders                             EzShader3D registry  (see § EzShader3D)
-|   |   |-- .add(key, ezShader)              auto-compiles if only described
-|   |   |-- .remove(key)                     deletes the underlying GL program
-|   |   |-- .read(key)                       -> { key, attributes, morphChannels, hasSkeleton }
-|   |
-|   |-- .textures                            GPU textures
-|   |   |-- .add(key, {
-|   |   |       data,                        TypedArray, or ImageBitmap / Image / Canvas
-|   |   |       width, height,
-|   |   |       channels?: 1|2|3|4,          default 4 (RGBA)
-|   |   |       filter?: "nearest" | gl.LINEAR    default LINEAR (mipmaps when POT)
-|   |   |       wrap?: gl wrap constant      default gl.REPEAT
-|   |   |   })
-|   |   |-- .remove(key)                     deletes the GL texture
-|   |
-|   |-- .models                              the high-level "drawable" - mesh + optional skeleton
-|   |   |-- .add(key, {
-|   |   |       defaultShader,               shader key - required
-|   |   |       vertices,                    Float32Array, packed per `attributes` order
-|   |   |       indices?,                    Uint16Array | Uint32Array (omit for non-indexed)
-|   |   |       attributes?: [{ name, size }],
-|   |   |           default [{name:"a_position",size:3},{name:"a_uv",size:2}].
-|   |   |           Names must match the shader's vertex.attributes; any attribute
-|   |   |           not listed here falls back to that attribute's `default`.
-|   |   |       primitives?: [
-|   |   |           {
-|   |   |               // pick ONE of (indexOffset+indexCount) or (vertexOffset+vertexCount)
-|   |   |               indexOffset?, indexCount?,
-|   |   |               vertexOffset?, vertexCount?,
-|   |   |               material?: { albedo?: textureKey, fill?: [r,g,b,a] },
-|   |   |               morphTargets?: { <channelName>: [Float32Array(vertexCount*3), ...] }
-|   |   |                              // keys must match shader's vertex.morphChannels
-|   |   |           }, ...
-|   |   |       ],
-|   |   |       skeleton?: {
-|   |   |           bones: [
-|   |   |               { parent, localBind?, inverseBind?, name? }, ...
-|   |   |               // parent: -1 = root; otherwise must be < own index
-|   |   |               // localBind: mat4 | { position?, rotation?, scale?, euler? }
-|   |   |               // inverseBind: auto-computed from the bind pose if omitted
-|   |   |               // name: optional. Defaults to "Bone_<index>"
-|   |   |           ],
-|   |   |       },
-|   |   |   })
-|   |   |   |-- Behind the scenes this also creates:
-|   |   |   |     .assets.meshes["<key>_mesh"]        the EzMesh3D
-|   |   |   |     .assets.skeletons["<key>_skeleton"] the EzSkeleton3D (when present)
-|   |   |-- .remove(key)                     drops the model and its instances.
-|   |   |                                    Mesh/skeleton entries are kept - remove
-|   |   |                                    them separately to free the GL buffers.
-|   |   |-- .read(key)                       -> { key, defaultShader, meshKey, skeletonKey,
-|   |                                              primitives, indexCount, boneCount,
-|   |                                              morphTotalWeights }
-|   |
-|   |-- .meshes                              lower-level geometry handles  (see § EzMesh3D)
-|   |   |-- Created automatically by .models.add. Touch these only to share
-|   |   |   geometry between models, or to .add an EzMesh3D you built via
-|   |   |   EzMesh3D.fromDesc yourself.
-|   |
-|   |-- .skeletons                           lower-level rig handles  (see § EzSkeleton3D)
-|   |   |-- Same story as .meshes - created for you, manageable by hand if needed.
-|   |
-|   |-- .<custom>                            roll your own namespace
-|   |   |-- ez.assets.register(name, hooks)
-|   |   |     hooks.add(map, key, value)     return false to reject, else stored
-|   |   |     hooks.remove(map, key)         cleanup before deletion
-|   |   |     hooks.<any>(map, ...args)      any other key becomes a method on the namespace
-|   |   |-- ez.assets.namespaces() -> string[]
-|   |
-|   |-- Shortcuts on EzCanvas3D itself (just aliases for .assets.<x>):
-|       |-- ez.shaders     -> ez.assets.shaders
-|       |-- ez.models      -> ez.assets.models
-|       |-- ez.textures    -> ez.assets.textures
-|       |-- ez.meshes      -> ez.assets.meshes
-|       |-- ez.skeletons   -> ez.assets.skeletons
-|
-|-- Instances - one entry of a model in the scene
-|   |-- addInstance(modelKey, init?) -> instKey
-|   |   |-- init.shader: optional override (must share the same instanceData layout)
-|   |   |-- init.data / init.bone / init.morph / init.display: forwarded to writeInstance
-|   |-- writeInstance(key, { data?, bone?, morph?, display?, shader? })
-|   |   |-- data:    keyed by your shader's instanceData names
-|   |   |   |-- mat4  - Float32Array(16) OR { position?, rotation?(quat), scale?, euler?(ZYX deg) }
-|   |   |   |-- vec*  - array / Float32Array of matching length
-|   |   |   |-- float - number
-|   |   |-- bone:    { id, transform } OR array of those         (skinned models only)
-|   |   |             transform: mat4 | { position?, rotation?, scale?, euler? }
-|   |   |-- morph:   [w0, w1, ...]  OR  { offset, weights: [...] }
-|   |   |             total weight count = sum of morphTargets counts across primitives
-|   |   |-- display: false hides this instance for one or more frames (default true)
-|   |   |-- shader:  swap the shader at runtime (compatibility rules above)
-|   |-- readInstance(key)         -> snapshot { modelKey, data, bonePoses, morphWeights, display }
-|   |-- removeInstance(key)
-|
-|-- render()                                 call once per animation frame
+Contains
+    EzMath       Mat4 / Quat / Vec3 / etc. utilities 
+    EzRender     static, dimension-agnostic GL helpers
+    EzShader     low-level shader compile + render-state base
+    EzCanvas3D   thin wrapper around <canvas> + WebGL2 context
 
-EzShader3D  (extends EzShader)
-new EzShader3D().describe({ vertex, fragment, uniKeys?, onbind?, renderCfg? })
-|-- vertex
-|   |-- attributes:    [{ name, size: 1..4, default?: [r,g,b,a] }]
-|   |                    `default` is used when a model doesn't supply this attribute.
-|   |-- instanceData:  [{ name, type?, default? }]
-|   |                    type: "mat4" | "vec4" | "vec3" | "vec2" | "float"  (default "vec4")
-|   |                    `name` is the key you use in writeInstance({ data: { ... } }).
-|   |-- defaultKeys:   { view?, projection? }
-|   |                    Names a uniform; the engine auto-binds the camera matrices.
-|   |-- hasSkeleton:   bool. Gives you in GLSL:
-|   |                    mat4 computeSkin(vec4 boneID, vec4 boneWeight);
-|   |                    mat4 fetchBone(int id);
-|   |-- morphChannels: string[]. Channel names matching primitive morphTargets keys.
-|   |                    Gives you in GLSL:
-|   |                    vec3 applyMorph(int channelIdx, int vertexLocal);
-|   |                    int  morphVertexLocal();    // gl_VertexID local to the primitive
-|   |-- outputs:       [{ name, type? }]   varyings to the fragment stage (type default vec4)
-|   |-- main:          GLSL body (no `void main` wrapper)
-|-- fragment
-|   |-- defaultKeys:   { fill?, albedo? }
-|   |                    fill   -> uniform vec4,      bound per-primitive material.fill
-|   |                    albedo -> uniform sampler2D, bound per-primitive material.albedo
-|   |-- outputColor:   out variable name (default "fragColor")
-|   |-- main:          GLSL body
-|-- uniKeys:  [{ name, type }] custom uniforms emitted to both stages.
-|             Supported: mat4, mat3, vec4, vec3, vec2, float, int, bool,
-|                        sampler2D, "highp sampler2D".
-|             Sampler uniforms get texture units assigned for you; the unit map
-|             lives on `shader.texUnits[name]`.
-|-- onbind(gl, program): called every draw - use it to upload your uniKeys
-|                        and bind any sampler textures.
-|-- renderCfg
-    |-- rQueue       draw order. Lower = earlier. Default 1000.
-    |                Sky-style backgrounds use 0; transparent overlays use ~2000+.
-    |-- depthWrite   default true
-    |-- depthTest    default true
-    |-- blend        default false
-    |-- blendSrc / blendDst   gl blend factors. Default SRC_ALPHA / ONE_MINUS_SRC_ALPHA.
-                              See EzShader.BLEND for named constants.
-    |-- cull         'back' (default) | 'front' | 'none'.
-    |                'back'  : standard opaque rendering.
-    |                'front' : inverted-hull tricks (outline / shell).
-    |                'none'  : two-sided sheets, particles, billboards.
-
-A shader must be `.describe(...)`d before `.assets.shaders.add(key, shader)`;
-the engine compiles it for you on add.
-
-EzShader  (low-level base - most users don't touch this directly)
-|-- compile(vertSrc, fragSrc, gl) -> self
-|-- bind(gl) / applyRenderState(gl)
-|-- static .BLEND   named gl blend factor constants
-
-EzMesh3D
-|-- static EzMesh3D.fromDesc(gl, shader, key, opts) -> EzMesh3D | false
-|   |-- opts: { vertices, indices?, attributes?, primitives? }
-|   |          (same shape as the corresponding fields on models.add)
-|   |-- Returns false on validation error (and console-warns the reason).
-|-- .destroy(gl)             frees its VAO, VBOs, and morph delta textures
-|-- .primitives              array of draw ranges, each with material + optional morph info
-|-- .morphTotalWeights       total number of morph weight slots used by this mesh
-
-EzSkeleton3D
-|-- static EzSkeleton3D.fromDesc(key, { bones }) -> EzSkeleton3D | null | false
-|   |-- null  if no skeleton was provided
-|   |-- false on validation error (e.g. parent index >= self)
-|-- .computePalette(bonePoses) -> Float32Array(boneCount * 16)
-|                                  ready-to-upload skinning matrix palette
-|-- .bones                     read-only [{ parent, localBind, inverseBind, name }, ...]
-
-EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
-|-- static bind(gl, program, onbind?)             useProgram + optional onbind(gl, program) callback
-|-- static applyState(gl, cfg)                    apply a renderCfg  { depthWrite, depthTest, blend, blendSrc, blendDst, cull }
-|-- static restoreDefaultState(gl)                reset to sane defaults after a manual render loop
-|-- static withVAO(gl, vao, fn)                   bind vao → fn() → unbind, guaranteed via try/finally
-|-- static uploadVBO(gl, vbo, data, usage?)       sub-data upload with capacity-doubling growth strategy
-|-- static wireAttr(gl, { buffer, loc, size, … }) vertexAttribPointer + optional divisor; skips if loc < 0
-|-- static setConstAttrs(gl, list)                vertexAttrib4f for shader attributes not backed by a buffer
-|-- static setUniforms(gl, program, list)         list: [{ loc|name, type, value }]  types: mat4/3 vec4/3/2 float int bool
-|-- static bindSampler(gl, loc, unit, tex, target?)  activeTexture + bindTexture + uniform1i in one call
-|-- static createTexture(gl, { data, width, height, format, … }) -> WebGLTexture   full options, mipmap support
-|-- static uploadTexture2D(gl, existing, internalFmt, fmt, type, w, h, data, unit?) -> WebGLTexture
-|                                                 fast re-upload for frequently changing textures (skinning, morph)
-|-- static SCRATCH_TEX_UNIT = 15                  internal unit used by uploadTexture2D; don't use unit 15 yourself
-|-- static drawInstanced(gl, drawCfg, instanceCount)   drawCfg: { indexed, indexCount, indexType, indexOffset } or { vertexOffset, vertexCount }
-|-- static packInstanceRow(arr, offFloats, data, layout)   write one instance row into a pre-allocated Float32Array
-|-- static packInstances(dataArray, layout) -> Float32Array | null   pack all instances; layout from shader.instanceLayout
+    -- Highly specialized --
+    EzCamera3D   view/projection helper
+    EzMesh3D     VAO + VBO geometry container
+    EzSkeleton3D bone rig + skinning palette builder
 */
 
 (function () {
-
     class _c {
         static warn(TAG, ...a) { console.warn(TAG, ...a); return false; }
         static err(TAG, ...a) { console.error(TAG, ...a) }
@@ -242,27 +29,335 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
         static sampler = t => t === "sampler2D" || t === "highp sampler2D"
     }
 
+    const KIND_SCALAR = 'scalar';
+    const KIND_VEC2   = 'vec2';
+    const KIND_VEC3   = 'vec3';
+    const KIND_VEC4   = 'vec4';
+    const KIND_QUAT   = 'quat';
+    const KIND_MAT4   = 'mat4';
+
+    class Vec2 {
+        static KIND = KIND_VEC2;
+        static SIZE = 2;
+        constructor(x = 0, y = 0) {
+            this.data = new Float32Array(2);
+            this.kind = KIND_VEC2;
+            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; }
+            else { this.data[0] = x; this.data[1] = y; }
+        }
+        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; return this; }
+        copy(o)         { this.data.set(o.data); return this; }
+        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
+        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
+    }
+
+    class Vec3 {
+        static KIND = KIND_VEC3;
+        static SIZE = 3;
+        constructor(x = 0, y = 0, z = 0) {
+            this.data = new Float32Array(3);
+            this.kind = KIND_VEC3;
+            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; this.data[2]=x[2]||0; }
+            else { this.data[0]=x; this.data[1]=y; this.data[2]=z; }
+        }
+        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; this.data[2]=a[off+2]; return this; }
+        copy(o)         { this.data.set(o.data); return this; }
+        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
+        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
+        get z() { return this.data[2]; }  set z(v) { this.data[2] = v; }
+    }
+
+    class Vec4 {
+        static KIND = KIND_VEC4;
+        static SIZE = 4;
+        constructor(x = 0, y = 0, z = 0, w = 0) {
+            this.data = new Float32Array(4);
+            this.kind = KIND_VEC4;
+            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; this.data[2]=x[2]||0; this.data[3]=x[3]||0; }
+            else { this.data[0]=x; this.data[1]=y; this.data[2]=z; this.data[3]=w; }
+        }
+        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; this.data[2]=a[off+2]; this.data[3]=a[off+3]; return this; }
+        copy(o)         { this.data.set(o.data); return this; }
+        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
+        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
+        get z() { return this.data[2]; }  set z(v) { this.data[2] = v; }
+        get w() { return this.data[3]; }  set w(v) { this.data[3] = v; }
+    }
+
+    class Quat {
+        static KIND = KIND_QUAT;
+        static SIZE = 4;
+        constructor(x = 0, y = 0, z = 0, w = 1) {
+            this.data = new Float32Array(4);
+            this.kind = KIND_QUAT;
+            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; this.data[2]=x[2]||0; this.data[3]=x[3]!=null?x[3]:1; }
+            else { this.data[0]=x; this.data[1]=y; this.data[2]=z; this.data[3]=w; }
+        }
+        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; this.data[2]=a[off+2]; this.data[3]=a[off+3]; return this; }
+        copy(o)         { this.data.set(o.data); return this; }
+        identity()      { this.data[0]=0; this.data[1]=0; this.data[2]=0; this.data[3]=1; return this; }
+        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
+        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
+        get z() { return this.data[2]; }  set z(v) { this.data[2] = v; }
+        get w() { return this.data[3]; }  set w(v) { this.data[3] = v; }
+    }
+
+    class Mat4 {
+        static KIND = KIND_MAT4;
+        static SIZE = 16;
+        constructor(a) {
+            this.data = new Float32Array(16);
+            this.kind = KIND_MAT4;
+            if (a != null && typeof a === 'object') { this.set(a); }
+            else { this.data[0] = 1; this.data[5] = 1; this.data[10] = 1; this.data[15] = 1; }
+        }
+        set(a, off = 0) {
+            const d = this.data;
+            for (let i = 0; i < 16; i++) d[i] = a[off + i];
+            return this;
+        }
+        copy(o) { this.data.set(o.data); return this; }
+        identity() {
+            const d = this.data;
+            d[0] =1; d[1] =0; d[2] =0; d[3]= 0;
+            d[4] =0; d[5] =1; d[6] =0; d[7] =0;
+            d[8] =0; d[9] =0; d[10]=1; d[11]=0;
+            d[12]=0; d[13]=0; d[14]=0; d[15]=1;
+            return this;
+        }
+    }
+
     class EzMath {
         static clamp = (p, min, max) => Math.max(min, Math.min(max, p));
 
-        // all mat are column major
+        static kindOf(v) {
+            if (typeof v === 'number') return KIND_SCALAR;
+            if (v && typeof v.kind === 'string') return v.kind;
+            return null;
+        }
 
-        static Mat4 = {
-            identity() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
+        static #scratchM = new Float32Array(16);
+        static #scratchQ = new Float32Array(4);
+        static #scratchV = new Float32Array(4);
+        static #_pos = new Vec3();
+        static #_scl = new Vec3(1, 1, 1);
+        static #_rot = new Quat();
 
-            multiply(a, b) {
-                const o = new Float32Array(16);
-                for (let c = 0; c < 4; c++) {
-                    const b0=b[c*4], b1=b[c*4+1], b2=b[c*4+2], b3=b[c*4+3];
-                    o[c*4  ] = a[0]*b0 + a[4]*b1 + a[ 8]*b2 + a[12]*b3;
-                    o[c*4+1] = a[1]*b0 + a[5]*b1 + a[ 9]*b2 + a[13]*b3;
-                    o[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
-                    o[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
-                }
-                return o;
-            },
+        static copy(out, a) {
+            if (!out || !a || out.kind !== a.kind) return null;
+            out.data.set(a.data);
+            return out;
+        }
 
-            invert(m) {
+        static identity(out) {
+            if (!out) return null;
+            if (out.kind === KIND_MAT4 || out.kind === KIND_QUAT) { out.identity(); return out; }
+            return null;
+        }
+
+        static add(out, a, b) {
+            if (!out || !out.data) return null;
+            const ko = out.kind, sz = out.data.length;
+            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
+            if (!ka || !kb) return null;
+            const isScA = ka === KIND_SCALAR, isScB = kb === KIND_SCALAR;
+            const od = out.data;
+            if (!isScA && !isScB) {
+                if (ka !== ko || kb !== ko) return null;
+                const ad = a.data, bd = b.data;
+                for (let i = 0; i < sz; i++) od[i] = ad[i] + bd[i];
+                return out;
+            }
+            if (isScA && isScB) {
+                const v = a + b;
+                for (let i = 0; i < sz; i++) od[i] = v;
+                return out;
+            }
+            const sized = isScA ? b : a;
+            if (sized.kind !== ko) return null;
+            const sd = sized.data;
+            const sc = isScA ? a : b;
+            for (let i = 0; i < sz; i++) od[i] = sd[i] + sc;
+            return out;
+        }
+
+        static sub(out, a, b) {
+            if (!out || !out.data) return null;
+            const ko = out.kind, sz = out.data.length;
+            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
+            if (!ka || !kb) return null;
+            const isScA = ka === KIND_SCALAR, isScB = kb === KIND_SCALAR;
+            const od = out.data;
+            if (!isScA && !isScB) {
+                if (ka !== ko || kb !== ko) return null;
+                const ad = a.data, bd = b.data;
+                for (let i = 0; i < sz; i++) od[i] = ad[i] - bd[i];
+                return out;
+            }
+            if (isScA && isScB) {
+                const v = a - b;
+                for (let i = 0; i < sz; i++) od[i] = v;
+                return out;
+            }
+            if (isScA) {
+                if (b.kind !== ko) return null;
+                const bd = b.data;
+                for (let i = 0; i < sz; i++) od[i] = a - bd[i];
+                return out;
+            }
+            // isScB
+            if (a.kind !== ko) return null;
+            const ad = a.data;
+            for (let i = 0; i < sz; i++) od[i] = ad[i] - b;
+            return out;
+        }
+
+        static mult(out, a, b) {
+            if (!out || !out.data) return null;
+            const ko = out.kind;
+            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
+            if (!ka || !kb) return null;
+
+            if (ka === KIND_SCALAR && kb === KIND_SCALAR) return null;
+            if (ka === KIND_SCALAR) {
+                if (ko !== kb) return null;
+                return EzMath.#scaleInto(out, b, a);
+            }
+            if (kb === KIND_SCALAR) {
+                if (ko !== ka) return null;
+                return EzMath.#scaleInto(out, a, b);
+            }
+
+            if (ka === KIND_MAT4 && kb === KIND_MAT4 && ko === KIND_MAT4) return EzMath.#multM4M4(out, a, b);
+            if (ka === KIND_QUAT && kb === KIND_QUAT && ko === KIND_QUAT) return EzMath.#multQQ(out, a, b);
+            if (ka === KIND_MAT4 && kb === KIND_VEC4 && ko === KIND_VEC4) return EzMath.#multM4V4(out, a, b);
+            if (ka === KIND_MAT4 && kb === KIND_VEC3 && ko === KIND_VEC3) return EzMath.#multM4Point(out, a, b);
+            if (ka === KIND_QUAT && kb === KIND_VEC3 && ko === KIND_VEC3) return EzMath.#multQV3(out, a, b);
+
+            if (ka === kb && ko === ka && (ka === KIND_VEC2 || ka === KIND_VEC3 || ka === KIND_VEC4)) {
+                const ad = a.data, bd = b.data, od = out.data;
+                for (let i = 0; i < od.length; i++) od[i] = ad[i] * bd[i];
+                return out;
+            }
+            return null;
+        }
+
+        static #scaleInto(out, sized, s) {
+            if (out.kind !== sized.kind || out.data.length !== sized.data.length) return null;
+            const od = out.data, sd = sized.data;
+            for (let i = 0; i < od.length; i++) od[i] = sd[i] * s;
+            return out;
+        }
+
+        static #multM4M4(out, A, B) {
+            const a = A.data, b = B.data, t = EzMath.#scratchM;
+            for (let c = 0; c < 4; c++) {
+                const b0=b[c*4], b1=b[c*4+1], b2=b[c*4+2], b3=b[c*4+3];
+                t[c*4  ] = a[0]*b0 + a[4]*b1 + a[ 8]*b2 + a[12]*b3;
+                t[c*4+1] = a[1]*b0 + a[5]*b1 + a[ 9]*b2 + a[13]*b3;
+                t[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
+                t[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
+            }
+            out.data.set(t);
+            return out;
+        }
+
+        static #multQQ(out, A, B) {
+            const a = A.data, b = B.data, t = EzMath.#scratchQ;
+            const ax=a[0], ay=a[1], az=a[2], aw=a[3];
+            const bx=b[0], by=b[1], bz=b[2], bw=b[3];
+            t[0] = aw*bx + ax*bw + ay*bz - az*by;
+            t[1] = aw*by - ax*bz + ay*bw + az*bx;
+            t[2] = aw*bz + ax*by - ay*bx + az*bw;
+            t[3] = aw*bw - ax*bx - ay*by - az*bz;
+            const od = out.data;
+            od[0]=t[0]; od[1]=t[1]; od[2]=t[2]; od[3]=t[3];
+            return out;
+        }
+
+        static #multM4V4(out, M, V) {
+            const m = M.data, v = V.data, t = EzMath.#scratchV;
+            const x=v[0], y=v[1], z=v[2], w=v[3];
+            t[0] = m[0]*x + m[4]*y + m[ 8]*z + m[12]*w;
+            t[1] = m[1]*x + m[5]*y + m[ 9]*z + m[13]*w;
+            t[2] = m[2]*x + m[6]*y + m[10]*z + m[14]*w;
+            t[3] = m[3]*x + m[7]*y + m[11]*z + m[15]*w;
+            const od = out.data;
+            od[0]=t[0]; od[1]=t[1]; od[2]=t[2]; od[3]=t[3];
+            return out;
+        }
+
+        // Mat4 * Vec3 (point) - assumes w=1; performs perspective divide.
+        static #multM4Point(out, M, V) {
+            const m = M.data, v = V.data;
+            const x=v[0], y=v[1], z=v[2];
+            const tx = m[0]*x + m[4]*y + m[ 8]*z + m[12];
+            const ty = m[1]*x + m[5]*y + m[ 9]*z + m[13];
+            const tz = m[2]*x + m[6]*y + m[10]*z + m[14];
+            const tw = m[3]*x + m[7]*y + m[11]*z + m[15] || 1;
+            const inv = 1 / tw;
+            const od = out.data;
+            od[0] = tx * inv; od[1] = ty * inv; od[2] = tz * inv;
+            return out;
+        }
+
+        // Quat * Vec3 - rotate vector by quaternion.
+        static #multQV3(out, Q, V) {
+            const q = Q.data, v = V.data;
+            const qx=q[0], qy=q[1], qz=q[2], qw=q[3];
+            const vx=v[0], vy=v[1], vz=v[2];
+            const tx = 2*(qy*vz - qz*vy);
+            const ty = 2*(qz*vx - qx*vz);
+            const tz = 2*(qx*vy - qy*vx);
+            const od = out.data;
+            od[0] = vx + qw*tx + qy*tz - qz*ty;
+            od[1] = vy + qw*ty + qz*tx - qx*tz;
+            od[2] = vz + qw*tz + qx*ty - qy*tx;
+            return out;
+        }
+
+        static scale(out, a, s) {
+            if (!out || !a) return null;
+            if (out.kind !== a.kind || out.data.length !== a.data.length) return null;
+            if (typeof s !== 'number') return null;
+            const od = out.data, ad = a.data;
+            for (let i = 0; i < od.length; i++) od[i] = ad[i] * s;
+            return out;
+        }
+
+        static negate(out, a) {
+            if (!out || !a) return null;
+            if (out.kind !== a.kind || out.data.length !== a.data.length) return null;
+            const od = out.data, ad = a.data;
+            for (let i = 0; i < od.length; i++) od[i] = -ad[i];
+            return out;
+        }
+
+        static normalize(out, a) {
+            if (!out || !a) return null;
+            if (out.kind !== a.kind) return null;
+            const k = a.kind;
+            if (k !== KIND_VEC2 && k !== KIND_VEC3 && k !== KIND_VEC4 && k !== KIND_QUAT) return null;
+            const ad = a.data, od = out.data;
+            let lsq = 0;
+            for (let i = 0; i < ad.length; i++) lsq += ad[i]*ad[i];
+            const inv = lsq > 0 ? 1/Math.sqrt(lsq) : 0;
+            for (let i = 0; i < ad.length; i++) od[i] = ad[i] * inv;
+            return out;
+        }
+
+        static invert(out, a) {
+            if (!out || !a || out.kind !== a.kind) return null;
+            if (a.kind === KIND_QUAT) {
+                const ad = a.data, od = out.data;
+                const lsq = ad[0]*ad[0] + ad[1]*ad[1] + ad[2]*ad[2] + ad[3]*ad[3];
+                if (lsq === 0) return null;
+                const inv = 1 / lsq;
+                od[0] = -ad[0]*inv; od[1] = -ad[1]*inv; od[2] = -ad[2]*inv; od[3] = ad[3]*inv;
+                return out;
+            }
+            if (a.kind === KIND_MAT4) {
+                const m = a.data, t = EzMath.#scratchM;
                 const a00=m[0],  a01=m[1],  a02=m[2],  a03=m[3];
                 const a10=m[4],  a11=m[5],  a12=m[6],  a13=m[7];
                 const a20=m[8],  a21=m[9],  a22=m[10], a23=m[11];
@@ -272,261 +367,336 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
                 const b06 = a20*a31 - a21*a30, b07 = a20*a32 - a22*a30, b08 = a20*a33 - a23*a30;
                 const b09 = a21*a32 - a22*a31, b10 = a21*a33 - a23*a31, b11 = a22*a33 - a23*a32;
                 const det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
-                if (!det) return EzMath.Mat4.identity();
+                if (!det) return null;
                 const id = 1 / det;
-                return new Float32Array([ // Son :wilted_rose:
-                    (a11*b11 - a12*b10 + a13*b09) * id,
-                    (a02*b10 - a01*b11 - a03*b09) * id,
-                    (a31*b05 - a32*b04 + a33*b03) * id,
-                    (a22*b04 - a21*b05 - a23*b03) * id,
-                    (a12*b08 - a10*b11 - a13*b07) * id,
-                    (a00*b11 - a02*b08 + a03*b07) * id,
-                    (a32*b02 - a30*b05 - a33*b01) * id,
-                    (a20*b05 - a22*b02 + a23*b01) * id,
-                    (a10*b10 - a11*b08 + a13*b06) * id,
-                    (a01*b08 - a00*b10 - a03*b06) * id,
-                    (a30*b04 - a31*b02 + a33*b00) * id,
-                    (a21*b02 - a20*b04 - a23*b00) * id,
-                    (a11*b07 - a10*b09 - a12*b06) * id,
-                    (a00*b09 - a01*b07 + a02*b06) * id,
-                    (a31*b01 - a30*b03 - a32*b00) * id,
-                    (a20*b03 - a21*b01 + a22*b00) * id,
-                ]);
-            },
-
-            perspective(fovY, aspect, near, far) {
-                const f = 1.0 / Math.tan(fovY / 2), nf = 1 / (near - far);
-                return new Float32Array([
-                    f/aspect, 0, 0,             0,
-                    0,        f, 0,             0,
-                    0,        0, (far+near)*nf, -1,
-                    0,        0, 2*far*near*nf,  0,
-                ]);
-            },
-
-            ortho(left, right, bottom, top, near, far) {
-                const lr = 1/(left-right), bt = 1/(bottom-top), nf = 1/(near-far);
-                return new Float32Array([
-                    -2*lr,            0,                0,              0,
-                    0,                -2*bt,            0,              0,
-                    0,                0,                2*nf,           0,
-                    (left+right)*lr,  (top+bottom)*bt,  (far+near)*nf,  1,
-                ]);
-            },
-
-            lookAt(eye, target, up) {
-                const [px, py, pz] = eye;
-                let fx = target[0]-px, fy = target[1]-py, fz = target[2]-pz;
-                const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
-                const [ux, uy, uz] = up;
-                let rx = fy*uz - fz*uy, ry = fz*ux - fx*uz, rz = fx*uy - fy*ux;
-                const rl = Math.hypot(rx, ry, rz) || 1; rx /= rl; ry /= rl; rz /= rl;
-                const Ux = ry*fz - rz*fy, Uy = rz*fx - rx*fz, Uz = rx*fy - ry*fx;
-                return new Float32Array([
-                    rx,                   Ux,                   -fx, 0,
-                    ry,                   Uy,                   -fy, 0,
-                    rz,                   Uz,                   -fz, 0,
-                    -(rx*px+ry*py+rz*pz), -(Ux*px+Uy*py+Uz*pz), fx*px+fy*py+fz*pz, 1,
-                ]);
-            },
-
-            compose(pos = [0,0,0], quat = [0,0,0,1], scale = [1,1,1]) {
-                const [qx, qy, qz, qw] = quat, [sx, sy, sz] = scale;
-                const x2=qx+qx, y2=qy+qy, z2=qz+qz;
-                const xx=qx*x2, xy=qx*y2, xz=qx*z2, yy=qy*y2, yz=qy*z2, zz=qz*z2;
-                const wx=qw*x2, wy=qw*y2, wz=qw*z2;
-                return new Float32Array([
-                    (1-(yy+zz))*sx, (xy+wz)*sx,     (xz-wy)*sx,     0,
-                    (xy-wz)*sy,     (1-(xx+zz))*sy, (yz+wx)*sy,     0,
-                    (xz+wy)*sz,     (yz-wx)*sz,     (1-(xx+yy))*sz, 0,
-                    pos[0], pos[1], pos[2], 1,
-                ]);
-            },
-
-            resolveTransform(t, existing) {
-                if (t instanceof Float32Array && t.length === 16) return t;
-                if (!_is.obj(t)) return existing ?? EzMath.Mat4.identity();
-                const pos   = t.position ?? [existing?.[12]??0, existing?.[13]??0, existing?.[14]??0];
-                const scale = t.scale ?? [1,1,1];
-                const quat  = t.euler ? EzMath.Quat.fromEulerZYX(t.euler) : (t.rotation ?? [0,0,0,1]);
-                return EzMath.Mat4.compose(pos, quat, scale);
-            },
-
-            transformVec3(m, v) {
-                const x = v[0], y = v[1], z = v[2];
-                const w = m[3]*x + m[7]*y + m[11]*z + m[15];
-                return [
-                    (m[0]*x + m[4]*y + m[8]*z + m[12]) / w,
-                    (m[1]*x + m[5]*y + m[9]*z + m[13]) / w,
-                    (m[2]*x + m[6]*y + m[10]*z + m[14]) / w,
-                ];
-            },
-
-            transformVec3Normal(m3, v) {
-                const x = v[0], y = v[1], z = v[2];
-                const rx = m3[0]*x + m3[3]*y + m3[6]*z;
-                const ry = m3[1]*x + m3[4]*y + m3[7]*z;
-                const rz = m3[2]*x + m3[5]*y + m3[8]*z;
-                const len = Math.hypot(rx, ry, rz) || 1;
-                return [rx/len, ry/len, rz/len];
-            },
-
-            normalMat3(m) {
-                const a00=m[0], a01=m[1], a02=m[2];
-                const a10=m[4], a11=m[5], a12=m[6];
-                const a20=m[8], a21=m[9], a22=m[10];
-                const b00 = a11*a22 - a12*a21, b01 = a12*a20 - a10*a22, b02 = a10*a21 - a11*a20;
-                const b10 = a02*a21 - a01*a22, b11 = a00*a22 - a02*a20, b12 = a01*a20 - a00*a21;
-                const b20 = a01*a12 - a02*a11, b21 = a02*a10 - a00*a12, b22 = a00*a11 - a01*a10;
-                const det = a00*b00 + a01*b01 + a02*b02;
-                if (!det) return [1,0,0, 0,1,0, 0,0,1];
-                const id = 1 / det;
-                return [
-                    b00*id, b10*id, b20*id,
-                    b01*id, b11*id, b21*id,
-                    b02*id, b12*id, b22*id,
-                ];
+                t[ 0] = (a11*b11 - a12*b10 + a13*b09) * id;
+                t[ 1] = (a02*b10 - a01*b11 - a03*b09) * id;
+                t[ 2] = (a31*b05 - a32*b04 + a33*b03) * id;
+                t[ 3] = (a22*b04 - a21*b05 - a23*b03) * id;
+                t[ 4] = (a12*b08 - a10*b11 - a13*b07) * id;
+                t[ 5] = (a00*b11 - a02*b08 + a03*b07) * id;
+                t[ 6] = (a32*b02 - a30*b05 - a33*b01) * id;
+                t[ 7] = (a20*b05 - a22*b02 + a23*b01) * id;
+                t[ 8] = (a10*b10 - a11*b08 + a13*b06) * id;
+                t[ 9] = (a01*b08 - a00*b10 - a03*b06) * id;
+                t[10] = (a30*b04 - a31*b02 + a33*b00) * id;
+                t[11] = (a21*b02 - a20*b04 - a23*b00) * id;
+                t[12] = (a11*b07 - a10*b09 - a12*b06) * id;
+                t[13] = (a00*b09 - a01*b07 + a02*b06) * id;
+                t[14] = (a31*b01 - a30*b03 - a32*b00) * id;
+                t[15] = (a20*b03 - a21*b01 + a22*b00) * id;
+                out.data.set(t);
+                return out;
             }
-        };
-
-        static Quat = {
-            identity() { return [0, 0, 0, 1]; },
-
-            rotateVec([qx, qy, qz, qw], [vx, vy, vz]) {
-                const tx = 2*(qy*vz - qz*vy), ty = 2*(qz*vx - qx*vz), tz = 2*(qx*vy - qy*vx);
-                return [
-                    vx + qw*tx + qy*tz - qz*ty,
-                    vy + qw*ty + qz*tx - qx*tz,
-                    vz + qw*tz + qx*ty - qy*tx,
-                ];
-            },
-
-            multiply([ax,ay,az,aw], [bx,by,bz,bw]) {
-                return [
-                    aw*bx + ax*bw + ay*bz - az*by,
-                    aw*by - ax*bz + ay*bw + az*bx,
-                    aw*bz + ax*by - ay*bx + az*bw,
-                    aw*bw - ax*bx - ay*by - az*bz,
-                ];
-            },
-
-            normalize([x,y,z,w]) {
-                const l = Math.hypot(x,y,z,w) || 1;
-                return [x/l, y/l, z/l, w/l];
-            },
-
-            fromAxisAngle([ax,ay,az], angle) {
-                const l = Math.hypot(ax,ay,az) || 1, s = Math.sin(angle/2);
-                return [ax/l*s, ay/l*s, az/l*s, Math.cos(angle/2)];
-            },
-
-            fromEulerYPR(yawDeg, pitchDeg, rollDeg) {
-                const d2r = Math.PI / 180;
-                const qY = EzMath.Quat.fromAxisAngle([0, 1, 0],  yawDeg   * d2r);
-                const qP = EzMath.Quat.fromAxisAngle([1, 0, 0],  pitchDeg * d2r);
-                const q  = EzMath.Quat.normalize(EzMath.Quat.multiply(qY, qP));
-                if (!rollDeg) return q;
-                return EzMath.Quat.normalize(EzMath.Quat.multiply(q, EzMath.Quat.fromAxisAngle([0, 0, -1], rollDeg * d2r)));
-            },
-
-            fromEulerZYX([ex, ey, ez]) {
-                const cx = Math.cos(ex*.5), sx = Math.sin(ex*.5);
-                const cy = Math.cos(ey*.5), sy = Math.sin(ey*.5);
-                const cz = Math.cos(ez*.5), sz = Math.sin(ez*.5);
-                return [sx*cy*cz-cx*sy*sz, cx*sy*cz+sx*cy*sz, cx*cy*sz-sx*sy*cz, cx*cy*cz+sx*sy*sz];
-            },
-
-            slerp(a, b, t) {
-                let [ax,ay,az,aw] = a, [bx,by,bz,bw] = b;
-                let dot = ax*bx + ay*by + az*bz + aw*bw;
-                if (dot < 0) { bx=-bx; by=-by; bz=-bz; bw=-bw; dot=-dot; }
-                if (dot > 0.9995) return EzMath.Quat.normalize([ax+t*(bx-ax), ay+t*(by-ay), az+t*(bz-az), aw+t*(bw-aw)]);
-                const th0 = Math.acos(dot), th = th0*t;
-                const s0 = Math.cos(th) - dot*Math.sin(th)/Math.sin(th0), s1 = Math.sin(th)/Math.sin(th0);
-                return [s0*ax+s1*bx, s0*ay+s1*by, s0*az+s1*bz, s0*aw+s1*bw];
-            },
-
-            toEulerYPR([x, y, z, w]) {
-                const r2d = 180 / Math.PI;
-                const sp = 2 * (w * x - y * z);            // = sin(pitch)
-                const pitch = Math.abs(sp) >= 0.999999
-                    ? Math.sign(sp) * 90
-                    : Math.asin(sp) * r2d;
-                if (Math.abs(sp) >= 0.999999) {
-                    const yaw = Math.atan2(-2 * (x * y - w * z), 1 - 2 * (y * y + z * z)) * r2d;
-                    return { yaw, pitch, roll: 0 };
-                }
-                const yaw = Math.atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y)) * r2d;
-                const roll = -Math.atan2(2 * (x * y + w * z), 1 - 2 * (x * x + z * z)) * r2d;
-                return { yaw, pitch, roll };
-            },
-        };
-    }
-
-    class EzAssetStorage {
-        #map   = null;
-        #hooks = {};
-
-        constructor(hooks) {
-            this.#map   = new Map();
-            this.#hooks = hooks;
-            return new Proxy(this, {
-                get(target, prop) {
-                    if (typeof prop === "symbol") return Reflect.get(target, prop, target);
-                    const own = Reflect.get(target, prop, target);
-                    if (own !== undefined) return typeof own === "function" ? own.bind(target) : own;
-                    if (prop in target.#hooks) return (...args) => target.#hooks[prop](target.#map, ...args);
-                    return target.#map.get(prop);
-                }
-            });
+            return null;
         }
 
-        get _map()  { return this.#map; }
-        get(key)  { return this.#map.get(key); }
-        has(key)  { return this.#map.has(key); }
-        keys()    { return [...this.#map.keys()]; }
-        values()  { return [...this.#map.values()]; }
-        entries() { return [...this.#map.entries()]; }
-        get size(){ return this.#map.size; }
-        [Symbol.iterator]() { return this.#map[Symbol.iterator](); }
-    }
-
-    class EzAssets {
-        #namespaces = new Map();
-        #hooks      = new Map();
-
-        constructor() {
-            const self = this;
-            return new Proxy(this, {
-                get(target, prop) {
-                    if (typeof prop === "symbol") return Reflect.get(target, prop);
-                    const val = Reflect.get(target, prop, target);
-                    if (val !== undefined) return typeof val === "function" ? val.bind(target) : val;
-                    return self.#getOrCreate(prop);
-                }
-            });
+        static transpose(out, a) {
+            if (!out || !a) return null;
+            if (out.kind !== KIND_MAT4 || a.kind !== KIND_MAT4) return null;
+            const m = a.data, t = EzMath.#scratchM;
+            t[ 0]=m[ 0]; t[ 1]=m[ 4]; t[ 2]=m[ 8]; t[ 3]=m[12];
+            t[ 4]=m[ 1]; t[ 5]=m[ 5]; t[ 6]=m[ 9]; t[ 7]=m[13];
+            t[ 8]=m[ 2]; t[ 9]=m[ 6]; t[10]=m[10]; t[11]=m[14];
+            t[12]=m[ 3]; t[13]=m[ 7]; t[14]=m[11]; t[15]=m[15];
+            out.data.set(t);
+            return out;
         }
 
-        register(name, hooks = {}) {
-            this.#hooks.set(name, hooks);
-            this.#namespaces.set(name, new EzAssetStorage(hooks));
-            return this;
+        static dot(a, b) {
+            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
+            if (!ka || !kb || ka !== kb) return NaN;
+            if (ka === KIND_SCALAR) return a * b;
+            if (ka !== KIND_VEC2 && ka !== KIND_VEC3 && ka !== KIND_VEC4 && ka !== KIND_QUAT) return NaN;
+            const ad = a.data, bd = b.data;
+            let s = 0;
+            for (let i = 0; i < ad.length; i++) s += ad[i]*bd[i];
+            return s;
         }
 
-        #getOrCreate(name) {
-            if (!this.#namespaces.has(name)) {
-                const hooks = this.#hooks.get(name) ?? {};
-                this.#namespaces.set(name, new EzAssetStorage(hooks));
+        static lengthSq(a) {
+            const k = EzMath.kindOf(a);
+            if (!k) return NaN;
+            if (k === KIND_SCALAR) return a*a;
+            const d = a.data;
+            let s = 0;
+            for (let i = 0; i < d.length; i++) s += d[i]*d[i];
+            return s;
+        }
+
+        static length(a) {
+            return Math.sqrt(EzMath.lengthSq(a));
+        }
+
+        static cross(out, a, b) {
+            if (!out || !a || !b) return null;
+            if (out.kind !== KIND_VEC3 || a.kind !== KIND_VEC3 || b.kind !== KIND_VEC3) return null;
+            const ad = a.data, bd = b.data;
+            const ax=ad[0], ay=ad[1], az=ad[2];
+            const bx=bd[0], by=bd[1], bz=bd[2];
+            const od = out.data;
+            od[0] = ay*bz - az*by;
+            od[1] = az*bx - ax*bz;
+            od[2] = ax*by - ay*bx;
+            return out;
+        }
+
+        static lerp(out, a, b, t) {
+            if (!out || !a || !b) return null;
+            if (out.kind !== a.kind || a.kind !== b.kind) return null;
+            const ad = a.data, bd = b.data, od = out.data;
+            if (od.length !== ad.length || ad.length !== bd.length) return null;
+            for (let i = 0; i < od.length; i++) od[i] = ad[i] + (bd[i] - ad[i]) * t;
+            return out;
+        }
+
+        static slerp(out, a, b, t) {
+            if (!out || !a || !b) return null;
+            if (out.kind !== KIND_QUAT || a.kind !== KIND_QUAT || b.kind !== KIND_QUAT) return null;
+            const ad = a.data, bd = b.data, od = out.data;
+            let ax=ad[0], ay=ad[1], az=ad[2], aw=ad[3];
+            let bx=bd[0], by=bd[1], bz=bd[2], bw=bd[3];
+            let dot = ax*bx + ay*by + az*bz + aw*bw;
+            if (dot < 0) { bx=-bx; by=-by; bz=-bz; bw=-bw; dot=-dot; }
+            if (dot > 0.9995) {
+                const x = ax + t*(bx-ax), y = ay + t*(by-ay), z = az + t*(bz-az), w = aw + t*(bw-aw);
+                const inv = 1 / (Math.hypot(x,y,z,w) || 1);
+                od[0]=x*inv; od[1]=y*inv; od[2]=z*inv; od[3]=w*inv;
+                return out;
             }
-            return this.#namespaces.get(name);
+            const th0 = Math.acos(dot), th = th0 * t;
+            const sinTh0 = Math.sin(th0);
+            const s0 = Math.cos(th) - dot * Math.sin(th) / sinTh0;
+            const s1 = Math.sin(th) / sinTh0;
+            od[0] = s0*ax + s1*bx;
+            od[1] = s0*ay + s1*by;
+            od[2] = s0*az + s1*bz;
+            od[3] = s0*aw + s1*bw;
+            return out;
         }
 
-        namespaces() { return [...this.#namespaces.keys()]; }
-    }
+        static fromAxisAngle(outQuat, axis, angle) {
+            if (!outQuat || outQuat.kind !== KIND_QUAT) return null;
+            if (!axis    || axis.kind    !== KIND_VEC3) return null;
+            if (typeof angle !== 'number') return null;
+            const ad = axis.data;
+            const lx=ad[0], ly=ad[1], lz=ad[2];
+            const len = Math.hypot(lx, ly, lz) || 1;
+            const half = angle * 0.5;
+            const s = Math.sin(half) / len;
+            const od = outQuat.data;
+            od[0] = lx*s; od[1] = ly*s; od[2] = lz*s; od[3] = Math.cos(half);
+            return outQuat;
+        }
 
+        // outQuat from intrinsic ZYX Euler (radians). `euler` is a Vec3 (x, y, z).
+        static fromEulerZYX(outQuat, euler) {
+            if (!outQuat || outQuat.kind !== KIND_QUAT) return null;
+            if (!euler   || euler.kind   !== KIND_VEC3) return null;
+            const e = euler.data;
+            const cx = Math.cos(e[0]*0.5), sx = Math.sin(e[0]*0.5);
+            const cy = Math.cos(e[1]*0.5), sy = Math.sin(e[1]*0.5);
+            const cz = Math.cos(e[2]*0.5), sz = Math.sin(e[2]*0.5);
+            const od = outQuat.data;
+            od[0] = sx*cy*cz - cx*sy*sz;
+            od[1] = cx*sy*cz + sx*cy*sz;
+            od[2] = cx*cy*sz - sx*sy*cz;
+            od[3] = cx*cy*cz + sx*sy*sz;
+            return outQuat;
+        }
+
+        // outVec3 = (yaw, pitch, roll) in degrees, decoded from a quaternion.
+        static toEulerYPR(outVec3, q) {
+            if (!outVec3 || outVec3.kind !== KIND_VEC3) return null;
+            if (!q       || q.kind       !== KIND_QUAT) return null;
+            const r2d = 180 / Math.PI;
+            const x=q.data[0], y=q.data[1], z=q.data[2], w=q.data[3];
+            const sp = 2 * (w*x - y*z);
+            let pitch, yaw, roll;
+            if (Math.abs(sp) >= 0.999999) {
+                pitch = Math.sign(sp) * 90;
+                yaw   = Math.atan2(-2*(x*y - w*z), 1 - 2*(y*y + z*z)) * r2d;
+                roll  = 0;
+            } else {
+                pitch = Math.asin(sp) * r2d;
+                yaw   = Math.atan2(2*(x*z + w*y), 1 - 2*(x*x + y*y)) * r2d;
+                roll  = -Math.atan2(2*(x*y + w*z), 1 - 2*(x*x + z*z)) * r2d;
+            }
+            const od = outVec3.data;
+            od[0] = yaw; od[1] = pitch; od[2] = roll;
+            return outVec3;
+        }
+
+        // outMat4 = T(pos) * R(rot) * S(scl) - column-major.
+        static compose(outMat4, pos, rot, scl) {
+            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
+            if (!pos     || pos.kind     !== KIND_VEC3) return null;
+            if (!rot     || rot.kind     !== KIND_QUAT) return null;
+            if (!scl     || scl.kind     !== KIND_VEC3) return null;
+            const p = pos.data, r = rot.data, s = scl.data, o = outMat4.data;
+            const qx=r[0], qy=r[1], qz=r[2], qw=r[3];
+            const sx=s[0], sy=s[1], sz=s[2];
+            const x2=qx+qx, y2=qy+qy, z2=qz+qz;
+            const xx=qx*x2, xy=qx*y2, xz=qx*z2;
+            const yy=qy*y2, yz=qy*z2, zz=qz*z2;
+            const wx=qw*x2, wy=qw*y2, wz=qw*z2;
+            o[ 0] = (1-(yy+zz))*sx; o[ 1] = (xy+wz)*sx;     o[ 2] = (xz-wy)*sx;     o[ 3] = 0;
+            o[ 4] = (xy-wz)*sy;     o[ 5] = (1-(xx+zz))*sy; o[ 6] = (yz+wx)*sy;     o[ 7] = 0;
+            o[ 8] = (xz+wy)*sz;     o[ 9] = (yz-wx)*sz;     o[10] = (1-(xx+yy))*sz; o[11] = 0;
+            o[12] = p[0];           o[13] = p[1];           o[14] = p[2];           o[15] = 1;
+            return outMat4;
+        }
+
+        static lookAt(outMat4, eye, target, up) {
+            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
+            if (!eye    || eye.kind    !== KIND_VEC3) return null;
+            if (!target || target.kind !== KIND_VEC3) return null;
+            if (!up     || up.kind     !== KIND_VEC3) return null;
+            const ed=eye.data, td=target.data, ud=up.data;
+            const px=ed[0], py=ed[1], pz=ed[2];
+            let fx=td[0]-px, fy=td[1]-py, fz=td[2]-pz;
+            const fl = Math.hypot(fx, fy, fz) || 1;
+            fx/=fl; fy/=fl; fz/=fl;
+            const ux=ud[0], uy=ud[1], uz=ud[2];
+            let rx=fy*uz - fz*uy, ry=fz*ux - fx*uz, rz=fx*uy - fy*ux;
+            const rl = Math.hypot(rx, ry, rz) || 1;
+            rx/=rl; ry/=rl; rz/=rl;
+            const Ux=ry*fz - rz*fy, Uy=rz*fx - rx*fz, Uz=rx*fy - ry*fx;
+            const o = outMat4.data;
+            o[ 0]=rx;                    o[ 1]=Ux;                    o[ 2]=-fx;                  o[ 3]=0;
+            o[ 4]=ry;                    o[ 5]=Uy;                    o[ 6]=-fy;                  o[ 7]=0;
+            o[ 8]=rz;                    o[ 9]=Uz;                    o[10]=-fz;                  o[11]=0;
+            o[12]=-(rx*px+ry*py+rz*pz);  o[13]=-(Ux*px+Uy*py+Uz*pz);  o[14]=fx*px+fy*py+fz*pz;    o[15]=1;
+            return outMat4;
+        }
+
+        static perspective(outMat4, fovY, aspect, near, far) {
+            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
+            const f = 1.0 / Math.tan(fovY/2), nf = 1/(near-far), o = outMat4.data;
+            o[ 0]=f/aspect; o[ 1]=0; o[ 2]=0;             o[ 3]=0;
+            o[ 4]=0;        o[ 5]=f; o[ 6]=0;             o[ 7]=0;
+            o[ 8]=0;        o[ 9]=0; o[10]=(far+near)*nf; o[11]=-1;
+            o[12]=0;        o[13]=0; o[14]=2*far*near*nf; o[15]=0;
+            return outMat4;
+        }
+
+        static ortho(outMat4, left, right, bottom, top, near, far) {
+            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
+            const lr = 1/(left-right), bt = 1/(bottom-top), nf = 1/(near-far), o = outMat4.data;
+            o[ 0]=-2*lr;             o[ 1]=0;                 o[ 2]=0;             o[ 3]=0;
+            o[ 4]=0;                 o[ 5]=-2*bt;             o[ 6]=0;             o[ 7]=0;
+            o[ 8]=0;                 o[ 9]=0;                 o[10]=2*nf;          o[11]=0;
+            o[12]=(left+right)*lr;   o[13]=(top+bottom)*bt;   o[14]=(far+near)*nf; o[15]=1;
+            return outMat4;
+        }
+
+        // outQuat from yaw/pitch/roll in degrees (extrinsic Y-up * X-right * (-Z) order).
+        static fromEulerYPR(outQuat, yawDeg, pitchDeg, rollDeg) {
+            if (!outQuat || outQuat.kind !== KIND_QUAT) return null;
+            const d2r = Math.PI / 180;
+            const hy = yawDeg   * d2r * 0.5;
+            const hp = pitchDeg * d2r * 0.5;
+            const hr = (rollDeg || 0) * d2r * 0.5;
+            // qY = (0, sin(hy), 0, cos(hy));  qP = (sin(hp), 0, 0, cos(hp));  qR = (0, 0, -sin(hr), cos(hr))
+            const sy = Math.sin(hy), cy = Math.cos(hy);
+            const sp = Math.sin(hp), cp = Math.cos(hp);
+            // qYP = qY * qP
+            let qx = cy*sp, qy = sy*cp, qz = -sy*sp, qw = cy*cp;
+            if (rollDeg) {
+                const sr = Math.sin(hr), cr = Math.cos(hr);
+                // qR = (0, 0, -sr, cr); apply on the right: q = qYP * qR
+                const rx =  qx*cr + qy*(-sr);
+                const ry =  qy*cr - qx*(-sr);
+                const rz =  qz*cr + qw*(-sr);
+                const rw =  qw*cr - qz*(-sr);
+                qx = rx; qy = ry; qz = rz; qw = rw;
+            }
+            // normalize (cheap; mul of unit quats is unit, but be safe)
+            const inv = 1 / (Math.hypot(qx, qy, qz, qw) || 1);
+            const od = outQuat.data;
+            od[0] = qx*inv; od[1] = qy*inv; od[2] = qz*inv; od[3] = qw*inv;
+            return outQuat;
+        }
+
+        // outVec3 = upper-3x3(M) * V  (direction transform: no translation, no /w).
+        static mulDir(outVec3, M, V) {
+            if (!outVec3 || outVec3.kind !== KIND_VEC3) return null;
+            if (!M || M.kind !== KIND_MAT4) return null;
+            if (!V || V.kind !== KIND_VEC3) return null;
+            const m = M.data, v = V.data;
+            const x=v[0], y=v[1], z=v[2];
+            const tx = m[0]*x + m[4]*y + m[ 8]*z;
+            const ty = m[1]*x + m[5]*y + m[ 9]*z;
+            const tz = m[2]*x + m[6]*y + m[10]*z;
+            const od = outVec3.data;
+            od[0] = tx; od[1] = ty; od[2] = tz;
+            return outVec3;
+        }
+
+        static resolveTransform(outMat4, spec, fallback = null) {
+            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
+            if (spec && spec.kind === KIND_MAT4) {
+                outMat4.data.set(spec.data);
+                return outMat4;
+            }
+            if (spec && typeof spec === 'object') {
+                const pos = EzMath.#_pos, scl = EzMath.#_scl, rot = EzMath.#_rot;
+                if (spec.position && spec.position.kind === KIND_VEC3) pos.copy(spec.position);
+                else if (fallback && fallback.kind === KIND_MAT4) {
+                    const f = fallback.data; pos.data[0]=f[12]; pos.data[1]=f[13]; pos.data[2]=f[14];
+                } else { pos.data[0]=0; pos.data[1]=0; pos.data[2]=0; }
+
+                if (spec.scale && spec.scale.kind === KIND_VEC3) scl.copy(spec.scale);
+                else { scl.data[0]=1; scl.data[1]=1; scl.data[2]=1; }
+
+                if (spec.rotation && spec.rotation.kind === KIND_QUAT) rot.copy(spec.rotation);
+                else if (spec.euler && spec.euler.kind === KIND_VEC3) EzMath.fromEulerZYX(rot, spec.euler);
+                else rot.identity();
+
+                return EzMath.compose(outMat4, pos, rot, scl);
+            }
+            if (fallback && fallback.kind === KIND_MAT4) {
+                outMat4.data.set(fallback.data);
+                return outMat4;
+            }
+            outMat4.identity();
+            return outMat4;
+        }
+
+    }
 
     const TAGRENDER = "[EzRender]";
     class EzRender {
+        static #BLEND_ENUM_BY_NAME = {
+            ZERO:                     0,
+            ONE:                      1,
+            SRC_ALPHA:                0x0302,
+            ONE_MINUS_SRC_ALPHA:      0x0303,
+            DST_ALPHA:                0x0304,
+            ONE_MINUS_DST_ALPHA:      0x0305,
+            SRC_COLOR:                0x0300,
+            ONE_MINUS_SRC_COLOR:      0x0301,
+            DST_COLOR:                0x0306,
+            ONE_MINUS_DST_COLOR:      0x0307,
+            CONSTANT_COLOR:           0x8001,
+            ONE_MINUS_CONSTANT_COLOR: 0x8002,
+            CONSTANT_ALPHA:           0x8003,
+            ONE_MINUS_CONSTANT_ALPHA: 0x8004,
+            SRC_ALPHA_SATURATE:       0x0308,
+        };
+
+        static #resolveBlendEnum(gl, spec, fallback) {
+            if (typeof spec === 'number' && Number.isFinite(spec)) return spec;
+            if (typeof spec === 'string') {
+                const key = spec.trim();
+                if (!key) return fallback;
+                if (Object.prototype.hasOwnProperty.call(gl, key)) return gl[key];
+                const mapped = EzRender.#BLEND_ENUM_BY_NAME[key.toUpperCase()];
+                if (mapped != null) return mapped;
+            }
+            return fallback;
+        }
+
         static bind(gl, program, onbind=null) {
             gl.useProgram(program);
             if (onbind) onbind(gl, program);
@@ -536,7 +706,6 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             if (!cfg) return;
             const hasProp = (prop) => Object.prototype.hasOwnProperty.call(cfg, prop);
 
-            // if (Object.prototype.hasOwnProperty.call(cfg, 'depthWrite')) {
             if (hasProp('depthWrite')) gl.depthMask(!!cfg.depthWrite);
             if (hasProp('depthTest')) {
                 cfg.depthTest ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST);
@@ -545,7 +714,9 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
                 cfg.blend ? gl.enable(gl.BLEND) : gl.disable(gl.BLEND);
 
                 if (cfg.blend && (hasProp('blendSrc') || hasProp('blendDst'))) {
-                    gl.blendFunc(cfg.blendSrc ?? gl.SRC_ALPHA, cfg.blendDst ?? gl.ONE_MINUS_SRC_ALPHA);
+                    const src = EzRender.#resolveBlendEnum(gl, cfg.blendSrc, gl.SRC_ALPHA);
+                    const dst = EzRender.#resolveBlendEnum(gl, cfg.blendDst, gl.ONE_MINUS_SRC_ALPHA);
+                    gl.blendFunc(src, dst);
                 }
             }
             if (hasProp('cull')) {
@@ -553,6 +724,12 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
                     case 'none':  gl.disable(gl.CULL_FACE); break;
                     case 'front': gl.enable(gl.CULL_FACE);  gl.cullFace(gl.FRONT); break;
                     default:      gl.enable(gl.CULL_FACE);  gl.cullFace(gl.BACK);  break;
+                }
+            }
+            if (hasProp('clearColor') && cfg.clearColor != null) {
+                const c = cfg.clearColor;
+                if (Array.isArray(c) || ArrayBuffer.isView(c)) {
+                    gl.clearColor(c[0] ?? 0, c[1] ?? 0, c[2] ?? 0, c[3] ?? 0);
                 }
             }
             if (hasProp('clear') && cfg.clear) {
@@ -639,9 +816,8 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
         static setUniform(gl, program, type, nameOrLoc, value) {
             const setter = EzRender.#UNI[type];
             if (!setter) return null;
-            const loc = (typeof nameOrLoc === 'string')
-                ? EzRender.getUniformLocation(gl, program, nameOrLoc)
-                : nameOrLoc;
+            const isName = typeof nameOrLoc === 'string' 
+            const loc = isName ? EzRender.getUniformLocation(gl, program, nameOrLoc) : nameOrLoc;
             if (loc == null) return null;
             setter(gl, loc, value);
             return loc;
@@ -692,7 +868,7 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             return tex;
         }
 
-        // Upload (and optionally bind) a 2D texture.
+        static SCRATCH_TEX_UNIT = 15;
         static uploadTexture2D(gl, existing, internalFmt, fmt, type, w, h, data, unit = null) {
             const tex = existing ?? gl.createTexture();
             const explicit = unit != null;
@@ -709,8 +885,6 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             if (!explicit) gl.activeTexture(prevActive);
             return tex;
         }
-        static SCRATCH_TEX_UNIT = 15;
-
 
         static drawInstanced(gl, drawCfg, instanceCount) {
             const mode = drawCfg.mode ?? gl.TRIANGLES;
@@ -743,9 +917,31 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
         program   = null;
         renderCfg = null;
         onbind    = null; // (gl, program) => void
-        other     = {};   // free bag for metadata / subclass use
+        other     = {};   // free whatever things
 
         compiled = false;
+
+        #activeStage = 0;
+        #spec = null;
+
+        constructor() {
+            this.#spec = {
+                version: '300 es',
+                precision: {},
+                outputName: 'ez_output',
+                passes: [this.#newPassSpec(), this.#newPassSpec()],
+                links: [],
+            };
+
+            this.vertexInputs = [];
+            this.vertexOutputs = [];
+            this.vertexUniforms = [];
+            this.fragmentInputs = [];
+            this.fragmentOutputs = [];
+            this.fragmentUniforms = [];
+            this.uniformLocations = new Map();
+            this.attributeLocations = new Map();
+        }
 
         static BLEND = {
             ZERO:                     0,
@@ -765,11 +961,337 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             SRC_ALPHA_SATURATE:       0x0308,
         };
 
+        static STAGE = {
+            VERTEX: 0,
+            FRAGMENT: 1
+        }
+
+        #newPassSpec() {
+            return {
+                inputs: [],
+                outputs: [],
+                uniforms: [],
+                methods: [],
+                main: null,
+                precision: {},
+            };
+        }
+
+        #cloneSpecValue(v) {
+            if (Array.isArray(v)) return v.map(item => this.#cloneSpecValue(item));
+            if (v && typeof v === 'object') return { ...v };
+            return v;
+        }
+
+        #resolveStages(options, fallback = [this.#activeStage]) {
+            const stage = options?.stage ?? options?.pass;
+            if (stage == null) return fallback.slice();
+            if (stage === 'both') return [0, 1];
+            if (Array.isArray(stage)) return stage.map(p => (p === 1 || p === '1' || p === 'second') ? 1 : 0);
+            return [(stage === 1 || stage === '1' || stage === 'second') ? 1 : 0];
+        }
+
+        #normalizeDecl(kind, typeOrSpec, name = null, options = {}) {
+            const spec = _is.obj(typeOrSpec) ? { ...typeOrSpec } : { type: typeOrSpec, name };
+            if (!_is.str(spec.name)) throw new Error('[EzShader] declaration requires a name');
+            if (!_is.str(spec.type)) throw new Error(`[EzShader] declaration "${spec.name}" requires a type`);
+            const out = {
+                kind,
+                name: spec.name,
+                type: spec.type,
+                precision: spec.precision ?? options.precision ?? null,
+                location: spec.location ?? options.location ?? null,
+                interpolation: spec.interpolation ?? options.interpolation ?? null,
+                arraySize: spec.arraySize ?? options.arraySize ?? null,
+                divisor: spec.divisor ?? options.divisor ?? undefined,
+                instance: spec.instance ?? options.instance ?? undefined,
+                floats: spec.floats ?? options.floats ?? undefined,
+                slots: spec.slots ?? options.slots ?? undefined,
+                default: spec.default != null ? this.#cloneSpecValue(spec.default) : null,
+            };
+            return out;
+        }
+
+        #normalizeMethod(methodOrSig, body = null) {
+            if (_is.str(methodOrSig)) {
+                const signature = methodOrSig.trim().replace(/[\s;{]+$/, '');
+                if (!signature) throw new Error('[EzShader] method signature cannot be empty');
+                return { signature, body: body != null ? String(body) : '' };
+            }
+            if (!_is.obj(methodOrSig)) throw new Error('[EzShader] method requires a signature string or descriptor object');
+            const spec = { ...methodOrSig };
+            let signature = _is.str(spec.signature) ? spec.signature.trim().replace(/[\s;{]+$/, '') : null;
+            if (!signature) {
+                if (!_is.str(spec.name)) throw new Error('[EzShader] method descriptor requires name');
+                const returnType = _is.str(spec.returnType) ? spec.returnType : 'void';
+                const args = Array.isArray(spec.args)
+                    ? spec.args.map(arg => {
+                        if (_is.str(arg)) return arg.trim();
+                        if (!_is.obj(arg)) throw new Error(`[EzShader] method "${spec.name}" has an invalid argument descriptor`);
+                        const argType = _is.str(arg.type) ? arg.type : null;
+                        const argName = _is.str(arg.name) ? arg.name : null;
+                        if (!argType || !argName) throw new Error(`[EzShader] method "${spec.name}" argument requires type and name`);
+                        return `${argType} ${argName}`;
+                    })
+                    : [];
+                signature = `${returnType} ${spec.name}(${args.join(', ')})`;
+            }
+            return { signature, body: spec.body != null ? String(spec.body) : (body != null ? String(body) : '') };
+        }
+
+        #indentBlock(src, indent = '    ') {
+            const text = String(src ?? '').replace(/\s+$/, '');
+            if (!text) return indent;
+            return text.split('\n').map(line => indent + line).join('\n');
+        }
+
+        #formatDecl(decl, storage) {
+            const parts = [];
+            if (decl.location != null) parts.push(`layout(location=${decl.location})`);
+            if (decl.interpolation) parts.push(decl.interpolation);
+            parts.push(storage);
+            if (decl.precision) parts.push(decl.precision);
+            parts.push(decl.type);
+            parts.push(decl.arraySize != null ? `${decl.name}[${decl.arraySize}]` : decl.name);
+            return `${parts.join(' ')};`;
+        }
+
+        #formatMethod(method) {
+            const body = this.#indentBlock(method.body);
+            return `${method.signature} {\n${body}\n}`;
+        }
+
+        #assertStageIndex(stage) {
+            if (stage !== 0 && stage !== 1) throw new Error('[EzShader] stage index must be 0 or 1');
+            return stage;
+        }
+
+        #stageLabel(stage) {
+            return stage === 0 ? 'primary' : 'secondary';
+        }
+
+        stage(stageIndex = 0) {
+            this.#activeStage = this.#assertStageIndex(stageIndex);
+            return this;
+        }
+
+        version(versionText) {
+            if (_is.str(versionText)) this.#spec.version = versionText.trim();
+            return this;
+        }
+
+        precision(type, value, options = {}) {
+            if (!_is.str(type) || !_is.str(value)) throw new Error('[EzShader] precision requires type and value');
+            const stages = this.#resolveStages(options);
+            for (const stage of stages) {
+                this.#spec.passes[stage].precision[type] = value;
+            }
+            return this;
+        }
+
+        input(typeOrSpec, name = null, options = {}) {
+            const spec = this.#normalizeDecl('input', typeOrSpec, name, options);
+            const stages = this.#resolveStages(options);
+            for (const stage of stages) this.#spec.passes[stage].inputs.push(spec);
+            return this;
+        }
+
+        inputs(specs, options = {}) {
+            if (Array.isArray(specs)) {
+                for (const spec of specs) this.input(spec, null, options);
+            }
+            return this;
+        }
+
+        output(typeOrSpec, name = null, options = {}) {
+            const spec = this.#normalizeDecl('output', typeOrSpec, name, options);
+            const stages = this.#resolveStages(options);
+            for (const stage of stages) this.#spec.passes[stage].outputs.push(spec);
+            return this;
+        }
+
+        outputs(specs, options = {}) {
+            if (Array.isArray(specs)) {
+                for (const spec of specs) this.output(spec, null, options);
+            }
+            return this;
+        }
+
+        uniform(typeOrSpec, name = null, options = {}) {
+            const spec = this.#normalizeDecl('uniform', typeOrSpec, name, options);
+            const stages = this.#resolveStages(options);
+            for (const stage of stages) this.#spec.passes[stage].uniforms.push(spec);
+            return this;
+        }
+
+        uniforms(specs, options = {}) {
+            if (Array.isArray(specs)) {
+                for (const spec of specs) this.uniform(spec, null, options);
+            }
+            return this;
+        }
+
+        link(typeOrSpec, name = null, options = {}) {
+            const spec = this.#normalizeDecl('link', typeOrSpec, name, options);
+            this.#spec.links.push(spec);
+            return this;
+        }
+
+        method(methodOrSig, body = null, options = {}) {
+            const spec = this.#normalizeMethod(methodOrSig, body);
+            const stages = this.#resolveStages(options);
+            for (const stage of stages) this.#spec.passes[stage].methods.push(spec);
+            return this;
+        }
+
+        methods(specs, options = {}) {
+            if (Array.isArray(specs)) {
+                for (const spec of specs) this.method(spec, null, options);
+            }
+            return this;
+        }
+
+        main(body, options = {}) {
+            const stage = this.#assertStageIndex(options.stage ?? options.pass ?? this.#activeStage);
+            this.#spec.passes[stage].main = String(body ?? '');
+            return this;
+        }
+
+        setRenderCfg(cfg = null) {
+            this.renderCfg = _is.obj(cfg) ? cfg : null;
+            return this;
+        }
+
+        setOnbind(fn = null) {
+            this.onbind = typeof fn === 'function' ? fn : null;
+            return this;
+        }
+
+        #buildStage(stageIndex) {
+            const spec = this.#spec.passes[stageIndex];
+            const seen = new Set();
+            const checkName = (name, where) => {
+                if (seen.has(name)) throw new Error(`[EzShader] duplicate name "${name}" in ${where}`);
+                seen.add(name);
+            };
+
+            const lines = [`#version ${this.#spec.version}`];
+            const precision = { float: 'highp', int: 'highp', ...spec.precision };
+            for (const [type, value] of Object.entries(precision)) lines.push(`precision ${value} ${type};`);
+
+            if (stageIndex === 0) {
+                for (const decl of this.#spec.links) {
+                    checkName(decl.name, 'link');
+                    lines.push(this.#formatDecl(decl, 'out'));
+                }
+            }
+            if (stageIndex === 1) {
+                for (const decl of this.#spec.links) {
+                    checkName(decl.name, 'link');
+                    lines.push(this.#formatDecl(decl, 'in'));
+                }
+            }
+
+            for (const decl of spec.inputs) {
+                checkName(decl.name, 'inputs');
+                lines.push(this.#formatDecl(decl, 'in'));
+            }
+            for (const decl of spec.outputs) {
+                checkName(decl.name, 'outputs');
+                lines.push(this.#formatDecl(decl, 'out'));
+            }
+            for (const decl of spec.uniforms) {
+                checkName(decl.name, 'uniforms');
+                lines.push(this.#formatDecl(decl, 'uniform'));
+            }
+            for (const method of spec.methods) {
+                const signatureHead = method.signature.replace(/\s*\(.*/, '');
+                const methodName = signatureHead.split(/\s+/).filter(Boolean).pop() ?? method.signature;
+                checkName(methodName, 'methods');
+                lines.push(this.#formatMethod(method));
+            }
+
+            if (!spec.main) throw new Error(`[EzShader] ${this.#stageLabel(stageIndex)} stage is missing main body`);
+            lines.push(`void main() {`, this.#indentBlock(spec.main), `}`);
+            return lines.join('\n');
+        }
+
+        build() {
+            const source0 = this.#buildStage(0);
+            const source1 = this.#buildStage(1);
+            const built = {
+                sources: [source0, source1],
+                primary: source0,
+                secondary: source1,
+                renderCfg: this.renderCfg,
+                onbind: this.onbind,
+                stages: this.#spec.passes.map(stage => ({
+                    inputs: stage.inputs.map(decl => ({ ...decl })),
+                    outputs: stage.outputs.map(decl => ({ ...decl })),
+                    uniforms: stage.uniforms.map(decl => ({ ...decl })),
+                })),
+            };
+            this.other.builder = built;
+            return built;
+        }
+
         compile(vertSrc, fragSrc, gl) {
-            this.program = EzShader.createProgram(gl, vertSrc, fragSrc);
+            if (arguments.length === 1) {
+                gl = vertSrc;
+                const built = this.build();
+                this.program = this.#createProgram(gl, built.primary, built.secondary);
+                if (!this.program) throw new Error('[EzShader] GL program compilation failed');
+                this.renderCfg = built.renderCfg;
+                this.onbind = built.onbind;
+                this.#refreshReflection(gl);
+                this.compiled = true;
+                return this;
+            }
+
+            this.program = this.#createProgram(gl, vertSrc, fragSrc);
             if (!this.program) throw new Error("[EzShader] GL program compilation failed");
+            this.#refreshReflection(gl);
             this.compiled = true;
             return this;
+        }
+
+        #refreshReflection(gl) {
+            const stage0 = this.#spec.passes[0];
+            const stage1 = this.#spec.passes[1];
+
+            const resolveAttr = decl => ({
+                ...decl,
+                loc: gl.getAttribLocation(this.program, decl.name),
+            });
+            const resolveUniform = decl => ({
+                ...decl,
+                loc: gl.getUniformLocation(this.program, decl.name),
+            });
+
+            this.vertexInputs   = stage0.inputs.map(resolveAttr);
+            this.vertexOutputs  = stage0.outputs.map(resolveUniform);
+            this.vertexUniforms = stage0.uniforms.map(resolveUniform);
+            this.fragmentInputs  = stage1.inputs.map(resolveUniform);
+            this.fragmentOutputs = stage1.outputs.map(resolveUniform);
+            this.fragmentUniforms = stage1.uniforms.map(resolveUniform);
+
+            this.attributeLocations = new Map(this.vertexInputs.map(decl => [decl.name, decl.loc]));
+            this.uniformLocations = new Map([
+                ...this.vertexUniforms.map(decl => [decl.name, decl.loc]),
+                ...this.fragmentUniforms.map(decl => [decl.name, decl.loc]),
+            ]);
+
+            this.attributes = this.vertexInputs;
+            this.outputs = this.fragmentOutputs;
+            this.uniforms = [...this.vertexUniforms, ...this.fragmentUniforms];
+        }
+
+        getAttributeLocation(name) {
+            return this.attributeLocations.get(name) ?? -1;
+        }
+
+        getUniformLocation(name) {
+            return this.uniformLocations.get(name) ?? null;
         }
 
         bind(gl) {
@@ -780,7 +1302,7 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
         applyRenderState(gl) { EzRender.applyState(gl, this.renderCfg); return this; }
         static restoreRenderState(gl) { EzRender.restoreDefaultState(gl); }
 
-        static compileShader(gl, type, src) {
+        #compileShader(gl, type, src) {
             const shader = gl.createShader(type);
 
             gl.shaderSource(shader, src);
@@ -793,9 +1315,9 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
             return shader;
         }
 
-        static createProgram(gl, vertSrc, fragSrc) {
-            const vshader = this.compileShader(gl, gl.VERTEX_SHADER,   vertSrc);
-            const fshader = this.compileShader(gl, gl.FRAGMENT_SHADER, fragSrc);
+        #createProgram(gl, vertSrc, fragSrc) {
+            const vshader = this.#compileShader(gl, gl.VERTEX_SHADER,   vertSrc);
+            const fshader = this.#compileShader(gl, gl.FRAGMENT_SHADER, fragSrc);
 
             if (!vshader || !fshader) return null;
 
@@ -815,335 +1337,206 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
         }
     }
 
-// Every thing below this line is highly specialized for 3D-object-driven rendering
-// --------------------------------------------------------------------------------
+    const TAGC3D = "[EzCanvas3D]";
+    class EzCanvas3D {
+        name    = null;
+        #canvas = null;
+        #gl     = null;
 
-    class EzShader3D extends EzShader {
-        attributes     = [];   // [{ name, size, loc, default }]
-        uloc           = {};   // { view, projection, fill, albedo, bonesTex, morph:{...} }
-        instanceLayout = null; // { strideFloats, entries:[{ name, type, floats, slots, loc, default }] }
-        uniKeyTexUnits = [];   // [[name, unit], ...] for sampler uniKeys
-        texUnits       = {};   // { [name]: unit }
-        _morphChannels = [];   // morph channel names
+        get canvas() { return this.#canvas; }
+        get gl()     { return this.#gl; }
 
-        #descript = null;
-        get described() { return this.#descript !== null; }
+        #logicalWidth  = 800;
+        #logicalHeight = 600;
+        #pixelRatio    = 1;
+        #maxPixelRatio = 2;
+        #msaaEnabled   = false;
 
-        static EZ = {
-            BONES_TEX: "ez_bonesTex",
-            MORPH: {
-                WTEX:    "ez_morphWeightTex",
-                COUNT:   "ez_morphCount",
-                WOFFSET: "ez_morphWeightOffset",
-                VBASE:   "ez_morphVertexBase",
-                DELTA:   (i) => `ez_morphDelta_${i}`,
-            }
-        };
-
-        static #GLSL_VEC = { 1: "float", 2: "vec2", 3: "vec3", 4: "vec4" };
-
-        static #DEFAULT_KEY_VERT = {
-            view:       n => `uniform mat4 ${n};`,
-            projection: n => `uniform mat4 ${n};`,
-        };
-        static #DEFAULT_KEY_FRAG = {
-            fill:   n => `uniform vec4 ${n};`,
-            albedo: n => `uniform sampler2D ${n};`,
-        };
-
-        static #INSTANCE_TYPE_SPEC = {
-            float: { glsl: "float", floats: 1,  slots: 1 },
-            vec2:  { glsl: "vec2",  floats: 2,  slots: 1 },
-            vec3:  { glsl: "vec3",  floats: 3,  slots: 1 },
-            vec4:  { glsl: "vec4",  floats: 4,  slots: 1 },
-            mat4:  { glsl: "mat4",  floats: 16, slots: 4 },
-        };
-
-        static #buildInstanceLayout(decls) {
-            const entries = [], seenNames = new Set();
-            let nextSlot = 0, off = 0;
-            for (const d of decls) {
-                if (!_is.str(d.name))
-                    throw new Error(`${TAGC3D} instanceData entry needs name`);
-                if (seenNames.has(d.name))
-                    throw new Error(`${TAGC3D} instanceData duplicate name "${d.name}"`);
-                const type = d.type ?? "vec4";
-                const spec = EzShader3D.#INSTANCE_TYPE_SPEC[type];
-                if (!spec) throw new Error(`${TAGC3D} instanceData "${d.name}": unknown type "${type}"`);
-                seenNames.add(d.name);
-
-                let def;
-                if (d.default != null) {
-                    if (!d.default.length || d.default.length !== spec.floats)
-                        throw new Error(`${TAGC3D} instanceData "${d.name}": default length must be ${spec.floats}`);
-                    def = Float32Array.from(d.default);
-                } else def = type === "mat4" ? EzMath.Mat4.identity() : new Float32Array(spec.floats);
-
-                entries.push({
-                    name: d.name, type, glsl: spec.glsl,
-                    floats: spec.floats, slots: spec.slots,
-                    locOffset: nextSlot, byteOffset: off, default: def,
-                });
-                nextSlot += spec.slots;
-                off      += spec.floats * 4;
-            }
-            return { entries, strideBytes: off, strideFloats: off / 4, slotCount: nextSlot };
+        get info() {
+            return {
+                width:         this.#canvas.width,
+                height:        this.#canvas.height,
+                logicalWidth:  this.#logicalWidth,
+                logicalHeight: this.#logicalHeight,
+                aspectRatio:   this.#logicalWidth / Math.max(1e-6, this.#logicalHeight),
+                pixelRatio:    this.#pixelRatio,
+            };
         }
 
-        static #buildVertexHelpers(hasSkeleton, morphChannels) {
-            const EZ  = EzShader3D.EZ;
-            const out = [];
-            if (hasSkeleton) {
-                out.push(
-                `mat4 fetchBone(int i) {
-                    return mat4(
-                        texelFetch(${EZ.BONES_TEX}, ivec2(0, i), 0),
-                        texelFetch(${EZ.BONES_TEX}, ivec2(1, i), 0),
-                        texelFetch(${EZ.BONES_TEX}, ivec2(2, i), 0),
-                        texelFetch(${EZ.BONES_TEX}, ivec2(3, i), 0)
-                    );
-                }
-                mat4 computeSkin(vec4 boneID, vec4 boneWeight) {
-                    float wsum = boneWeight.x + boneWeight.y + boneWeight.z + boneWeight.w;
-                    if (wsum < 0.0001) return mat4(1.0);
-                    return boneWeight.x * fetchBone(int(boneID.x))
-                        + boneWeight.y * fetchBone(int(boneID.y))
-                        + boneWeight.z * fetchBone(int(boneID.z))
-                        + boneWeight.w * fetchBone(int(boneID.w));
-                }`);
-            }
-            if (morphChannels.length > 0) {
-                const fetchLines = morphChannels.map((_, i) => {
-                    const pre = i === 0 ? "        if" : "        else if";
-                    return `${pre} (channelIdx == ${i}) d += w * texelFetch(${EZ.MORPH.DELTA(i)}, ivec2(t, vertexLocal), 0).xyz;`;
-                });
-                out.push(
-                `int morphVertexLocal() { return gl_VertexID - ${EZ.MORPH.VBASE}; }
-                float morphWeight(int targetIdx) {
-                    return texelFetch(${EZ.MORPH.WTEX},
-                                    ivec2(${EZ.MORPH.WOFFSET} + targetIdx, gl_InstanceID), 0).r;
-                }
-                vec3 applyMorph(int channelIdx, int vertexLocal) {
-                    vec3 d = vec3(0.0);
-                    for (int t = 0; t < ${EZ.MORPH.COUNT}; t++) {
-                        float w = morphWeight(t);
-                        if (w == 0.0) continue;
-                ${fetchLines.join("\n")}
-                    }
-                    return d;
-                }`);
-            }
-            return out.join("\n");
+        setPixelRatio(ratio) {
+            this.#pixelRatio = this.#clampPixelRatio(ratio);
+            this.#applyViewportSize();
+            return this.#pixelRatio;
         }
 
-        describe({ vertex = {}, fragment = {}, uniKeys = [], onbind = null, renderCfg = {} } = {}) {
-            const arrOf     = v => Array.isArray(v) ? v : [];
-            const vAttrs    = arrOf(vertex.attributes);
-            const vInst     = arrOf(vertex.instanceData);
-            const vOuts     = arrOf(vertex.outputs);
-            const morphChs  = Array.isArray(vertex.morphChannels) ? vertex.morphChannels.slice() : [];
-            const vMain     = String(vertex.main ?? "");
-            const fMain     = String(fragment.main ?? "");
-            const vDK       = _is.obj(vertex.defaultKeys)   ? vertex.defaultKeys   : {};
-            const fDK       = _is.obj(fragment.defaultKeys) ? fragment.defaultKeys : {};
-            const hasSkel   = !!vertex.hasSkeleton;
-            const fOutColor = String(fragment.outputColor ?? "fragColor");
-
-            for (const k of Object.keys(vDK))
-                if (!EzShader3D.#DEFAULT_KEY_VERT[k])
-                    throw new Error(`${TAGC3D} addShader: unknown vertex.defaultKeys key "${k}"`);
-            for (const k of Object.keys(fDK))
-                if (!EzShader3D.#DEFAULT_KEY_FRAG[k])
-                    throw new Error(`${TAGC3D} addShader: unknown fragment.defaultKeys key "${k}"`);
-
-            if (!Array.isArray(uniKeys))
-                throw new Error(`${TAGC3D} addShader: uniKeys must be an array`);
-            for (const u of uniKeys) {
-                if (!_is.str(u.name)) throw new Error(`${TAGC3D} addShader: uniKey entry missing name`);
-                if (!_is.str(u.type)) throw new Error(`${TAGC3D} addShader: uniKey "${u.name}" missing type`);
-            }
-
-            let nextSamplerUnit = _EZ_TEX_UNIT_MORPH_DELTA + morphChs.length;
-            const uniKeyTexUnits = new Map();
-            for (const u of uniKeys)
-                if (_is.sampler(u.type)) uniKeyTexUnits.set(u.name, nextSamplerUnit++);
-
-            const instLayout = EzShader3D.#buildInstanceLayout(vInst);
-
-            const seen = new Set();
-            const claim = (n, where) => {
-                if (!_is.str(n)) throw new Error(`${TAGC3D} addShader: empty/non-string name in ${where}`);
-                if (seen.has(n)) throw new Error(`${TAGC3D} addShader: name collision "${n}" in ${where}`);
-                seen.add(n);
+        aaInfo() {
+            return {
+                mode:          "msaa+ssaa",
+                msaa:          this.#msaaEnabled,
+                pixelRatio:    this.#pixelRatio,
+                maxPixelRatio: this.#maxPixelRatio,
             };
-            for (const a of vAttrs) {
-                if (!EzShader3D.#GLSL_VEC[a.size])
-                    throw new Error(`${TAGC3D} addShader: vertex attribute "${a.name}" size must be 1..4`);
-                claim(a.name, "vertex.attributes");
-            }
-            for (const e of instLayout.entries) claim(e.name, `vertex.instanceData[${e.name}]`);
-            for (const [k, v] of Object.entries(vDK)) claim(v, `vertex.defaultKeys.${k}`);
-            for (const o of vOuts) claim(o.name, "vertex.outputs");
-            for (const [k, v] of Object.entries(fDK)) claim(v, `fragment.defaultKeys.${k}`);
-            for (const u of uniKeys) claim(u.name, `uniKeys["${u.name}"]`);
-            claim(fOutColor, "fragment.outputColor");
+        }
 
-            let next = 0;
-            const instStartLoc = next + vAttrs.length;
-            const v = ["#version 300 es", "precision highp float;"];
-            for (const a of vAttrs)
-                v.push(`layout(location=${next++}) in ${EzShader3D.#GLSL_VEC[a.size]} ${a.name};`);
-            for (const e of instLayout.entries)
-                v.push(`layout(location=${instStartLoc + e.locOffset}) in ${e.glsl} ${e.name};`);
-            for (const [k, n] of Object.entries(vDK)) v.push(EzShader3D.#DEFAULT_KEY_VERT[k](n));
-            if (hasSkel) v.push(`uniform highp sampler2D ${EzShader3D.EZ.BONES_TEX};`);
-            if (morphChs.length > 0) {
-                v.push(`uniform highp sampler2D ${EzShader3D.EZ.MORPH.WTEX};`,
-                       `uniform int ${EzShader3D.EZ.MORPH.COUNT};`,
-                       `uniform int ${EzShader3D.EZ.MORPH.WOFFSET};`,
-                       `uniform int ${EzShader3D.EZ.MORPH.VBASE};`);
-                for (let i = 0; i < morphChs.length; i++)
-                    v.push(`uniform highp sampler2D ${EzShader3D.EZ.MORPH.DELTA(i)};`);
-            }
-            for (const u of uniKeys) v.push(`uniform ${u.type} ${u.name};`);
-            for (const o of vOuts)   v.push(`out ${o.type ?? "vec4"} ${o.name};`);
-            const helpers = EzShader3D.#buildVertexHelpers(hasSkel, morphChs);
-            if (helpers) v.push(helpers);
-            v.push("void main() {", "#line 1", vMain, "}");
+        fitContainer() {
+            const parent = this.#canvas.parentElement;
+            if (!parent) return this;
+            const rect = parent.getBoundingClientRect();
+            return this.resize(rect.width, rect.height);
+        }
 
-            const f = ["#version 300 es", "precision highp float;"];
-            for (const o of vOuts) f.push(`in ${o.type ?? "vec4"} ${o.name};`);
-            f.push(`out vec4 ${fOutColor};`);
-            for (const [k, n] of Object.entries(fDK)) f.push(EzShader3D.#DEFAULT_KEY_FRAG[k](n));
-            for (const u of uniKeys) f.push(`uniform ${u.type} ${u.name};`);
-            f.push("void main() {", "#line 1", fMain, "}");
+        constructor(name, opts = {}) {
+            this.name = name || "canvas";
+            const c = document.createElement("canvas");
+            c.width  = 800;
+            c.height = 600;
+            c.style.background = "transparent";
+            this.#canvas = c;
 
-            const rCfg = renderCfg ?? {};
-            this.#descript = {
-                vertSrc:        v.join("\n"),
-                fragSrc:        f.join("\n"),
-                attributes:     vAttrs.map(a => ({ name: a.name, size: a.size, default: Array.isArray(a.default) ? a.default : [0,0,0,0] })),
-                morphChannels:  morphChs,
-                hasSkeleton:    hasSkel,
-                instanceLayout: instLayout,
-                uniKeyTexUnits,
-                names: { view: vDK.view ?? null, projection: vDK.projection ?? null, albedo: fDK.albedo ?? null, fill: fDK.fill ?? null },
-                onbind: typeof onbind === "function" ? onbind : null,
-                renderCfg: {
-                    rQueue:     typeof rCfg.rQueue      === "number"  ? rCfg.rQueue      : 1000,
-                    depthWrite: typeof rCfg.depthWrite  === "boolean" ? rCfg.depthWrite  : true,
-                    depthTest:  typeof rCfg.depthTest   === "boolean" ? rCfg.depthTest   : true,
-                    cull:       ['back','front','none'].includes(rCfg.cull) ? rCfg.cull : 'back',
-                    blend:      typeof rCfg.blend       === "boolean" ? rCfg.blend       : false,
-                    blendSrc:   rCfg.blendSrc ?? EzShader.BLEND.SRC_ALPHA,
-                    blendDst:   rCfg.blendDst ?? EzShader.BLEND.ONE_MINUS_SRC_ALPHA,
-                },
-            };
+            const antialias = typeof opts.antialias === "boolean" ? opts.antialias : true;
+            const alpha = typeof opts.alpha === "boolean" ? opts.alpha : true;
+            const gl = c.getContext("webgl2", { alpha, antialias });
+            if (!gl) throw new Error(`${TAGC3D} WebGL2 not supported`);
+            this.#gl = gl;
 
-            super.compiled = false;
+            this.#maxPixelRatio = (typeof opts.maxPixelRatio === "number" && Number.isFinite(opts.maxPixelRatio))
+                ? Math.max(1, opts.maxPixelRatio)
+                : 2;
+            const initialPR = opts.pixelRatio ?? (typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1);
+            this.#pixelRatio = this.#clampPixelRatio(initialPR);
+            this.#msaaEnabled = !!gl.getContextAttributes()?.antialias;
+
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.CULL_FACE);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.clearColor(0, 0, 0, alpha ? 0 : 1);
+
+            this.#applyViewportSize();
+        }
+
+        #clampPixelRatio(v) {
+            const n = Number(v);
+            if (!Number.isFinite(n) || n <= 0) return 1;
+            return EzMath.clamp(n, 0.5, this.#maxPixelRatio);
+        }
+
+        #applyViewportSize() {
+            const drawW = Math.max(1, Math.round(this.#logicalWidth  * this.#pixelRatio));
+            const drawH = Math.max(1, Math.round(this.#logicalHeight * this.#pixelRatio));
+
+            this.#canvas.style.width  = `${this.#logicalWidth}px`;
+            this.#canvas.style.height = `${this.#logicalHeight}px`;
+
+            if (this.#canvas.width  !== drawW) this.#canvas.width  = drawW;
+            if (this.#canvas.height !== drawH) this.#canvas.height = drawH;
+
+            this.#gl.viewport(0, 0, drawW, drawH);
+        }
+
+        mount(el) {
+            if (el instanceof Element) el.appendChild(this.#canvas);
+            return this;
+        }
+        unmount() {
+            this.#canvas.parentElement?.removeChild(this.#canvas);
+            return this;
+        }
+        resize(w, h) {
+            this.#logicalWidth  = Math.max(1, Math.round(w));
+            this.#logicalHeight = Math.max(1, Math.round(h));
+            this.#applyViewportSize();
             return this;
         }
 
-        compile(gl) {
-            if (!this.#descript) throw new Error("[EzShader3D] compile() called before describe()");
-            const d  = this.#descript;
-            const EZ = EzShader3D.EZ;
-
-            super.compile(d.vertSrc, d.fragSrc, gl);
-
-            const loc = n => n ? gl.getUniformLocation(this.program, n) : null;
-
-            this.attributes = d.attributes.map(a => ({
-                ...a,
-                default: [a.default[0]??0, a.default[1]??0, a.default[2]??0, a.default[3]??0],
-                loc: gl.getAttribLocation(this.program, a.name),
-            }));
-
-            this.instanceLayout = {
-                ...d.instanceLayout,
-                entries: d.instanceLayout.entries.map(e => ({ ...e, loc: gl.getAttribLocation(this.program, e.name) })),
-            };
-
-            const N = d.names;
-            this.uloc = {
-                view:       loc(N.view),
-                projection: loc(N.projection),
-                albedo:     loc(N.albedo),
-                fill:       loc(N.fill),
-                bonesTex:   d.hasSkeleton ? gl.getUniformLocation(this.program, EZ.BONES_TEX) : null,
-                morph: (() => {
-                    if (!d.morphChannels.length) return { weightTex: null, count: null, weightOffset: null, vertexBase: null, channels: [] };
-                    const mu = n => gl.getUniformLocation(this.program, n);
-                    return {
-                        weightTex:    mu(EZ.MORPH.WTEX),
-                        count:        mu(EZ.MORPH.COUNT),
-                        weightOffset: mu(EZ.MORPH.WOFFSET),
-                        vertexBase:   mu(EZ.MORPH.VBASE),
-                        channels: d.morphChannels.map((_, i) => ({
-                            unit: _EZ_TEX_UNIT_MORPH_DELTA + i,
-                            loc:  mu(EZ.MORPH.DELTA(i)),
-                        })),
-                    };
-                })(),
-            };
-
-            this.uniKeyTexUnits = d.uniKeyTexUnits;
-            this.texUnits       = Object.fromEntries(d.uniKeyTexUnits);
-            this._morphChannels = d.morphChannels;
-            this.renderCfg      = d.renderCfg;
-            this.onbind         = d.onbind;
-
-            super.compiled = true
+        resetViewport() {
+            this.#gl.viewport(0, 0, this.#canvas.width, this.#canvas.height);
             return this;
         }
     }
 
+    window.Vec2            = Vec2;
+    window.Vec3            = Vec3;
+    window.Vec4            = Vec4;
+    window.Quat            = Quat;
+    window.Mat4            = Mat4;
+    window.EzMath          = EzMath;
 
+    window.EzRender        = EzRender;
+    window.EzShader        = EzShader;
+    window.EzCanvas3D      = EzCanvas3D;
+
+// Every thing below this line is highly specialized for 3D-object-driven rendering
+// --------------------------------------------------------------------------------
     class EzCamera3D {
-        position    = [0, 0, 3];
-        orientation = [0, 0, 0, 1];
+        position    = new Vec3(0, 0, 3);
+        orientation = new Quat();
 
         near = 0.1; far = 1000;
         fov  = 45;
         aspect = 1;
 
         orthographic = false;
-        orthoSize    = 5;   // half-height of the view in world units
+        orthoSize    = 5;   // half-height
+
+        #forward = new Vec3();
+        #right   = new Vec3();
+        #up      = new Vec3();
+        #view    = new Mat4();
+        #proj    = new Mat4();
+        #ypr     = new Vec3(); // (yaw, pitch, roll) in degrees
+
+        static #LOCAL_FWD   = new Vec3( 0,  0, -1);
+        static #LOCAL_RIGHT = new Vec3( 1,  0,  0);
+        static #LOCAL_UP    = new Vec3( 0,  1,  0);
+
+        #scratchQ    = new Quat();
+        #scratchAxis = new Vec3();
+        #scratchTgt  = new Vec3();
+        #scratchDir  = new Vec3();
+        #scratchOff  = new Vec3();
 
         constructor() {}
 
-        get yaw()   { return EzMath.Quat.toEulerYPR(this.orientation).yaw;   }
-        get pitch() { return EzMath.Quat.toEulerYPR(this.orientation).pitch; }
-        get roll()  { return EzMath.Quat.toEulerYPR(this.orientation).roll;  }
-
-        get forward() { return EzMath.Quat.rotateVec(this.orientation, [0, 0, -1]); }
-        get right()   { return EzMath.Quat.rotateVec(this.orientation, [1, 0,  0]); }
-        get up()      { return EzMath.Quat.rotateVec(this.orientation, [0, 1,  0]); }
+        get forward() { return EzMath.mult(this.#forward, this.orientation, EzCamera3D.#LOCAL_FWD); }
+        get right()   { return EzMath.mult(this.#right,   this.orientation, EzCamera3D.#LOCAL_RIGHT); }
+        get up()      { return EzMath.mult(this.#up,      this.orientation, EzCamera3D.#LOCAL_UP); }
         get vectors() { return { forward: this.forward, right: this.right, up: this.up }; }
+
+        get yaw()   { EzMath.toEulerYPR(this.#ypr, this.orientation); return this.#ypr.data[0]; }
+        get pitch() { EzMath.toEulerYPR(this.#ypr, this.orientation); return this.#ypr.data[1]; }
+        get roll()  { EzMath.toEulerYPR(this.#ypr, this.orientation); return this.#ypr.data[2]; }
 
         get view() {
             const f = this.forward, u = this.up, p = this.position;
-            return EzMath.Mat4.lookAt(
-                p, [p[0] + f[0], p[1] + f[1], p[2] + f[2]], u
-            );
+            EzMath.add(this.#scratchTgt, p, f);
+            EzMath.lookAt(this.#view, p, this.#scratchTgt, u);
+            return this.#view;
         }
 
         get projection() {
             if (this.orthographic) {
                 const h = this.orthoSize, w = h * this.aspect;
-                return EzMath.Mat4.ortho(-w, w, -h, h, this.near, this.far);
+                EzMath.ortho(this.#proj, -w, w, -h, h, this.near, this.far);
+            } else {
+                EzMath.perspective(this.#proj, this.fov * (Math.PI / 180), this.aspect, this.near, this.far);
             }
-            return EzMath.Mat4.perspective(
-                this.fov * (Math.PI / 180), this.aspect, this.near, this.far
-            );
+            return this.#proj;
         }
 
         set(cfg = {}) {
-            if (cfg.position    != null) this.position    = [...cfg.position];
-            if (cfg.orientation != null) this.orientation = EzMath.Quat.normalize(cfg.orientation);
-            if (cfg.near        != null) this.near        = cfg.near;
-            if (cfg.far         != null) this.far         = cfg.far;
-            if (cfg.aspect      != null) this.aspect      = cfg.aspect;
+            if (cfg.position != null) {
+                if (cfg.position.kind === KIND_VEC3) this.position.copy(cfg.position);
+                else this.position.set(cfg.position);
+            }
+            if (cfg.orientation != null) {
+                if (cfg.orientation.kind === KIND_QUAT) this.orientation.copy(cfg.orientation);
+                else this.orientation.set(cfg.orientation);
+                EzMath.normalize(this.orientation, this.orientation);
+            }
+            if (cfg.near         != null) this.near         = cfg.near;
+            if (cfg.far          != null) this.far          = cfg.far;
+            if (cfg.aspect       != null) this.aspect       = cfg.aspect;
             if (cfg.fov          != null) this.fov          = cfg.fov;
             if (cfg.orthoSize    != null) this.orthoSize    = cfg.orthoSize;
             if (cfg.orthographic != null) this.orthographic = !!cfg.orthographic;
@@ -1152,49 +1545,62 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
 
         rotate(yawDelta = 0, pitchDelta = 0, rollDelta = 0) {
             const d2r = Math.PI / 180;
-            let q = this.orientation;
+            const tmpQ = this.#scratchQ, axis = this.#scratchAxis;
             if (yawDelta) {
-                const qY = EzMath.Quat.fromAxisAngle([0, 1, 0], yawDelta * d2r);
-                q = EzMath.Quat.multiply(qY, q);
+                axis.data[0]=0; axis.data[1]=1; axis.data[2]=0;
+                EzMath.fromAxisAngle(tmpQ, axis, yawDelta * d2r);
+                EzMath.mult(this.orientation, tmpQ, this.orientation);
             }
             if (pitchDelta) {
-                const qX = EzMath.Quat.fromAxisAngle([1, 0, 0], pitchDelta * d2r);
-                q = EzMath.Quat.multiply(q, qX);
+                axis.data[0]=1; axis.data[1]=0; axis.data[2]=0;
+                EzMath.fromAxisAngle(tmpQ, axis, pitchDelta * d2r);
+                EzMath.mult(this.orientation, this.orientation, tmpQ);
             }
             if (rollDelta) {
-                const qZ = EzMath.Quat.fromAxisAngle([0, 0, -1], rollDelta * d2r);
-                q = EzMath.Quat.multiply(q, qZ);
+                axis.data[0]=0; axis.data[1]=0; axis.data[2]=-1;
+                EzMath.fromAxisAngle(tmpQ, axis, rollDelta * d2r);
+                EzMath.mult(this.orientation, this.orientation, tmpQ);
             }
-            this.orientation = EzMath.Quat.normalize(q);
+            EzMath.normalize(this.orientation, this.orientation);
             return this;
         }
 
-        lookAt(target, up = [0, 1, 0]) {
-            const px = this.position[0], py = this.position[1], pz = this.position[2];
-            let fx = target[0] - px, fy = target[1] - py, fz = target[2] - pz;
+        lookAt(target, up = null) {
+            const tgt = (target && target.kind === KIND_VEC3)
+                ? target
+                : this.#scratchTgt.set(target);
+            const upv = up == null
+                ? EzCamera3D.#LOCAL_UP
+                : (up.kind === KIND_VEC3 ? up : this.#scratchAxis.set(up));
+
+            const pd = this.position.data;
+            const td = tgt.data;
+            const ud = upv.data;
+            let fx = td[0] - pd[0], fy = td[1] - pd[1], fz = td[2] - pd[2];
             const fl = Math.hypot(fx, fy, fz);
             if (fl < 1e-8) return this;
             fx /= fl; fy /= fl; fz /= fl;
 
-            let rx = fy * up[2] - fz * up[1];
-            let ry = fz * up[0] - fx * up[2];
-            let rz = fx * up[1] - fy * up[0];
+            let rx = fy * ud[2] - fz * ud[1];
+            let ry = fz * ud[0] - fx * ud[2];
+            let rz = fx * ud[1] - fy * ud[0];
             let rl = Math.hypot(rx, ry, rz);
             if (rl < 1e-6) {
-                const altUp = Math.abs(fy) > 0.9 ? [0, 0, 1] : [0, 1, 0];
-                rx = fy * altUp[2] - fz * altUp[1];
-                ry = fz * altUp[0] - fx * altUp[2];
-                rz = fx * altUp[1] - fy * altUp[0];
+                const ax = 0, ay = Math.abs(fy) > 0.9 ? 0 : 1, az = Math.abs(fy) > 0.9 ? 1 : 0;
+                rx = fy * az - fz * ay;
+                ry = fz * ax - fx * az;
+                rz = fx * ay - fy * ax;
                 rl = Math.hypot(rx, ry, rz) || 1;
             }
             rx /= rl; ry /= rl; rz /= rl;
-            const ux = ry * fz - rz * fy;
-            const uy = rz * fx - rx * fz;
-            const uz = rx * fy - ry * fx;
+            const uxv = ry * fz - rz * fy;
+            const uyv = rz * fx - rx * fz;
+            const uzv = rx * fy - ry * fx;
 
-            const m00 = rx,  m01 = ux,  m02 = -fx;
-            const m10 = ry,  m11 = uy,  m12 = -fy;
-            const m20 = rz,  m21 = uz,  m22 = -fz;
+            // Rotation matrix columns: right, up, -forward.
+            const m00 = rx,  m01 = uxv, m02 = -fx;
+            const m10 = ry,  m11 = uyv, m12 = -fy;
+            const m20 = rz,  m21 = uzv, m22 = -fz;
 
             const tr = m00 + m11 + m22;
             let qx, qy, qz, qw;
@@ -1223,300 +1629,283 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
                 qy = (m12 + m21) / s;
                 qz = 0.25 * s;
             }
-            this.orientation = EzMath.Quat.normalize([qx, qy, qz, qw]);
+            const od = this.orientation.data;
+            od[0] = qx; od[1] = qy; od[2] = qz; od[3] = qw;
+            EzMath.normalize(this.orientation, this.orientation);
             return this;
         }
 
+        // { origin: Vec3, direction: Vec3 }
         raygen(ndc) {
             const x = ndc[0], y = ndc[1];
+            const f = this.forward.data, r = this.right.data, u = this.up.data;
+            const direction = new Vec3();
+            const dd = direction.data;
 
-            const forward = this.forward;
-            const right   = this.right;
-            const up      = this.up;
-
-            if (!this.orthographic) { // Perspective
+            if (!this.orthographic) {
                 const tanFov = Math.tan((this.fov * Math.PI / 180) * 0.5);
-
                 const px = x * this.aspect * tanFov;
                 const py = y * tanFov;
-
-                let dir = [
-                    forward[0] + right[0] * px + up[0] * py,
-                    forward[1] + right[1] * px + up[1] * py,
-                    forward[2] + right[2] * px + up[2] * py,
-                ];
-
-                const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-                dir = [dir[0]/len, dir[1]/len, dir[2]/len];
-
-                return {
-                    origin: [...this.position],
-                    direction: dir
-                };
-            } else { // Orthographic
-                const h = this.orthoSize;
-                const w = h * this.aspect;
-
-                const offset = [
-                    right[0] * (x * w) + up[0] * (y * h),
-                    right[1] * (x * w) + up[1] * (y * h),
-                    right[2] * (x * w) + up[2] * (y * h),
-                ];
-
-                const origin = [
-                    this.position[0] + offset[0],
-                    this.position[1] + offset[1],
-                    this.position[2] + offset[2],
-                ];
-
-                return {
-                    origin,
-                    direction: [...forward]
-                };
+                dd[0] = f[0] + r[0]*px + u[0]*py;
+                dd[1] = f[1] + r[1]*px + u[1]*py;
+                dd[2] = f[2] + r[2]*px + u[2]*py;
+                EzMath.normalize(direction, direction);
+                const origin = new Vec3();
+                origin.copy(this.position);
+                return { origin, direction };
+            } else {
+                const h = this.orthoSize, w = h * this.aspect;
+                const xw = x * w, yh = y * h;
+                const origin = new Vec3();
+                const od = origin.data, pd = this.position.data;
+                od[0] = pd[0] + r[0]*xw + u[0]*yh;
+                od[1] = pd[1] + r[1]*xw + u[1]*yh;
+                od[2] = pd[2] + r[2]*xw + u[2]*yh;
+                dd[0] = f[0]; dd[1] = f[1]; dd[2] = f[2];
+                return { origin, direction };
             }
         }
 
         translate(offset) {
-            this.position = [
-                this.position[0] + offset[0],
-                this.position[1] + offset[1],
-                this.position[2] + offset[2]
-            ];
+            const off = (offset && offset.kind === KIND_VEC3) ? offset : this.#scratchOff.set(offset);
+            EzMath.add(this.position, this.position, off);
             return this;
         }
     }
 
-    class EzMesh3D {
-        vao               = null;
-        vbo               = null;
-        ebo               = null;
-        instanceVBO       = null;
-        indexType         = 0;
-        indexBytes        = 0;
-        primitives        = [];   // [{ indexOffset?, indexCount?, vertexOffset?, vertexCount?, material, morph? }]
-        defaulted         = [];   // [{ loc, default }]
-        morphTotalWeights = 0;
 
-        destroy(gl) {
-            if (this.vao)         gl.deleteVertexArray(this.vao);
-            if (this.vbo)         gl.deleteBuffer(this.vbo);
-            if (this.ebo)         gl.deleteBuffer(this.ebo);
-            if (this.instanceVBO) gl.deleteBuffer(this.instanceVBO);
-            for (const p of this.primitives)
-                if (p.morph) for (const t of p.morph.channels.values()) gl.deleteTexture(t);
+    class EzMesh3D {
+        constructor() {
+            this.vertexBuffers = []; // [{ vbo, stride, vertexCount, attributes:[{name, size, type, normalized, offset}] }]
+
+            this.ebo        = null;
+            this.indexType  = 0;
+            this.indexBytes = 0;
+            this.indexCount = 0;
+
+            this.submeshes = [];
+
+            this.morphTargetCount = 0;
+            this.morphTargetNames = null;
+
+            this.ABmin = [ Infinity,  Infinity,  Infinity];
+            this.ABmax = [-Infinity, -Infinity, -Infinity];
         }
 
-        static fromDesc(gl, shader, key, opts = {}) {
-            const { vertices, indices, attributes, primitives } = opts;
-
-            const indexType  = indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-            const indexBytes = indices instanceof Uint32Array ? 4 : 2;
-            const hasVertices = !!vertices;
-
-            const modelAttrsIn = Array.isArray(attributes) && attributes.length
-                ? attributes
-                : [{ name: "a_position", size: 3 }, { name: "a_uv", size: 2 }];
-
-            let off = 0;
-            const modelAttrs = modelAttrsIn.map(a => {
-                const e = { name: a.name, size: a.size, offset: off };
-                off += a.size * 4;
-                return e;
-            });
-            const vaoStride = off;
-
-            const wired = [], defaulted = [];
-            for (const sa of shader.attributes) {
-                if (sa.loc < 0) continue;
-                const ma = modelAttrs.find(m => m.name === sa.name);
-                if (ma) wired.push({ loc: sa.loc, size: ma.size, offset: ma.offset });
-                else    defaulted.push({ loc: sa.loc, default: sa.default });
+        destroy(gl) {
+            for (const vb of this.vertexBuffers) if (vb.vbo) gl.deleteBuffer(vb.vbo);
+            if (this.ebo) gl.deleteBuffer(this.ebo);
+            for (const sm of this.submeshes) {
+                if (sm.morph) for (const t of sm.morph.channels.values()) gl.deleteTexture(t);
             }
+            this.vertexBuffers = [];
+            this.ebo = null;
+            this.submeshes = [];
+        }
 
-            const vertexCount = hasVertices ? vertices.length / (vaoStride / 4) : 0;
-            const primList = Array.isArray(primitives) && primitives.length > 0
-                ? primitives.map(p => {
-                    const mat = {
-                        albedo: p.material?.albedo ?? null,
-                        fill:   p.material?.fill   ?? [1, 1, 1, 1],
-                    };
-                    const hasVertex = (p.vertexOffset != null || p.vertexCount != null) && p.indexOffset == null && p.indexCount == null;
-                    const out = hasVertex
-                        ? { vertexOffset: p.vertexOffset ?? 0, vertexCount: p.vertexCount ?? vertexCount, material: mat }
-                        : { indexOffset:  p.indexOffset  ?? 0, indexCount:  p.indexCount  ?? (indices ? indices.length : 0), material: mat };
-                    if (p.morphTargets) out._morphSrc = p.morphTargets;
-                    return out;
-                })
-                : indices
-                    ? [{ indexOffset: 0, indexCount: indices.length, material: { albedo: null, fill: [1,1,1,1] } }]
-                    : [{ vertexOffset: 0, vertexCount: hasVertices ? vertexCount : 0, material: { albedo: null, fill: [1,1,1,1] } }];
+        // Build a mesh from a description
+        // opts:
+        //   vertexBuffers?: [{ data, attributes: [{ name, size, type?, normalized?, offset? }], stride? }]
+        //   vertices?:   Float32Array | TypedArray
+        //   attributes?: [{ name, size, type?, normalized? }]
+        //   indices?:   Uint16Array | Uint32Array
+        //   submeshes?: [{
+        //       indexOffset?, indexCount?, vertexOffset?, vertexCount?,
+        //       materialKey?,
+        //       ABmin?, ABmax?,
+        //       morphTargets?: { [channelName]: Float32Array[] }   // each target = vec3[]
+        //   }]
+        //   morphTargetNames?: string[]
+        static fromDesc(gl, opts = {}) {
+            const mesh = new EzMesh3D();
 
-            if (hasVertices) {
-                for (const p of primList) {
-                    if (p.indexOffset != null) {
-                        if (p.indexOffset < 0 || p.indexOffset + p.indexCount > (indices ? indices.length : 0))
-                            return _c.warn(`[EzMesh3D]`, `"${key}": primitive index range out of bounds`);
-                    } else {
-                        if (p.vertexOffset < 0 || p.vertexOffset + p.vertexCount > vertexCount)
-                            return _c.warn(`[EzMesh3D]`, `"${key}": primitive vertex range out of bounds`);
-                    }
+            // -- Vertex buffers -----------------------------------------
+            const vbDescs = (Array.isArray(opts.vertexBuffers) && opts.vertexBuffers.length)
+                ? opts.vertexBuffers
+                : (opts.vertices != null
+                    ? [{ data: opts.vertices, attributes: opts.attributes ?? [{name:"a_position", size:3}, {name:"a_uv", size:2}], stride: opts.stride }]
+                    : []);
+
+            for (const vb of vbDescs) {
+                const data = vb.data;
+                if (!data) continue;
+                const attrs = [];
+                let off = 0;
+                for (const a of (vb.attributes || [])) {
+                    const o = a.offset != null ? a.offset : off;
+                    attrs.push({
+                        name:       a.name,
+                        size:       a.size,
+                        type:       a.type ?? gl.FLOAT,
+                        normalized: !!a.normalized,
+                        offset:     o,
+                    });
+                    off = o + a.size * 4;
                 }
-            }
+                const stride = vb.stride != null ? vb.stride : off;
 
-            let morphTotalWeights = 0;
-            const shaderMorphChannels = shader._morphChannels ?? [];
-
-            for (const p of primList) {
-                const channelsIn = p._morphSrc; delete p._morphSrc;
-                if (!channelsIn) continue;
-                if (!_is.obj(channelsIn) || Array.isArray(channelsIn))
-                    return _c.warn(`[EzMesh3D]`, `"${key}": morphTargets must be an object keyed by channel name`);
-
-                const channelNames = Object.keys(channelsIn);
-                let targetCount = -1;
-                for (const name of channelNames) {
-                    const arr = channelsIn[name];
-                    if (arr == null) continue;
-                    if (!Array.isArray(arr))
-                        return _c.warn(`[EzMesh3D]`, `"${key}": morphTargets.${name} must be an array`);
-                    if (targetCount < 0) targetCount = arr.length;
-                    else if (arr.length !== targetCount)
-                        return _c.warn(`[EzMesh3D]`, `"${key}": morphTargets channel "${name}" has ${arr.length} targets, expected ${targetCount}`);
-                }
-                if (targetCount <= 0) continue;
-
-                let vBase, vCount;
-                if (p.indexOffset != null) {
-                    let lo = Infinity, hi = -Infinity;
-                    const end = p.indexOffset + p.indexCount;
-                    for (let i = p.indexOffset; i < end; i++) {
-                        const idx = indices[i];
-                        if (idx < lo) lo = idx;
-                        if (idx > hi) hi = idx;
-                    }
-                    vBase  = lo;
-                    vCount = hi - lo + 1;
-                } else {
-                    vBase  = p.vertexOffset;
-                    vCount = p.vertexCount;
-                }
-
-                p.morph = {
-                    targetCount,
-                    weightOffset: morphTotalWeights,
-                    vertexBase:   vBase,
-                    vertexCount:  vCount,
-                    channels:     new Map(),
-                };
-
-                for (const chName of channelNames) {
-                    const arr = channelsIn[chName];
-                    if (arr == null) continue;
-                    const chIdx = shaderMorphChannels.length > 0
-                        ? shaderMorphChannels.indexOf(chName)
-                        : channelNames.indexOf(chName);
-                    if (chIdx < 0)
-                        return _c.warn(`[EzMesh3D]`, `"${key}": morphTargets channel "${chName}" not declared in shader's vertex.morphChannels`);
-
-                    const expected = vCount * 3;
-                    for (let t = 0; t < targetCount; t++) {
-                        if (!arr[t] || arr[t].length !== expected)
-                            return _c.warn(`[EzMesh3D]`, `"${key}": morphTargets.${chName}[${t}] length must be ${expected} (vertexCount*3), got ${arr[t]?.length}`);
-                    }
-
-                    const packed = new Float32Array(vCount * targetCount * 3);
-                    for (let t = 0; t < targetCount; t++) {
-                        const d = arr[t];
-                        for (let v = 0; v < vCount; v++) {
-                            const dst = (v * targetCount + t) * 3;
-                            packed[dst    ] = d[v * 3    ];
-                            packed[dst + 1] = d[v * 3 + 1];
-                            packed[dst + 2] = d[v * 3 + 2];
-                        }
-                    }
-                    p.morph.channels.set(chIdx, EzRender.uploadTexture2D(gl, null, gl.RGB32F, gl.RGB, gl.FLOAT, targetCount, vCount, packed));
-                }
-
-                morphTotalWeights += targetCount;
-            }
-
-            const vao = gl.createVertexArray();
-            gl.bindVertexArray(vao);
-
-            const vbo = gl.createBuffer();
-            if (hasVertices) {
+                const vbo = gl.createBuffer();
                 gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                for (const w of wired)
-                    EzRender.wireAttr(gl, { buffer: vbo, loc: w.loc, size: w.size, stride: vaoStride, offset: w.offset });
-            }
-            for (const d of defaulted) gl.disableVertexAttribArray(d.loc);
+                gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
 
-            const ebo = indices ? gl.createBuffer() : null;
-            if (ebo) {
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+                mesh.vertexBuffers.push({
+                    vbo, stride, attributes: attrs,
+                    vertexCount: stride > 0 ? (data.byteLength / stride) | 0 : 0,
+                });
+            }
+
+            // -- Indices ------------------------------------------------
+            const indices = opts.indices;
+            if (indices) {
+                mesh.indexType  = indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+                mesh.indexBytes = indices instanceof Uint32Array ? 4 : 2;
+                mesh.indexCount = indices.length;
+                mesh.ebo = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ebo);
                 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
             }
 
-            const instanceVBO = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(0), gl.DYNAMIC_DRAW);
-            const instLayout = shader.instanceLayout;
-            for (const e of instLayout.entries) {
-                if (e.loc < 0) continue;
-                if (e.type === "mat4") {
-                    for (let col = 0; col < 4; col++)
-                        EzRender.wireAttr(gl, { buffer: instanceVBO, loc: e.loc + col, size: 4, stride: instLayout.strideBytes, offset: e.byteOffset + col * 16, divisor: 1 });
-                } else {
-                    EzRender.wireAttr(gl, { buffer: instanceVBO, loc: e.loc, size: e.floats, stride: instLayout.strideBytes, offset: e.byteOffset, divisor: 1 });
+            // -- Submeshes ----------------------------------------------
+            const defaultVCount = mesh.vertexBuffers[0]?.vertexCount ?? 0;
+            const subs = (Array.isArray(opts.submeshes) && opts.submeshes.length)
+                ? opts.submeshes
+                : (indices
+                    ? [{ indexOffset: 0, indexCount: indices.length, vertexOffset: 0, vertexCount: defaultVCount }]
+                    : [{ vertexOffset: 0, vertexCount: defaultVCount }]);
+
+            for (const s of subs) {
+                const sub = {
+                    indexOffset:  s.indexOffset  ?? 0,
+                    indexCount:   s.indexCount   ?? 0,
+                    vertexOffset: s.vertexOffset ?? 0,
+                    vertexCount:  s.vertexCount  ?? defaultVCount,
+                    materialKey:  s.materialKey  ?? null,
+                    ABmin: s.ABmin ? s.ABmin.slice() : [ Infinity,  Infinity,  Infinity],
+                    ABmax: s.ABmax ? s.ABmax.slice() : [-Infinity, -Infinity, -Infinity],
+                    morph: null,
+                };
+
+                // Per-submesh morph deltas - keyed by channel name; the
+                // project resolves names to shader sampler bindings.
+                if (s.morphTargets && _is.obj(s.morphTargets) && !Array.isArray(s.morphTargets)) {
+                    const names = Object.keys(s.morphTargets);
+                    let targetCount = 0;
+                    for (const ch of names) {
+                        const arr = s.morphTargets[ch];
+                        if (Array.isArray(arr) && arr.length > targetCount) targetCount = arr.length;
+                    }
+                    const vCount = sub.vertexCount;
+                    if (targetCount > 0 && vCount > 0) {
+                        sub.morph = {
+                            targetCount,
+                            vertexBase:  sub.vertexOffset,
+                            vertexCount: vCount,
+                            channels:    new Map(),
+                        };
+                        for (const ch of names) {
+                            const arr = s.morphTargets[ch];
+                            if (!Array.isArray(arr) || !arr.length) continue;
+                            // Pack as a (vCount × targetCount) RGB32F texture, with the
+                            // shader fetching texel(t, vertexLocal). Inner loop = target
+                            // index, outer = vertex - matches the existing rig shader.
+                            const packed = new Float32Array(vCount * targetCount * 3);
+                            for (let t = 0; t < targetCount; t++) {
+                                const d = arr[t]; if (!d) continue;
+                                for (let v = 0; v < vCount; v++) {
+                                    const dst = (v * targetCount + t) * 3;
+                                    packed[dst    ] = d[v*3    ];
+                                    packed[dst + 1] = d[v*3 + 1];
+                                    packed[dst + 2] = d[v*3 + 2];
+                                }
+                            }
+                            sub.morph.channels.set(ch, EzRender.uploadTexture2D(
+                                gl, null, gl.RGB32F, gl.RGB, gl.FLOAT,
+                                targetCount, vCount, packed,
+                            ));
+                        }
+                        if (targetCount > mesh.morphTargetCount) mesh.morphTargetCount = targetCount;
+                    }
+                }
+
+                mesh.submeshes.push(sub);
+                for (let k = 0; k < 3; k++) {
+                    if (sub.ABmin[k] < mesh.ABmin[k]) mesh.ABmin[k] = sub.ABmin[k];
+                    if (sub.ABmax[k] > mesh.ABmax[k]) mesh.ABmax[k] = sub.ABmax[k];
                 }
             }
-            gl.bindVertexArray(null);
 
-            const mesh = new EzMesh3D();
-            mesh.vao               = vao;
-            mesh.vbo               = vbo;
-            mesh.ebo               = ebo;
-            mesh.instanceVBO       = instanceVBO;
-            mesh.indexType         = indexType;
-            mesh.indexBytes        = indexBytes;
-            mesh.primitives        = primList;
-            mesh.defaulted         = defaulted;
-            mesh.morphTotalWeights = morphTotalWeights;
+            if (Array.isArray(opts.morphTargetNames) && opts.morphTargetNames.length) {
+                mesh.morphTargetNames = opts.morphTargetNames.slice(0, mesh.morphTargetCount);
+                while (mesh.morphTargetNames.length < mesh.morphTargetCount)
+                    mesh.morphTargetNames.push(`Target_${mesh.morphTargetNames.length}`);
+            }
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
             return mesh;
         }
     }
 
     class EzSkeleton3D {
-        bones = []; // [{ parent, localBind: Float32Array(16), inverseBind: Float32Array(16), name: string }]
+        // bones: [{ parent: int, localBind: Mat4, inverseBind: Mat4, name: string }]
+        bones = [];
 
+        // Scratch buffers (allocated lazily in computePalette).
+        #globalCurrent  = []; // Mat4[]
+        #localScratch   = new Mat4();
+        #skinnedScratch = new Mat4();
+
+        // bonePoses: Mat4[] (length === bones.length). Returns a Float32Array of
+        // n*16 floats (column-major mat4s) suitable for upload to the bone-palette
+        // texture. The palette is freshly allocated each call (caller can keep it).
         computePalette(bonePoses) {
             const n = this.bones.length;
-            const globalCurrent = new Array(n);
+            const gc = this.#globalCurrent;
+            if (gc.length !== n) {
+                gc.length = 0;
+                for (let i = 0; i < n; i++) gc.push(new Mat4());
+            }
             const palette = new Float32Array(n * 16);
+            const local = this.#localScratch, skinned = this.#skinnedScratch;
             for (let i = 0; i < n; i++) {
                 const b = this.bones[i];
-                const local = EzMath.Mat4.multiply(b.localBind, bonePoses[i]);
-                globalCurrent[i] = b.parent < 0 ? local : EzMath.Mat4.multiply(globalCurrent[b.parent], local);
-                palette.set(EzMath.Mat4.multiply(globalCurrent[i], b.inverseBind), i * 16);
+                EzMath.mult(local, b.localBind, bonePoses[i]);
+                if (b.parent < 0) gc[i].copy(local);
+                else              EzMath.mult(gc[i], gc[b.parent], local);
+                EzMath.mult(skinned, gc[i], b.inverseBind);
+                palette.set(skinned.data, i * 16);
             }
             return palette;
         }
 
+        // skeleton: { bones: [{ parent?, localBind?: Mat4 | { position?, rotation?, euler?, scale? },
+        //                       inverseBind?: Mat4, name? }] }
         static fromDesc(key, skeleton) {
             if (!skeleton || !Array.isArray(skeleton.bones) || skeleton.bones.length === 0) return null;
-            const bones = [], globalBind = [];
+            const bones = [], globalBind = []; // globalBind: Mat4[]
             for (let i = 0; i < skeleton.bones.length; i++) {
                 const b = skeleton.bones[i];
                 const parent = b.parent ?? -1;
                 if (parent >= i)
                     return _c.warn(`[EzSkeleton3D]`, `"${key}": bone ${i} parent must be < self`) || null;
-                const localBind = EzMath.Mat4.resolveTransform(b.localBind ?? null, null);
-                const gb = parent < 0 ? localBind : EzMath.Mat4.multiply(globalBind[parent], localBind);
+
+                const localBind = new Mat4();
+                EzMath.resolveTransform(localBind, b.localBind ?? null);
+
+                const gb = new Mat4();
+                if (parent < 0) gb.copy(localBind);
+                else            EzMath.mult(gb, globalBind[parent], localBind);
                 globalBind[i] = gb;
-                const inverseBind = b.inverseBind instanceof Float32Array && b.inverseBind.length === 16
-                    ? b.inverseBind
-                    : EzMath.Mat4.invert(gb);
+
+                let inverseBind;
+                if (b.inverseBind && b.inverseBind.kind === KIND_MAT4) {
+                    inverseBind = new Mat4();
+                    inverseBind.copy(b.inverseBind);
+                } else {
+                    inverseBind = new Mat4();
+                    if (!EzMath.invert(inverseBind, gb)) inverseBind.identity();
+                }
+
                 bones.push({ parent, localBind, inverseBind, name: typeof b.name === "string" ? b.name : `Bone_${i}` });
             }
             const skel = new EzSkeleton3D();
@@ -1525,566 +1914,8 @@ EzRender  (static-only GL utility - dimension-agnostic, no 3D math)
         }
     }
 
-
-    // Tiny convenience for 1x1 fallback textures used by EzCanvas3D.
-    const _dummyTex = (gl, iFmt, fmt, type, data) => EzRender.uploadTexture2D(gl, null, iFmt, fmt, type, 1, 1, data);
-
-
-    // Fixed texture units for internal ez_ resources.
-    // EzShader3D bakes these into compiled GLSL; the engine binds samplers
-    // to matching units when the relevant feature is in use. EzRender itself
-    // doesn't reference these - they're an EzCanvas3D / EzShader3D contract.
-    const _EZ_TEX_UNIT_ALBEDO       = 0;
-    const _EZ_TEX_UNIT_BONES        = 1;
-    const _EZ_TEX_UNIT_MORPH_WEIGHT = 2;
-    const _EZ_TEX_UNIT_MORPH_DELTA  = 3; // N channels occupy 3, 4, 5, ...
-
-
-    const TAGC3D = "[EzCanvas3D]";
-    class EzCanvas3D {
-        name    = null;
-
-        #canvas = null;
-        #gl     = null;
-
-        get canvas() { return this.#canvas; }
-        get gl() { return this.#gl; }
-
-        #assets = new EzAssets();
-
-        get assets()     { return this.#assets; }
-        get shaders()    { return this.#assets.shaders; }
-        get models()     { return this.#assets.models; }
-        get textures()   { return this.#assets.textures; }
-        get meshes()     { return this.#assets.meshes; }
-        get skeletons()  { return this.#assets.skeletons; }
-
-
-        #instances = new Map();
-        #whiteTex         = null;
-        #morphDummyDelta  = null;
-        #morphDummyWeight = null;
-
-        #instanceCounter = 0;
-
-        #logicalWidth  = 800;
-        #logicalHeight = 600;
-        #pixelRatio    = 1;
-        #maxPixelRatio = 2;
-        #msaaEnabled   = false;
-
-        camera = null;
-
-        settings = {
-            width: () => this.#canvas.width,
-            height: () => this.#canvas.height,
-            logicalWidth: () => this.#logicalWidth,
-            logicalHeight: () => this.#logicalHeight,
-            pixelRatio: () => this.#pixelRatio,
-            setPixelRatio: (ratio) => {
-                this.#pixelRatio = this.#clampPixelRatio(ratio);
-                this.#applyViewportSize();
-                return this.#pixelRatio;
-            },
-            aaInfo: () => ({
-                mode: "msaa+ssaa",
-                msaa: this.#msaaEnabled,
-                pixelRatio: this.#pixelRatio,
-                maxPixelRatio: this.#maxPixelRatio,
-            }),
-            fitContainer: () => {
-                const parent = this.#canvas.parentElement;
-                if (!parent) return;
-                const rect = parent.getBoundingClientRect();
-                this.resize(rect.width, rect.height);
-            }
-        };
-
-        constructor(name, opts = {}) {
-            this.name = name || "canvas";
-            const c = document.createElement("canvas");
-            c.width  = 800;
-            c.height = 600;
-            c.style.background = "transparent";
-            this.#canvas = c;
-
-            const antialias = typeof opts.antialias === "boolean" ? opts.antialias : true;
-            const gl = c.getContext("webgl2", { alpha: true, antialias });
-            if (!gl) throw new Error(`${TAGC3D} WebGL2 not supported`);
-            this.#gl = gl;
-
-            this.#maxPixelRatio = (typeof opts.maxPixelRatio === "number" && Number.isFinite(opts.maxPixelRatio))
-                ? Math.max(1, opts.maxPixelRatio)
-                : 2;
-            const initialPR = opts.pixelRatio ?? (typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1);
-            this.#pixelRatio = this.#clampPixelRatio(initialPR);
-            this.#msaaEnabled = !!gl.getContextAttributes()?.antialias;
-
-            gl.enable(gl.DEPTH_TEST);
-            gl.enable(gl.CULL_FACE);
-            gl.enable(gl.BLEND); // Canvas is transparent, cool shi
-            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-            gl.clearColor(0, 0, 0, 0);
-
-            this.#whiteTex         = _dummyTex(gl, gl.RGBA8,  gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array  ([255,255,255,255]));
-            this.#morphDummyDelta  = _dummyTex(gl, gl.RGB32F, gl.RGB,  gl.FLOAT,         new Float32Array([0,0,0]));
-            this.#morphDummyWeight = _dummyTex(gl, gl.R32F,   gl.RED,  gl.FLOAT,         new Float32Array([0]));
-
-            this.camera = new EzCamera3D();
-            this.#applyViewportSize();
-            this.#registerAssets();
-        }
-
-        #clampPixelRatio(v) {
-            const n = Number(v);
-            if (!Number.isFinite(n) || n <= 0) return 1;
-            return EzMath.clamp(n, 0.5, this.#maxPixelRatio);
-        }
-
-        #applyViewportSize() {
-            const drawW = Math.max(1, Math.round(this.#logicalWidth * this.#pixelRatio));
-            const drawH = Math.max(1, Math.round(this.#logicalHeight * this.#pixelRatio));
-
-            this.#canvas.style.width = `${this.#logicalWidth}px`;
-            this.#canvas.style.height = `${this.#logicalHeight}px`;
-
-            if (this.#canvas.width !== drawW) this.#canvas.width = drawW;
-            if (this.#canvas.height !== drawH) this.#canvas.height = drawH;
-
-            this.#gl.viewport(0, 0, drawW, drawH);
-            if (this.camera) this.camera.aspect = this.#logicalWidth / Math.max(1e-6, this.#logicalHeight);
-        }
-
-        #registerAssets() {
-            const gl = this.#gl;
-
-            this.#assets
-                .register("shaders", {
-                    add: (map, key, shader) => {
-                        if (!(shader instanceof EzShader))
-                            return _c.warn(TAGC3D, `shader.add: expected an EzShader instance for "${key}"`);
-                        if (!shader.compiled) {
-                            if (!shader.described)
-                                return _c.warn(TAGC3D, `shader.add: "${key}" has not been described yet`);
-                            try { shader.compile(gl); }
-                            catch (e) { console.warn(e.message); return false; }
-                        }
-                        map.set(key, shader);
-                        return true;
-                    },
-                    remove: (map, key) => {
-                        const s = map.get(key); if (!s) return false;
-                        gl.deleteProgram(s.program);
-                        map.delete(key);
-                        return true;
-                    },
-                    read: (map, key) => {
-                        const s = map.get(key); if (!s) return null;
-                        return {
-                            key,
-                            attributes:    s.attributes.map(a => ({ name: a.name, size: a.size, default: [...a.default] })),
-                            morphChannels: s._morphChannels ?? [],
-                            hasSkeleton:   s.uloc.bonesTex != null,
-                        };
-                    },
-                })
-                .register("textures", {
-                    add: (map, key, { data, width, height, channels = 4, filter = gl.LINEAR, wrap = gl.REPEAT } = {}) => {
-                        if (!_is.str(key) || !data || !width || !height) return false;
-                        const hasMipmap = filter === "nearest";
-                        const ch = channels;
-                        const [internalFormat, format] =
-                            ch === 1 ? [gl.R8,    gl.RED ] :
-                            ch === 2 ? [gl.RG8,   gl.RG  ] :
-                            ch === 3 ? [gl.RGB8,  gl.RGB ] :
-                                       [gl.RGBA8, gl.RGBA];
-                        const glTex = EzRender.createTexture(gl, { data, width, height, format, internalFormat, wrapS: wrap, wrapT: wrap, mipmap: hasMipmap });
-                        map.set(key, { glTex, width, height, channels });
-                        return true;
-                    },
-                    remove: (map, key) => {
-                        const t = map.get(key); if (!t) return false;
-                        gl.deleteTexture(t.glTex);
-                        map.delete(key);
-                        return true;
-                    }
-                })
-                .register("meshs", {
-                    add: (map, key, mesh) => {
-                        if (!(mesh instanceof EzMesh3D)) return _c.warn(TAGC3D, `mesh.add: expected EzMesh3D for "${key}"`);
-                        map.set(key, mesh);
-                        return true;
-                    },
-                    remove: (map, key) => {
-                        const m = map.get(key); if (!m) return false;
-                        m.destroy(gl);
-                        map.delete(key);
-                        return true;
-                    },
-                    read: (map, key) => {
-                        const m = map.get(key); if (!m) return null;
-                        return {
-                            key,
-                            morphTotalWeights: m.morphTotalWeights,
-                            primitives: m.primitives.map(p => {
-                                const out = { material: { albedo: p.material.albedo, fill: [...p.material.fill] } };
-                                if (p.indexOffset != null) { out.indexOffset = p.indexOffset; out.indexCount = p.indexCount; }
-                                else { out.vertexOffset = p.vertexOffset; out.vertexCount = p.vertexCount; }
-                                if (p.morph) {
-                                    const { targetCount, weightOffset, vertexBase, vertexCount } = p.morph;
-                                    out.morph = { targetCount, weightOffset, vertexBase, vertexCount };
-                                }
-                                return out;
-                            }),
-                        };
-                    },
-                })
-                .register("skeletons", {
-                    add: (map, key, skel) => {
-                        if (!(skel instanceof EzSkeleton3D)) return _c.warn(TAGC3D, `skeleton.add: expected EzSkeleton3D for "${key}"`);
-                        map.set(key, skel);
-                        return true;
-                    },
-                    remove: (map, key) => { map.delete(key); return true; },
-                    read: (map, key) => {
-                        const s = map.get(key); if (!s) return null;
-                        return { key, boneCount: s.bones.length };
-                    },
-                })
-                .register("models", {
-                    add: (map, key, opts) => this.#addModelImpl(map, key, opts),
-                    remove: (map, key) => {
-                        const m = map.get(key); if (!m) return false;
-                        if (m.boneTex)        gl.deleteTexture(m.boneTex);
-                        if (m.morphWeightTex) gl.deleteTexture(m.morphWeightTex);
-                        map.delete(key);
-                        for (const [ik, inst] of this.#instances)
-                            if (inst.modelKey === key) this.#instances.delete(ik);
-                        return true;
-                    },
-                    read: (map, key) => {
-                        const m = map.get(key); if (!m) return null;
-                        const mesh = this.#assets.mesh.get(m.meshKey);
-                        const skel = this.#assets.skeleton.get(m.skeletonKey);
-                        return {
-                            key,
-                            defaultShader: m.shaderKey,
-                            meshKey:       m.meshKey,
-                            skeletonKey:   m.skeletonKey,
-                            primitives: mesh ? mesh.primitives.map(p => {
-                                const out = { material: { albedo: p.material.albedo, fill: [...p.material.fill] } };
-                                if (p.indexOffset != null) { out.indexOffset = p.indexOffset; out.indexCount = p.indexCount; }
-                                else { out.vertexOffset = p.vertexOffset; out.vertexCount = p.vertexCount; }
-                                if (p.morph) {
-                                    const { targetCount, weightOffset, vertexBase, vertexCount } = p.morph;
-                                    out.morph = { targetCount, weightOffset, vertexBase, vertexCount };
-                                }
-                                return out;
-                            }) : [],
-                            ...m._info,
-                        };
-                    },
-                });
-        }
-
-
-        mount(el)   { 
-            if (el instanceof Element) el.appendChild(this.#canvas); 
-            return this; 
-        }
-        unmount()   { this.#canvas.parentElement?.removeChild(this.#canvas);   return this; }
-        resize(w, h) {
-            this.#logicalWidth = Math.max(1, Math.round(w));
-            this.#logicalHeight = Math.max(1, Math.round(h));
-            this.#applyViewportSize();
-            return this;
-        }
-
-        #addModelImpl(map, key, opts = {}) {
-            if (!_is.str(key)) return false;
-            // Delegate geometry + skeleton creation to EzMesh3D / EzSkeleton3D
-            const { defaultShader: shaderKey, skeleton } = opts;
-
-            if (!_is.str(shaderKey))
-                return _c.warn(TAGC3D, `addModel: defaultShader required`);
-            const shader = this.shaders.get(shaderKey);
-            if (!shader)
-                return _c.warn(TAGC3D, `addModel: shader "${shaderKey}" not found`);
-
-            // Build EzMesh3D
-            const mesh = EzMesh3D.fromDesc(this.#gl, shader, key, opts);
-            if (!mesh) return false;
-
-            // Build EzSkeleton3D (null = no skeleton, false = validation error)
-            const skel = EzSkeleton3D.fromDesc(key, skeleton);
-            if (skel === false) return false;
-
-            const meshKey     = `${key}_mesh`;
-            const skeletonKey = `${key}_skeleton`;
-
-            this.#assets.mesh._map.set(meshKey, mesh);
-            if (skel) this.#assets.skeleton._map.set(skeletonKey, skel);
-
-            map.set(key, {
-                shaderKey,
-                meshKey,
-                skeletonKey: skel ? skeletonKey : null,
-                boneTex: null,
-                morphWeightTex: null,
-                _info: {
-                    indexCount:        mesh.ebo ? mesh.primitives.reduce((s, p) => s + (p.indexCount ?? 0), 0) : 0,
-                    boneCount:         skel ? skel.bones.length : 0,
-                    morphTotalWeights: mesh.morphTotalWeights,
-                },
-            });
-            return true;
-        }
-
-
-        addInstance(modelKey, init = null) {
-            const model = this.models.get(modelKey);
-            if (!model) { _c.warn(TAGC3D, `addInstance: model "${modelKey}" not found`); return null; }
-            const overrideKey = (init && _is.str(init.shader)) ? init.shader : null;
-            const resolvedKey = overrideKey ?? model.shaderKey;
-            const shader = this.shaders.get(resolvedKey);
-            if (!shader) return null;
-            const key = `i${this.#instanceCounter++}`;
-
-            const data = {};
-            for (const e of shader.instanceLayout.entries) data[e.name] = new Float32Array(e.default);
-
-            const mesh = this.#assets.mesh.get(model.meshKey);
-            const skel = model.skeletonKey ? this.#assets.skeleton.get(model.skeletonKey) : null;
-
-            this.#instances.set(key, {
-                modelKey, shaderKey: overrideKey,
-                data,
-                bonePoses:    skel ? Array.from({ length: skel.bones.length }, EzMath.Mat4.identity) : null,
-                morphWeights: (mesh && mesh.morphTotalWeights > 0) ? new Float32Array(mesh.morphTotalWeights) : null,
-                display: true,
-            });
-            if (init) this.writeInstance(key, init);
-            return key;
-        }
-
-        removeInstance(key) { return this.#instances.delete(key); }
-
-        writeInstance(key, opts = {}) {
-            const inst = this.#instances.get(key); if (!inst) return false;
-            const model = this.models.get(inst.modelKey); if (!model) return false;
-            if (_is.str(opts.shader)) inst.shaderKey = opts.shader || null;
-            const resolvedKey = inst.shaderKey ?? model.shaderKey;
-            const shader = this.shaders.get(resolvedKey); if (!shader) return false;
-
-            if (opts.data && _is.obj(opts.data)) {
-                for (const e of shader.instanceLayout.entries) {
-                    if (!(e.name in opts.data)) continue;
-                    const val = opts.data[e.name], dst = inst.data[e.name];
-                    if (e.type === "mat4") {
-                        const m = EzMath.Mat4.resolveTransform(val, dst);
-                        if (m !== dst) dst.set(m);
-                    } else if (e.type === "float") {
-                        dst[0] = +val || 0;
-                    } else if (val != null && val.length === e.floats) {
-                        for (let i = 0; i < e.floats; i++) dst[i] = +val[i] || 0;
-                    }
-                }
-            }
-            if ("display" in opts) inst.display = !!opts.display;
-            if (opts.bone && inst.bonePoses) {
-                const bts = Array.isArray(opts.bone) ? opts.bone : [opts.bone];
-                for (const bt of bts) {
-                    if (!bt) continue;
-                    const id = bt.id;
-                    if (typeof id !== "number" || id < 0 || id >= inst.bonePoses.length) continue;
-                    inst.bonePoses[id] = EzMath.Mat4.resolveTransform(bt.transform, inst.bonePoses[id]);
-                }
-            }
-            if (opts.morph && inst.morphWeights) {
-                const w = opts.morph;
-                let offset = 0, src = w;
-                if (_is.obj(w) && !Array.isArray(w) && !(w instanceof Float32Array)) {
-                    offset = w.offset | 0;
-                    src    = w.weights;
-                }
-                if (Array.isArray(src) || src instanceof Float32Array) {
-                    const cap = inst.morphWeights.length;
-                    const n = Math.min(src.length, cap - offset);
-                    for (let i = 0; i < n; i++) inst.morphWeights[offset + i] = +src[i] || 0;
-                }
-            }
-            return true;
-        }
-
-        readInstance(key) {
-            const inst = this.#instances.get(key); if (!inst) return null;
-            return {
-                key,
-                modelKey:     inst.modelKey,
-                data:         Object.fromEntries(Object.entries(inst.data).map(([k, v]) => [k, new Float32Array(v)])),
-                display:      inst.display,
-                bonePoses:    inst.bonePoses    ? inst.bonePoses.map(m => new Float32Array(m)) : null,
-                morphWeights: inst.morphWeights ? new Float32Array(inst.morphWeights)         : null,
-            };
-        }
-
-        setCamera(opts = {}) {
-            this.camera.set(opts);
-            return this;
-        }
-
-
-        render(opts = {}) {
-            const gl = this.#gl;
-
-            const clear = opts.clear ?? true;
-            if (clear === true)         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            else if (clear === "depth") gl.clear(gl.DEPTH_BUFFER_BIT);
-            else if (clear === "color") gl.clear(gl.COLOR_BUFFER_BIT);
-
-            const batches = new Map();
-            for (const [, inst] of this.#instances) {
-                if (!inst.display) continue;
-                const model = this.models.get(inst.modelKey); if (!model) continue;
-                const shaderKey = inst.shaderKey ?? model.shaderKey;
-                let modelMap = batches.get(shaderKey);
-                if (!modelMap) batches.set(shaderKey, modelMap = new Map());
-                let list = modelMap.get(inst.modelKey);
-                if (!list) modelMap.set(inst.modelKey, list = []);
-                list.push(inst);
-            }
-
-            const sorted = [...batches.entries()].sort((a, b) =>
-                (this.shaders.get(a[0])?.renderCfg.rQueue ?? 1000) -
-                (this.shaders.get(b[0])?.renderCfg.rQueue ?? 1000));
-
-            for (const [shaderKey, modelMap] of sorted) {
-                const shader = this.shaders.get(shaderKey); if (!shader) continue;
-
-                shader.applyRenderState(gl).bind(gl);
-                this.#bindCamera(shader);
-
-                for (const [modelKey, instList] of modelMap) {
-                    const model = this.models.get(modelKey); if (!model) continue;
-                    const mesh  = this.#assets.mesh.get(model.meshKey); if (!mesh) continue;
-                    const skel  = model.skeletonKey ? this.#assets.skeleton.get(model.skeletonKey) : null;
-
-                    EzRender.withVAO(gl, mesh.vao, () => {
-                        EzRender.setConstAttrs(gl, mesh.defaulted);
-
-                        for (const chunk of this.#chunkInstances(shader, instList)) {
-                            const packed = EzRender.packInstances(
-                                chunk.map(i => i.data), shader.instanceLayout);
-                            if (packed) EzRender.uploadVBO(gl, mesh.instanceVBO, packed);
-
-                            if (skel) this.#bindBones(shader, skel, chunk[0].bonePoses, model);
-                            this.#bindMorphWeights(shader, mesh, model, chunk);
-
-                            for (let pi = 0; pi < mesh.primitives.length; pi++) {
-                                const prim = mesh.primitives[pi];
-                                this.#bindMaterial(shader, prim.material);
-                                this.#bindMorphPrim(shader, prim);
-                                EzCanvas3D.drawPrimitive(gl, mesh, pi, chunk.length);
-                            }
-                        }
-                    });
-                }
-            }
-
-            EzRender.restoreDefaultState(gl);
-        }
-
-        #bindCamera(shader) {
-            EzRender.setUniforms(this.#gl, shader.program, [
-                { loc: shader.uloc.view,       type: "mat4", value: this.camera.view },
-                { loc: shader.uloc.projection, type: "mat4", value: this.camera.projection },
-            ]);
-        }
-
-        #bindMaterial(shader, material) {
-            const gl  = this.#gl;
-            const tex = material.albedo ? this.textures.get(material.albedo) : null;
-            EzRender.bindSampler(gl, shader.uloc.albedo, _EZ_TEX_UNIT_ALBEDO,
-                                   tex ? tex.glTex : this.#whiteTex);
-            EzRender.setUniforms(gl, shader.program, [
-                { loc: shader.uloc.fill, type: "vec4", value: material.fill },
-            ]);
-        }
-
-        #bindBones(shader, skel, bonePoses, model) {
-            const loc = shader.uloc.bonesTex;
-            if (loc == null || !bonePoses) return;
-            const gl = this.#gl;
-            const palette = skel.computePalette(bonePoses);
-            model.boneTex = EzRender.uploadTexture2D(gl, model.boneTex,
-                gl.RGBA32F, gl.RGBA, gl.FLOAT, 4, skel.bones.length, palette);
-            EzRender.bindSampler(gl, loc, _EZ_TEX_UNIT_BONES, model.boneTex);
-        }
-
-        #bindMorphWeights(shader, mesh, model, instances) {
-            const loc = shader.uloc.morph.weightTex;
-            if (loc == null) return;
-            const gl = this.#gl;
-            if (mesh.morphTotalWeights <= 0) {
-                EzRender.bindSampler(gl, loc, _EZ_TEX_UNIT_MORPH_WEIGHT, this.#morphDummyWeight);
-                return;
-            }
-            const W = mesh.morphTotalWeights, H = instances.length;
-            const data = new Float32Array(W * H);
-            for (let i = 0; i < H; i++)
-                if (instances[i].morphWeights) data.set(instances[i].morphWeights, i * W);
-            model.morphWeightTex = EzRender.uploadTexture2D(gl, model.morphWeightTex,
-                gl.R32F, gl.RED, gl.FLOAT, W, H, data);
-            EzRender.bindSampler(gl, loc, _EZ_TEX_UNIT_MORPH_WEIGHT, model.morphWeightTex);
-        }
-
-        #bindMorphPrim(shader, prim) {
-            const morph = shader.uloc.morph;
-            if (morph.count == null) return;
-            const gl = this.#gl;
-            const m  = prim.morph;
-            EzRender.setUniforms(gl, shader.program, [
-                { loc: morph.count,        type: "int", value: m ? m.targetCount  : 0 },
-                { loc: morph.weightOffset, type: "int", value: m ? m.weightOffset : 0 },
-                { loc: morph.vertexBase,   type: "int", value: m ? m.vertexBase   : 0 },
-            ]);
-            for (const ch of morph.channels) {
-                if (ch.loc == null) continue;
-                const deltaTex = m ? m.channels.get(ch.unit - _EZ_TEX_UNIT_MORPH_DELTA) : null;
-                EzRender.bindSampler(gl, ch.loc, ch.unit, deltaTex || this.#morphDummyDelta);
-            }
-        }
-
-        #chunkInstances(shader, instances) {
-            const perInstance = shader.uloc.bonesTex != null;
-            return perInstance ? instances.map(i => [i]) : [instances];
-        }
-
-        static drawPrimitive(gl, mesh, primIdx, instanceCount) {
-            const p = mesh.primitives[primIdx];
-            if (p.indexOffset != null) {
-                EzRender.drawInstanced(gl, {
-                    indexed:     true,
-                    indexCount:  p.indexCount,
-                    indexType:   mesh.indexType,
-                    indexOffset: p.indexOffset * mesh.indexBytes,
-                }, instanceCount);
-            } else {
-                EzRender.drawInstanced(gl, {
-                    indexed:      false,
-                    vertexOffset: p.vertexOffset,
-                    vertexCount:  p.vertexCount,
-                }, instanceCount);
-            }
-        }
-    }
-
-    window.EzMath          = EzMath;
-    window.EzShader        = EzShader;
-    window.EzShader3D      = EzShader3D;
     window.EzMesh3D        = EzMesh3D;
     window.EzSkeleton3D    = EzSkeleton3D;
-    window.EzRender        = EzRender;
-    window.EzCanvas3D      = EzCanvas3D;
+    window.EzCamera3D      = EzCamera3D;
 
 })();

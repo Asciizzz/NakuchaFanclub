@@ -54,16 +54,16 @@ By Asciiz
 # Script data shape:
     {
         variables: { key: value, ... },
-        actions:   { name: "code string — has access to `variables` and `event`" },
+        actions:   { name: "code string - has access to `variables` and `event`" },
         events:    { type: [{ selector, action }, ...] }
     }
 
-# Live layer (#live) — persists until explicit reload:
+# Live layer (#live) - persists until explicit reload:
     variables   reconciled on reloadScripts()
     actions     rebuilt from JSON on reloadScripts()
     events      rebuilt from JSON on reloadScripts()
-    docTypes    Set of event types with a listener on doc  — never re-added
-    winTypes    Set of event types with a listener on win  — never re-added
+    docTypes    Set of event types with a listener on doc  - never re-added
+    winTypes    Set of event types with a listener on win  - never re-added
 
 # Notes:
 
@@ -109,7 +109,7 @@ By Asciiz
         #glbstyle = "";
         #name = null;
 
-        // Live content layer — persists until explicit reload policies
+        // Live content layer - persists until explicit reload policies
         #live = {
             variables: {},          // mutable script state
             actions:   {},          // name -> code string
@@ -455,7 +455,7 @@ By Asciiz
             this.#live.actions = expected.actions;
             this.#live.events  = expected.events;
 
-            // Attach listeners once per type — never re-added
+            // Attach listeners once per type - never re-added
             for (const [type, bindings] of Object.entries(this.#live.events)) {
                 if (type === "onload") {
                     bindings.filter(b => b.selector === "window")
