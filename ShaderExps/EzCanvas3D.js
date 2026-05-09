@@ -919,7 +919,8 @@ Contains
         onbind    = null; // (gl, program) => void
         other     = {};   // free whatever things
 
-        compiled = false;
+        _compiled = false;
+        get compiled() { return this._compiled; }
 
         #activeStage = 0;
         #spec = null;
@@ -1244,14 +1245,14 @@ Contains
                 this.renderCfg = built.renderCfg;
                 this.onbind = built.onbind;
                 this.#refreshReflection(gl);
-                this.compiled = true;
+                this._compiled = true;
                 return this;
             }
 
             this.program = this.#createProgram(gl, vertSrc, fragSrc);
             if (!this.program) throw new Error("[EzShader] GL program compilation failed");
             this.#refreshReflection(gl);
-            this.compiled = true;
+            this._compiled = true;
             return this;
         }
 

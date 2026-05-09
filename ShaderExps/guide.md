@@ -350,7 +350,7 @@ console.log("u_view location:", shader.getUniformLocation("u_view"));
 ### Metadata Preservation
 Ensure all custom metadata (`divisor`, `slots`, `floats`, `instance`) is passed in the full spec object:
 ```javascript
-// ✅ Correct - metadata is preserved
+// Correct - metadata is preserved
 shader.input({
     name: "a_instMat4",
     type: "mat4",
@@ -358,7 +358,7 @@ shader.input({
     slots: 4
 });
 
-// ❌ Wrong - metadata is lost with positional form
+// Wrong - metadata is lost with positional form
 shader.input("mat4", "a_instMat4");  // divisor/slots not set
 ```
 
