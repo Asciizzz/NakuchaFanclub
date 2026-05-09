@@ -1181,9 +1181,6 @@
             const btn = document.createElement("button");
             btn.className = `model-btn ${entry.status}`;
             btn.disabled = !loaded;
-            btn.title = entry.status === "error"
-                ? `Error: ${entry.err}`
-                : (loaded ? "Click → spawn at root, drag → drop on a hierarchy node" : "Loading…");
             btn.innerHTML = `<span class="dot"></span><span class="name">${key}</span>`;
             btn.onclick = () => {
                 const n = instantiate(key);
@@ -1216,7 +1213,7 @@
     function renderInspector() {
         inspectorEl.innerHTML = "";
         if (!selectedNode || isHidden(selectedNode)) {
-            inspectorEl.innerHTML = `<div class="inspector-empty">Select a node in the hierarchy.</div>`;
+            inspectorEl.innerHTML = `<div class="inspector-empty">Select a node.</div>`;
             return;
         }
         inspectorEl.appendChild(makeNamePanel(selectedNode));
