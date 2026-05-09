@@ -954,9 +954,7 @@
         return rootDst;
     }
 
-    /* ----------------
-       SELECTION + UI dispatch
-       ---------------- */
+
     let selectedNode = null;
     const expandedNodes = new WeakSet();
     expandedNodes.add(mainScene.root);
@@ -979,9 +977,6 @@
         renderInspector();
     }
 
-    // Re-parent `node` under `newParent`, preserving its world transform by
-    // recomputing its local as `inverse(newParent.world) * node.world`.
-    // Refuses to move into self or any descendant (cycle).
     function reparent(node, newParent) {
         if (!node || !newParent || node === newParent || node === mainScene.root) return false;
         for (let p = newParent; p; p = p.parent) if (p === node) return false;
