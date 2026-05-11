@@ -7,108 +7,148 @@ You can use it for a file system, or a game object hierarchy, not my concern.
 */
 
 class EzNode {
-    kParent = null; // key ref to parent node
-    kChildren = []; // array of child node keys
+    name = "";
+    parent = null; // key ref to parent node
+    children = []; // array of child node keys
     $ = {}; // component storage
+
+    rename(newName) { this.name = newName; }
+    set(compKey, compData) { this.$[compKey] = compData; }
+    get(compKey) { return this.$[compKey]; }
 }
 
 class EzTree {
     nodes = new Map();
-    kRoot = null;
+    rootId = null;
+    #idCounter = 0;
 
-    behaviours = new Map(); // a map of traverse behaviours based on existing nodes' components
+    compBehaviours = new Map();
 
-    constructor(rootKey) {
+    #genId() { return this.#idCounter++; }
+
+    constructor(rootName) {
         const rootNode = new EzNode();
-        this.nodes.set(rootKey, rootNode);
-        this.kRoot = rootKey;
+        rootNode.name = rootName;
+        const id = this.#genId();
+        this.nodes.set(id, rootNode);
+        this.rootId = id;
     }
 
-    #genUniqueKey(key) {
-        // Just iterate until key is unique
-        let uniqueKey = key;
-        while (this.nodes.has(uniqueKey)) {
-            uniqueKey = `${key}_${Math.random().toString(36).substr(2, 5)}`;
-        }
-        return uniqueKey;
-    }
+    addNode(name, parentId=null) {
+        parentId = parentId ?? this.rootId;
 
-    addNode(key, parentKey=null) {
-        key = this.#genUniqueKey(key);
-
-        parentKey = parentKey || this.kRoot;
-
-        const parentNode = this.nodes.get(parentKey);
-        if (!parentNode) return null; // parent must exist
+        const parentNode = this.nodes.get(parentId);
+        if (!parentNode) return null;
 
         const node = new EzNode();
-        node.kParent = parentKey;
+        node.name = name;
+        node.parent = parentId;
 
-        this.nodes.set(key, node);
-        parentNode.kChildren.push(key);
+        const id = this.#genId();
+        this.nodes.set(id, node);
+        parentNode.children.push(id);
 
-        return { key, node };
+        return { id, node };
     }
 
-    getNode(key) { return this.nodes.get(key); }
+    getNode(id) { return this.nodes.get(id); }
 
-    reparentNode(key, newParentKey) {
-        if (key === newParentKey) return false;
+    reparentNode(id, newParentId) {
+        if (id === newParentId) return false;
 
-        const node = this.nodes.get(key);
-        const newParent = this.nodes.get(newParentKey);
-
+        const node = this.nodes.get(id);
+        const newParent = this.nodes.get(newParentId);
         if (!node || !newParent) return false;
 
+        // Cycle detection
         let current = newParent;
         while (current) {
             if (current === node) return false;
-            current = this.nodes.get(current.kParent);
+            current = this.nodes.get(current.parent);
         }
 
-        const oldParent = this.nodes.get(node.kParent);
+        const oldParent = this.nodes.get(node.parent);
         if (oldParent) {
-            const index = oldParent.kChildren.indexOf(key);
-            if (index !== -1) oldParent.kChildren.splice(index, 1);
+            const index = oldParent.children.indexOf(id);
+            if (index !== -1) oldParent.children.splice(index, 1);
         }
 
-        if (!newParent.kChildren.includes(key)) newParent.kChildren.push(key);
-
-        node.kParent = newParentKey;
+        newParent.children.push(id);
+        node.parent = newParentId;
         return true;
     }
 
-    // behaviourFn(nodeKey, node, tree) { ... }
+    removeNode(id, recursive=true) {
+        if (id === this.rootId) return false; // can't remove root
+
+        const node = this.nodes.get(id);
+        if (!node) return false;
+
+        if (recursive) {
+            // DFS to collect all descendants
+            const toRemove = [id];
+            const stack = [...node.children];
+            while (stack.length > 0) {
+                const currentId = stack.pop();
+                const currentNode = this.nodes.get(currentId);
+                if (!currentNode) continue;
+                toRemove.push(currentId);
+                stack.push(...currentNode.children);
+            }
+            for (const removeId of toRemove) this.nodes.delete(removeId);
+        } else {
+            // Reparent children to removed node's parent before deleting
+            for (const childId of node.children) {
+                const child = this.nodes.get(childId);
+                if (child) child.parent = node.parent;
+            }
+            const parentNode = this.nodes.get(node.parent);
+            if (parentNode) {
+                parentNode.children = parentNode.children
+                    .filter(c => c !== id)
+                    .concat(node.children);
+            }
+            this.nodes.delete(id);
+        }
+
+        // Clean up parent's reference if recursive
+        if (recursive) {
+            const parentNode = this.nodes.get(node.parent);
+            if (parentNode) {
+                const index = parentNode.children.indexOf(id);
+                if (index !== -1) parentNode.children.splice(index, 1);
+            }
+        }
+
+        return true;
+    }
+
+
+    // behaviourFn(nodeId, nodeData, treeRef, parentData) { ... return dataToPassDown }
     addBehaviour(compKey, behaviourFn) {
-        this.behaviours.set(compKey, behaviourFn);
+        this.compBehaviours.set(compKey, behaviourFn);
     }
 
-    hasBehaviour(compKey) {
-        return this.behaviours.has(compKey);
-    }
-
-    getBehaviour(compKey) {
-        return this.behaviours.get(compKey);
-    }
-
-    traverse(startKey, DFS=true) {
-        const startNode = this.nodes.get(startKey);
+    traverse(startId, DFS=true) {
+        const startNode = this.nodes.get(startId);
         if (!startNode) return;
 
-        const queue = [startKey];
+        const queue = [{ id: startId, parentData: {} }];
         while (queue.length > 0) {
-            const currentKey = DFS ? queue.pop() : queue.shift();
-            const currentNode = this.nodes.get(currentKey);
+            const { id: currentId, parentData } = DFS ? queue.pop() : queue.shift();
+            const currentNode = this.nodes.get(currentId);
             if (!currentNode) continue;
 
+            const childData = {};
             for (const compKey in currentNode.$) {
-                if (this.hasBehaviour(compKey)) {
-                    this.getBehaviour(compKey)(currentKey, currentNode, this);
+                if (this.compBehaviours.has(compKey)) {
+                    childData[compKey] = this.compBehaviours.get(compKey)(
+                        currentId, currentNode, this, parentData[compKey]
+                    );
                 }
             }
 
-            queue.push(...currentNode.kChildren);
-            queue.push(...currentNode.kChildren);
+            queue.push(...currentNode.children.map(id => ({ id, parentData: childData })));
         }
     }
 }

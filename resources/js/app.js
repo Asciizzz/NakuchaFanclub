@@ -1,5 +1,6 @@
 import './beta/EzCanvas3D.js';
 import './beta/EzLoader.js';
+import './beta/EzTree.js';
 import './beta/EzProject.js';
 
 import './lib/EzCanvas2D.js';
