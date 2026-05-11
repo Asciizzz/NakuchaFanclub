@@ -1,0 +1,23 @@
+@font-face {
+	font-family: 'Outfit';
+	src: url('../assets/fonts/Outfit-VariableFont_wght.ttf') format('truetype');
+}
+
+:root {
+    --color-0: #9AB7F8; /* Blueish thingy */
+	--color-1: #B8C7F9; /* Another blueish thingy */
+	--color-2: #D9D2FF; /* Red-pinkish thingy */
+	--color-3: #AEBBFF; /* I don't fcking know, slightly darker blue than color-1 i guess? */
+	--color-4: #CBB7F6; /* Pinkish? */
+	--color-5: #F3C7E8; /* Another pinkish? */
+	--color-6: #F7F5FF; /* Almost white */
+	--color-7: #8FA7E8; /* Dusky blue */
+	--color-8: #E7DEFF; /* Iris out (chainsaw man reference) */
+}
+
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+	font-family: 'Outfit', sans-serif
+}

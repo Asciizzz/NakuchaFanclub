@@ -553,8 +553,8 @@
             }
 
             const sorted = [...batches.entries()].sort((a, b) =>
-                (this.shaders.get(a[0])?.renderCfg.rQueue ?? 1000) -
-                (this.shaders.get(b[0])?.renderCfg.rQueue ?? 1000));
+                (this.shaders.get(a[0])?.other.renderCfg?.rQueue ?? 1000) -
+                (this.shaders.get(b[0])?.other.renderCfg?.rQueue ?? 1000));
 
             const viewData = camera.view.data, projData = camera.projection.data;
 

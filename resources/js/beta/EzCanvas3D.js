@@ -886,6 +886,187 @@ Contains
             return tex;
         }
 
+        static createRenderTarget(gl, {
+            width = 256, height = 256,
+            hasColor = false,
+            hasDepth = true,
+            colorFormat = gl.RGBA, colorInternalFormat = colorFormat, colorType = gl.UNSIGNED_BYTE,
+            depthFormat = gl.DEPTH_COMPONENT, depthInternalFormat = gl.DEPTH_COMPONENT24, depthType = gl.UNSIGNED_INT,
+            colorFilter = gl.LINEAR,
+            depthFilter = gl.NEAREST,
+            wrapS = gl.CLAMP_TO_EDGE, wrapT = gl.CLAMP_TO_EDGE,
+            depthCompare = false,
+            depthCompareFunc = gl.LEQUAL,
+        } = {}) {
+            const w = Math.max(1, Math.round(width));
+            const h = Math.max(1, Math.round(height));
+            const fbo = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+            let colorTex = null;
+            if (hasColor) {
+                colorTex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, colorTex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, colorInternalFormat, w, h, 0, colorFormat, colorType, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, colorFilter);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, colorFilter);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorTex, 0);
+            }
+
+            let depthTex = null;
+            if (hasDepth) {
+                depthTex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, depthTex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, depthInternalFormat, w, h, 0, depthFormat, depthType, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, depthFilter);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, depthFilter);
+                if (depthCompare) {
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, depthCompareFunc);
+                }
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depthTex, 0);
+            }
+
+            if (hasColor) {
+                gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+                gl.readBuffer(gl.COLOR_ATTACHMENT0);
+            } else {
+                gl.drawBuffers([gl.NONE]);
+                gl.readBuffer(gl.NONE);
+            }
+
+            const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+            if (status !== gl.FRAMEBUFFER_COMPLETE) _c.warn(TAGRENDER, "framebuffer incomplete:", status);
+
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+            return {
+                fbo,
+                width: w,
+                height: h,
+                colorTex,
+                depthTex,
+                hasColor,
+                hasDepth,
+                colorFormat,
+                colorInternalFormat,
+                colorType,
+                depthFormat,
+                depthInternalFormat,
+                depthType,
+                colorFilter,
+                depthFilter,
+                wrapS,
+                wrapT,
+                depthCompare: !!depthCompare,
+                depthCompareFunc,
+            };
+        }
+
+        static resizeRenderTarget(gl, target, width, height) {
+            if (!target || !target.fbo) return target;
+            const w = Math.max(1, Math.round(width));
+            const h = Math.max(1, Math.round(height));
+            if (w === target.width && h === target.height) return target;
+            target.width = w;
+            target.height = h;
+
+            if (target.colorTex) {
+                gl.bindTexture(gl.TEXTURE_2D, target.colorTex);
+                gl.texImage2D(
+                    gl.TEXTURE_2D,
+                    0,
+                    target.colorInternalFormat,
+                    w,
+                    h,
+                    0,
+                    target.colorFormat,
+                    target.colorType,
+                    null
+                );
+            }
+
+            if (target.depthTex) {
+                gl.bindTexture(gl.TEXTURE_2D, target.depthTex);
+                gl.texImage2D(
+                    gl.TEXTURE_2D,
+                    0,
+                    target.depthInternalFormat,
+                    w,
+                    h,
+                    0,
+                    target.depthFormat,
+                    target.depthType,
+                    null
+                );
+                if (target.depthCompare) {
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, target.depthCompareFunc ?? gl.LEQUAL);
+                }
+            }
+
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            return target;
+        }
+
+        static withRenderTarget(gl, target, fn, { clear = true, clearColor = null, clearDepth = 1 } = {}) {
+            if (!target || !target.fbo || typeof fn !== "function") return null;
+            const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+            const prevViewport = gl.getParameter(gl.VIEWPORT);
+            const prevRead = gl.getParameter(gl.READ_BUFFER);
+            const prevDraw = [];
+            const maxDraw = gl.getParameter(gl.MAX_DRAW_BUFFERS);
+            for (let i = 0; i < maxDraw; i++) prevDraw.push(gl.getParameter(gl.DRAW_BUFFER0 + i));
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+            gl.viewport(0, 0, target.width, target.height);
+            if (target.hasColor) {
+                gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+                gl.readBuffer(gl.COLOR_ATTACHMENT0);
+            } else {
+                gl.drawBuffers([gl.NONE]);
+                gl.readBuffer(gl.NONE);
+            }
+
+            if (clear) {
+                if (clearColor && (Array.isArray(clearColor) || ArrayBuffer.isView(clearColor))) {
+                    gl.clearColor(clearColor[0] ?? 0, clearColor[1] ?? 0, clearColor[2] ?? 0, clearColor[3] ?? 0);
+                }
+                if (clearDepth != null) gl.clearDepth(clearDepth);
+                let mask = gl.DEPTH_BUFFER_BIT;
+                if (target.hasColor) mask |= gl.COLOR_BUFFER_BIT;
+                gl.clear(mask);
+            }
+
+            try { return fn(); }
+            finally {
+                gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+                gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+                if (prevFbo == null) {
+                    gl.drawBuffers([gl.BACK]);
+                    gl.readBuffer(gl.BACK);
+                } else {
+                    gl.drawBuffers(prevDraw);
+                    gl.readBuffer(prevRead);
+                }
+            }
+        }
+
+        static destroyRenderTarget(gl, target) {
+            if (!target) return;
+            if (target.colorTex) gl.deleteTexture(target.colorTex);
+            if (target.depthTex) gl.deleteTexture(target.depthTex);
+            if (target.fbo) gl.deleteFramebuffer(target.fbo);
+            target.colorTex = null;
+            target.depthTex = null;
+            target.fbo = null;
+        }
+
         static drawInstanced(gl, drawCfg, instanceCount) {
             const mode = drawCfg.mode ?? gl.TRIANGLES;
             if (drawCfg.indexed) {
@@ -915,9 +1096,7 @@ Contains
 
     class EzShader {
         program   = null;
-        renderCfg = null;
-        onbind    = null; // (gl, program) => void
-        other     = {};   // free whatever things
+        other     = {};   // free whatever things (includes renderCfg, onbind, custom data)
 
         _compiled = false;
         get compiled() { return this._compiled; }
@@ -1158,13 +1337,26 @@ Contains
             return this;
         }
 
-        setRenderCfg(cfg = null) {
-            this.renderCfg = _is.obj(cfg) ? cfg : null;
+        onbind(fn = null) {
+            this.other.onbind = typeof fn === 'function' ? fn : null;
             return this;
         }
 
-        setOnbind(fn = null) {
-            this.onbind = typeof fn === 'function' ? fn : null;
+        custom(nameOrObj, value = undefined) {
+            if (_is.obj(nameOrObj)) {
+                for (const [key, val] of Object.entries(nameOrObj)) {
+                    this.other[key] = val;
+                }
+            } else if (_is.str(nameOrObj)) {
+                this.other[nameOrObj] = value;
+            }
+            return this;
+        }
+
+        customs(obj) {
+            if (_is.obj(obj)) {
+                Object.assign(this.other, obj);
+            }
             return this;
         }
 
@@ -1224,8 +1416,6 @@ Contains
                 sources: [source0, source1],
                 primary: source0,
                 secondary: source1,
-                renderCfg: this.renderCfg,
-                onbind: this.onbind,
                 stages: this.#spec.passes.map(stage => ({
                     inputs: stage.inputs.map(decl => ({ ...decl })),
                     outputs: stage.outputs.map(decl => ({ ...decl })),
@@ -1242,8 +1432,6 @@ Contains
                 const built = this.build();
                 this.program = this.#createProgram(gl, built.primary, built.secondary);
                 if (!this.program) throw new Error('[EzShader] GL program compilation failed');
-                this.renderCfg = built.renderCfg;
-                this.onbind = built.onbind;
                 this.#refreshReflection(gl);
                 this._compiled = true;
                 return this;
@@ -1296,11 +1484,11 @@ Contains
         }
 
         bind(gl) {
-            EzRender.bind(gl, this.program, this.onbind);
+            EzRender.bind(gl, this.program, this.other.onbind);
             return this;
         }
 
-        applyRenderState(gl) { EzRender.applyState(gl, this.renderCfg); return this; }
+        applyRenderState(gl) { EzRender.applyState(gl, this.other.renderCfg); return this; }
         static restoreRenderState(gl) { EzRender.restoreDefaultState(gl); }
 
         #compileShader(gl, type, src) {

@@ -56,6 +56,7 @@
     }
     #left-panel  { width: var(--left-w);  border-right-width: 1px; }
     #right-panel { width: var(--right-w); border-left-width:  1px; margin-left: auto; }
+    #sect-fx { max-height: 40%; }
 
     .sect {
         display: flex;
@@ -630,9 +631,11 @@
         "Agnes":          "../public/Models/Agnes.glb",
     };
 
-    const SHADER_LIT     = "lit";
-    const SHADER_OUTLINE = "outline";
-    const SHADER_SKY     = "sky";
+    const SHADER_LIT      = "lit";
+    const SHADER_HANDDRAW = "handdraw";
+    const SHADER_OUTLINE  = "outline";
+    const SHADER_SHADOW   = "shadow";
+    const SHADER_SKY      = "sky";
     const MESH_SKY       = "__sky__";
     const MORPH_POS      = "u_morphPosTex";
     const MORPH_NRM      = "u_morphNrmTex";
@@ -666,13 +669,47 @@
         outlineColor: [0.067, 0.067, 0.067, 1.0],
         outlineThick: 0.012,
         outlineEnabled: false,
+        handdrawEnabled: true,
+        handShadeNoise: 0.08,
+        handGradientNoise: 0.03,
+        handEdgeBleed: 0.07,
+        shadowEnabled: false,
+        shadowMult: 0.5,
+        shadowRadius: 22,
+        shadowDistance: 28,
+        shadowBias: 0.0025,
+        shadowSoftness: 1.0,
     };
+
+    const SHADOW_MAP_SIZE = 1024;
+    const SHADOW_NEAR = 0.1;
+    const SHADOW_FAR = 120;
+    const SHADOW_TEX_UNIT = 8;
+
+    const shadowCam = new EzCamera3D();
+    shadowCam.set({ orthographic: true, orthoSize: fx.shadowRadius, aspect: 1, near: SHADOW_NEAR, far: SHADOW_FAR });
+    const shadowViewProj = new Mat4();
+    const _shadowDir = new Vec3();
+    const _shadowCenter = new Vec3();
+    const _shadowPos = new Vec3();
+    let shadowTarget = null;
+
+    shadowTarget = EzRender.createRenderTarget(project.gl, {
+        width: SHADOW_MAP_SIZE,
+        height: SHADOW_MAP_SIZE,
+        hasColor: false,
+        hasDepth: true,
+        depthInternalFormat: project.gl.DEPTH_COMPONENT24,
+        depthFormat: project.gl.DEPTH_COMPONENT,
+        depthType: project.gl.UNSIGNED_INT,
+        depthFilter: project.gl.NEAREST,
+    });
 
     function buildShader(spec) {
         const shader = new EzShader();
         shader.version(spec.version ?? "300 es");
-        shader.setRenderCfg(spec.renderCfg ?? null);
-        shader.setOnbind(spec.onbind ?? null);
+        if (spec.renderCfg) shader.other.renderCfg = spec.renderCfg;
+        if (spec.onbind) shader.onbind(spec.onbind);
         shader.other.morphChannels = spec.morphChannels ?? [];
 
         const applyStage = (stageIndex, stageSpec = {}) => {
@@ -751,12 +788,23 @@
         onbind: (gl, prog) => {
             EzRender.setUniform(gl, prog, "vec3", "u_light", fx.light);
             EzRender.setUniform(gl, prog, "vec2", "u_lightRange", fx.lightRange);
+            EzRender.setUniform(gl, prog, "mat4", "u_lightViewProj", shadowViewProj.data);
+            EzRender.setUniform(gl, prog, "float", "u_shadowEnabled", fx.shadowEnabled ? 1 : 0);
+            EzRender.setUniform(gl, prog, "float", "u_shadowMult", fx.shadowMult);
+            EzRender.setUniform(gl, prog, "float", "u_shadowBias", fx.shadowBias);
+            EzRender.setUniform(gl, prog, "float", "u_shadowSoftness", fx.shadowSoftness);
+            EzRender.setUniform(gl, prog, "vec2", "u_shadowTexelSize", [1 / SHADOW_MAP_SIZE, 1 / SHADOW_MAP_SIZE]);
+            if (shadowTarget?.depthTex) {
+                const loc = EzRender.getUniformLocation(gl, prog, "u_shadowMap");
+                EzRender.bindSampler(gl, loc, SHADOW_TEX_UNIT, shadowTarget.depthTex);
+            }
         },
         vertex: {
             inputs: sharedVertexInputs,
             outputs: [
                 { name: "v_uv",            type: "vec2" },
                 { name: "v_worldNormal",   type: "vec3" },
+                { name: "v_worldPos",      type: "vec3" },
                 { name: "v_instanceColor", type: "vec4" },
             ],
             uniforms: [
@@ -779,7 +827,150 @@
                 vec3 nrm   = normalize(a_normal + applyMorph(1, vtx));
                 mat4 skin  = computeSkin(a_boneID, a_boneWeight);
                 mat4 model = a_instMat4 * skin;
-                gl_Position    = u_projection * u_view * model * vec4(pos, 1.0);
+                vec4 wPos4     = model * vec4(pos, 1.0);
+                gl_Position    = u_projection * u_view * wPos4;
+                v_worldNormal  = normalize(mat3(model) * nrm);
+                v_worldPos     = wPos4.xyz;
+                v_uv           = a_uv;
+                v_instanceColor= a_instColor;
+            `,
+        },
+        fragment: {
+            inputs: [
+                { name: "v_uv",            type: "vec2" },
+                { name: "v_worldNormal",   type: "vec3" },
+                { name: "v_worldPos",      type: "vec3" },
+                { name: "v_instanceColor", type: "vec4" },
+            ],
+            outputs: [{ name: "fragColor", type: "vec4" }],
+            uniforms: [
+                { name: "u_fill",    type: "vec4" },
+                { name: "u_albedo",  type: "sampler2D", precision: "highp" },
+                { name: "u_light",   type: "vec3" },
+                { name: "u_lightRange", type: "vec2" },
+                { name: "u_lightViewProj", type: "mat4" },
+                { name: "u_shadowMap", type: "sampler2D", precision: "highp" },
+                { name: "u_shadowEnabled", type: "float" },
+                { name: "u_shadowMult", type: "float" },
+                { name: "u_shadowBias", type: "float" },
+                { name: "u_shadowSoftness", type: "float" },
+                { name: "u_shadowTexelSize", type: "vec2" },
+            ],
+            main: `
+                vec3  L       = normalize(u_light);
+                float diffuse = max(dot(normalize(v_worldNormal), L), 0.0);
+                float light   = u_lightRange.x + (u_lightRange.y - u_lightRange.x) * diffuse;
+                vec4  albedo  = texture(u_albedo, v_uv) * u_fill * v_instanceColor;
+                vec3  color   = albedo.rgb * light;
+
+                float shadow = 1.0;
+                if (u_shadowEnabled > 0.5) {
+                    vec4 lp = u_lightViewProj * vec4(v_worldPos, 1.0);
+                    vec3 lpn = lp.xyz / lp.w;
+                    vec3 suv = lpn * 0.5 + 0.5;
+                    if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && suv.z >= 0.0 && suv.z <= 1.0) {
+                        float occluded = 0.0;
+                        if (u_shadowSoftness <= 0.001) {
+                            float depth = texture(u_shadowMap, suv.xy).r;
+                            occluded = (suv.z - u_shadowBias) > depth ? 1.0 : 0.0;
+                        } else {
+                            vec2 t = u_shadowTexelSize * u_shadowSoftness;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2(-1.0, -1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 0.0, -1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 1.0, -1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2(-1.0,  0.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 0.0,  0.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 1.0,  0.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2(-1.0,  1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 0.0,  1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 1.0,  1.0)).r ? 1.0 : 0.0;
+                            occluded *= 0.11111111;
+                        }
+                        shadow = mix(1.0, u_shadowMult, occluded);
+                    }
+                }
+
+                fragColor = vec4(color * shadow, albedo.a);
+            `,
+        },
+    }));
+
+    project.addShader(SHADER_HANDDRAW, buildShader({
+        renderCfg: { blend: true, rQueue: 1000, cull: 'back' },
+        morphChannels: [MORPH_POS, MORPH_NRM],
+        onbind: (gl, prog) => {
+            EzRender.setUniform(gl, prog, "vec3", "u_light", fx.light);
+            EzRender.setUniform(gl, prog, "vec2", "u_lightRange", fx.lightRange);
+            EzRender.setUniform(gl, prog, "float", "u_time", performance.now() * 0.001);
+            EzRender.setUniform(gl, prog, "float", "u_shadeNoise", fx.handShadeNoise);
+            EzRender.setUniform(gl, prog, "float", "u_gradientNoise", fx.handGradientNoise);
+            EzRender.setUniform(gl, prog, "float", "u_edgeBleed", fx.handEdgeBleed);
+            EzRender.setUniform(gl, prog, "mat4", "u_lightViewProj", shadowViewProj.data);
+            EzRender.setUniform(gl, prog, "float", "u_shadowEnabled", fx.shadowEnabled ? 1 : 0);
+            EzRender.setUniform(gl, prog, "float", "u_shadowMult", fx.shadowMult);
+            EzRender.setUniform(gl, prog, "float", "u_shadowBias", fx.shadowBias);
+            EzRender.setUniform(gl, prog, "float", "u_shadowSoftness", fx.shadowSoftness);
+            EzRender.setUniform(gl, prog, "vec2", "u_shadowTexelSize", [1 / SHADOW_MAP_SIZE, 1 / SHADOW_MAP_SIZE]);
+            EzRender.setUniform(gl, prog, "vec3", "u_camPos", project.camera.position.data);
+            if (shadowTarget?.depthTex) {
+                const loc = EzRender.getUniformLocation(gl, prog, "u_shadowMap");
+                EzRender.bindSampler(gl, loc, SHADOW_TEX_UNIT, shadowTarget.depthTex);
+            }
+        },
+        vertex: {
+            inputs: sharedVertexInputs,
+            outputs: [
+                { name: "v_uv",            type: "vec2" },
+                { name: "v_worldNormal",   type: "vec3" },
+                { name: "v_worldPos",      type: "vec3" },
+                { name: "v_instanceColor", type: "vec4" },
+            ],
+            uniforms: [
+                { name: "u_view",               type: "mat4" },
+                { name: "u_projection",         type: "mat4" },
+                { name: "u_bonesTex",           type: "sampler2D", precision: "highp" },
+                { name: "u_morphWeightTex",     type: "sampler2D", precision: "highp" },
+                { name: "u_morphCount",         type: "int" },
+                { name: "u_morphWeightOffset",  type: "int" },
+                { name: "u_morphVertexBase",    type: "int" },
+                { name: "u_morphDelta_0",       type: "sampler2D", precision: "highp" },
+                { name: "u_morphDelta_1",       type: "sampler2D", precision: "highp" },
+                { name: "u_time",               type: "float" },
+            ],
+            methods: [
+                ...sharedVertexMethods,
+                {
+                    signature: "float hash21(vec2 p)",
+                    body: `
+                        p = fract(p * vec2(123.34, 456.21));
+                        p += dot(p, p + 34.23);
+                        return fract(p.x * p.y);
+                    `,
+                },
+                {
+                    signature: "float noise2(vec2 p)",
+                    body: `
+                        vec2 i = floor(p);
+                        vec2 f = fract(p);
+                        float a = hash21(i);
+                        float b = hash21(i + vec2(1.0, 0.0));
+                        float c = hash21(i + vec2(0.0, 1.0));
+                        float d = hash21(i + vec2(1.0, 1.0));
+                        vec2 u = f * f * (3.0 - 2.0 * f);
+                        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                    `,
+                },
+            ],
+            main: `
+                int  vtx   = morphVertexLocal();
+                vec3 pos   = a_position + applyMorph(0, vtx);
+                vec3 nrm   = normalize(a_normal + applyMorph(1, vtx));
+
+                mat4 skin  = computeSkin(a_boneID, a_boneWeight);
+                mat4 model = a_instMat4 * skin;
+                vec4 wPos4 = model * vec4(pos, 1.0);
+                gl_Position    = u_projection * u_view * wPos4;
+                v_worldPos     = wPos4.xyz;
                 v_worldNormal  = normalize(mat3(model) * nrm);
                 v_uv           = a_uv;
                 v_instanceColor= a_instColor;
@@ -789,22 +980,144 @@
             inputs: [
                 { name: "v_uv",            type: "vec2" },
                 { name: "v_worldNormal",   type: "vec3" },
+                { name: "v_worldPos",      type: "vec3" },
                 { name: "v_instanceColor", type: "vec4" },
             ],
             outputs: [{ name: "fragColor", type: "vec4" }],
             uniforms: [
-                { name: "u_fill",    type: "vec4" },
-                { name: "u_albedo",  type: "sampler2D", precision: "highp" },
-                { name: "u_light",   type: "vec3" },
-                { name: "u_lightRange", type: "vec2" },
+                { name: "u_fill",          type: "vec4" },
+                { name: "u_albedo",        type: "sampler2D", precision: "highp" },
+                { name: "u_light",         type: "vec3" },
+                { name: "u_lightRange",    type: "vec2" },
+                { name: "u_camPos",        type: "vec3" },
+                { name: "u_time",          type: "float" },
+                { name: "u_shadeNoise",    type: "float" },
+                { name: "u_gradientNoise", type: "float" },
+                { name: "u_edgeBleed",     type: "float" },
+                { name: "u_lightViewProj", type: "mat4" },
+                { name: "u_shadowMap", type: "sampler2D", precision: "highp" },
+                { name: "u_shadowEnabled", type: "float" },
+                { name: "u_shadowMult", type: "float" },
+                { name: "u_shadowBias", type: "float" },
+                { name: "u_shadowSoftness", type: "float" },
+                { name: "u_shadowTexelSize", type: "vec2" },
+            ],
+            methods: [
+                {
+                    signature: "float hash21(vec2 p)",
+                    body: `
+                        p = fract(p * vec2(123.34, 456.21));
+                        p += dot(p, p + 34.23);
+                        return fract(p.x * p.y);
+                    `,
+                },
+                {
+                    signature: "float noise2(vec2 p)",
+                    body: `
+                        vec2 i = floor(p);
+                        vec2 f = fract(p);
+                        float a = hash21(i);
+                        float b = hash21(i + vec2(1.0, 0.0));
+                        float c = hash21(i + vec2(0.0, 1.0));
+                        float d = hash21(i + vec2(1.0, 1.0));
+                        vec2 u = f * f * (3.0 - 2.0 * f);
+                        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                    `,
+                },
+                {
+                    signature: "float fbm(vec2 p)",
+                    body: `
+                        float v = 0.0;
+                        float a = 0.5;
+                        for (int i = 0; i < 4; i++) {
+                            v += noise2(p) * a;
+                            p *= 2.0;
+                            a *= 0.5;
+                        }
+                        return v;
+                    `,
+                },
             ],
             main: `
-                vec3  L       = normalize(u_light);
-                float diffuse = max(dot(normalize(v_worldNormal), L), 0.0);
-                float light   = u_lightRange.x + (u_lightRange.y - u_lightRange.x) * diffuse;
-                vec4  albedo  = texture(u_albedo, v_uv) * u_fill * v_instanceColor;
-                fragColor     = vec4(albedo.rgb * light, albedo.a);
+                vec4 albedo = texture(u_albedo, v_uv) * u_fill * v_instanceColor;
+
+                vec3 N = normalize(v_worldNormal);
+                vec3 L = normalize(u_light);
+                vec3 V = normalize(u_camPos - v_worldPos);
+
+                float diffuse = max(dot(N, L), 0.0);
+                float light = u_lightRange.x + (u_lightRange.y - u_lightRange.x) * diffuse;
+                light += (fbm(v_uv * 20.0 + vec2(u_time * 0.09, -u_time * 0.06)) - 0.5) * u_shadeNoise;
+
+                vec3 color = albedo.rgb * light;
+                color += (fbm(v_uv * 60.0 + vec2(-u_time * 0.03, u_time * 0.02)) - 0.5) * u_gradientNoise;
+
+                float fresnel = pow(1.0 - max(dot(V, N), 0.0), 2.0);
+                float edgeNoise = fbm(v_uv * 30.0 + vec2(u_time * 0.07, u_time * 0.03));
+                color += fresnel * edgeNoise * u_edgeBleed;
+
+                float shadow = 1.0;
+                if (u_shadowEnabled > 0.5) {
+                    vec4 lp = u_lightViewProj * vec4(v_worldPos, 1.0);
+                    vec3 lpn = lp.xyz / lp.w;
+                    vec3 suv = lpn * 0.5 + 0.5;
+                    if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && suv.z >= 0.0 && suv.z <= 1.0) {
+                        float occluded = 0.0;
+                        if (u_shadowSoftness <= 0.001) {
+                            float depth = texture(u_shadowMap, suv.xy).r;
+                            occluded = (suv.z - u_shadowBias) > depth ? 1.0 : 0.0;
+                        } else {
+                            vec2 t = u_shadowTexelSize * u_shadowSoftness;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2(-1.0, -1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 0.0, -1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 1.0, -1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2(-1.0,  0.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 0.0,  0.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 1.0,  0.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2(-1.0,  1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 0.0,  1.0)).r ? 1.0 : 0.0;
+                            occluded += (suv.z - u_shadowBias) > texture(u_shadowMap, suv.xy + t * vec2( 1.0,  1.0)).r ? 1.0 : 0.0;
+                            occluded *= 0.11111111;
+                        }
+                        shadow = mix(1.0, u_shadowMult, occluded);
+                    }
+                }
+
+                color *= shadow;
+
+                fragColor = vec4(clamp(color, 0.0, 1.0), albedo.a);
             `,
+        },
+    }));
+
+    project.addShader(SHADER_SHADOW, buildShader({
+        renderCfg: { blend: false, depthWrite: true, depthTest: true, cull: 'back', rQueue: 500 },
+        morphChannels: [MORPH_POS, MORPH_NRM],
+        vertex: {
+            inputs: sharedVertexInputs,
+            outputs: [],
+            uniforms: [
+                { name: "u_view",               type: "mat4" },
+                { name: "u_projection",         type: "mat4" },
+                { name: "u_bonesTex",           type: "sampler2D", precision: "highp" },
+                { name: "u_morphWeightTex",     type: "sampler2D", precision: "highp" },
+                { name: "u_morphCount",         type: "int" },
+                { name: "u_morphWeightOffset",  type: "int" },
+                { name: "u_morphVertexBase",    type: "int" },
+                { name: "u_morphDelta_0",       type: "sampler2D", precision: "highp" },
+                { name: "u_morphDelta_1",       type: "sampler2D", precision: "highp" },
+            ],
+            methods: sharedVertexMethods,
+            main: `
+                int  vtx   = morphVertexLocal();
+                vec3 pos   = a_position + applyMorph(0, vtx);
+                mat4 skin  = computeSkin(a_boneID, a_boneWeight);
+                mat4 model = a_instMat4 * skin;
+                gl_Position = u_projection * u_view * model * vec4(pos, 1.0);
+            `,
+        },
+        fragment: {
+            main: `return;`,
         },
     }));
 
@@ -1305,6 +1618,52 @@
             const bc    = bones.length;
             body.appendChild(kvRow("Bones", String(bc)));
 
+            function decomposeBoneMatrix(m, out) {
+                if (!m || !out) return;
+                out.pos[0] = m[12]; out.pos[1] = m[13]; out.pos[2] = m[14];
+
+                const sx = Math.hypot(m[0], m[1], m[2]) || 1;
+                const sy = Math.hypot(m[4], m[5], m[6]) || 1;
+                const sz = Math.hypot(m[8], m[9], m[10]) || 1;
+                out.scl[0] = sx; out.scl[1] = sy; out.scl[2] = sz;
+
+                // Normalize basis to remove scale before extracting rotation.
+                const m11 = m[0] / sx,  m12 = m[4] / sy,  m13 = m[8]  / sz;
+                const m21 = m[1] / sx,  m22 = m[5] / sy,  m23 = m[9]  / sz;
+                const m31 = m[2] / sx,  m32 = m[6] / sy,  m33 = m[10] / sz;
+
+                let qx = 0, qy = 0, qz = 0, qw = 1;
+                const trace = m11 + m22 + m33;
+                if (trace > 0) {
+                    const s2 = Math.sqrt(trace + 1.0) * 2;
+                    qw = 0.25 * s2;
+                    qx = (m32 - m23) / s2;
+                    qy = (m13 - m31) / s2;
+                    qz = (m21 - m12) / s2;
+                } else if (m11 > m22 && m11 > m33) {
+                    const s2 = Math.sqrt(1.0 + m11 - m22 - m33) * 2;
+                    qx = 0.25 * s2;
+                    qy = (m12 + m21) / s2;
+                    qz = (m13 + m31) / s2;
+                    qw = (m32 - m23) / s2;
+                } else if (m22 > m33) {
+                    const s2 = Math.sqrt(1.0 + m22 - m11 - m33) * 2;
+                    qx = (m12 + m21) / s2;
+                    qy = 0.25 * s2;
+                    qz = (m23 + m32) / s2;
+                    qw = (m13 - m31) / s2;
+                } else {
+                    const s2 = Math.sqrt(1.0 + m33 - m11 - m22) * 2;
+                    qx = (m13 + m31) / s2;
+                    qy = (m23 + m32) / s2;
+                    qz = 0.25 * s2;
+                    qw = (m21 - m12) / s2;
+                }
+                _q0.data[0] = qx; _q0.data[1] = qy; _q0.data[2] = qz; _q0.data[3] = qw;
+                EzMath.toEulerYPR(_v0, _q0);
+                out.rot[0] = _v0.data[0]; out.rot[1] = _v0.data[1]; out.rot[2] = _v0.data[2];
+            }
+
             // Bone tree (DFS-ordered, click to select)
             const list = document.createElement("div");
             list.className = "bone-list";
@@ -1326,46 +1685,7 @@
                     const lb = bones[i].localBind;
                     if (lb) {
                         const s = node.userData.boneEuler[i];
-                        s.pos[0] = lb[12]; s.pos[1] = lb[13]; s.pos[2] = lb[14];
-                        s.scl[0] = Math.hypot(lb[0], lb[1], lb[2]);
-                        s.scl[1] = Math.hypot(lb[4], lb[5], lb[6]);
-                        s.scl[2] = Math.hypot(lb[8], lb[9], lb[10]);
-                        // extract quaternion from rotation matrix (column-major)
-                        const m = lb;
-                        const m11 = m[0], m12 = m[4], m13 = m[8];
-                        const m21 = m[1], m22 = m[5], m23 = m[9];
-                        const m31 = m[2], m32 = m[6], m33 = m[10];
-                        let qx=0,qy=0,qz=0,qw=1;
-                        const trace = m11 + m22 + m33;
-                        if (trace > 0) {
-                            const s2 = Math.sqrt(trace + 1.0) * 2;
-                            qw = 0.25 * s2;
-                            qx = (m32 - m23) / s2;
-                            qy = (m13 - m31) / s2;
-                            qz = (m21 - m12) / s2;
-                        } else if (m11 > m22 && m11 > m33) {
-                            const s2 = Math.sqrt(1.0 + m11 - m22 - m33) * 2;
-                            qx = 0.25 * s2;
-                            qy = (m12 + m21) / s2;
-                            qz = (m13 + m31) / s2;
-                            qw = (m32 - m23) / s2;
-                        } else if (m22 > m33) {
-                            const s2 = Math.sqrt(1.0 + m22 - m11 - m33) * 2;
-                            qx = (m12 + m21) / s2;
-                            qy = 0.25 * s2;
-                            qz = (m23 + m32) / s2;
-                            qw = (m13 - m31) / s2;
-                        } else {
-                            const s2 = Math.sqrt(1.0 + m33 - m11 - m22) * 2;
-                            qx = (m13 + m31) / s2;
-                            qy = (m23 + m32) / s2;
-                            qz = 0.25 * s2;
-                            qw = (m21 - m12) / s2;
-                        }
-                        _q0.data[0] = qx; _q0.data[1] = qy; _q0.data[2] = qz; _q0.data[3] = qw;
-                        // convert to yaw/pitch/roll degrees and store
-                        EzMath.toEulerYPR(_v0, _q0);
-                        s.rot[0] = _v0.data[0]; s.rot[1] = _v0.data[1]; s.rot[2] = _v0.data[2];
+                        decomposeBoneMatrix(lb, s);
                     }
                 }
             }
@@ -1431,11 +1751,7 @@
                     skel.localPose[selectedBoneIdx].data.set(lb);
                     // refresh user state from bind
                     const s = node.userData.boneEuler[selectedBoneIdx];
-                    s.pos[0] = lb[12]; s.pos[1] = lb[13]; s.pos[2] = lb[14];
-                    s.rot = [0, 0, 0];
-                    s.scl[0] = Math.hypot(lb[0], lb[1], lb[2]);
-                    s.scl[1] = Math.hypot(lb[4], lb[5], lb[6]);
-                    s.scl[2] = Math.hypot(lb[8], lb[9], lb[10]);
+                    decomposeBoneMatrix(lb, s);
                     refreshEditor();
                 };
                 editorWrap.appendChild(reset);
@@ -1527,9 +1843,9 @@
         }, { collapsed: true });
     }
 
-    /* ----------------
-       UI: FX panel (Lit + Outline shader controls)
-       ---------------- */
+     /* ----------------
+         UI: FX panel (Lit + Handdraw + Outline shader controls)
+         ---------------- */
     function renderFXPanel() {
         const root = document.getElementById("fx-controls");
         root.innerHTML = "";
@@ -1541,6 +1857,26 @@
         }
         root.appendChild(sliderRow("Ambient",  fx.lightRange[0], 0, 1, 0.01, v => fx.lightRange[0] = Math.min(v, fx.lightRange[1])));
         root.appendChild(sliderRow("Diffuse",  fx.lightRange[1], 0, 1, 0.01, v => fx.lightRange[1] = Math.max(v, fx.lightRange[0])));
+
+        root.appendChild(div());
+
+        // hand DRAWN
+        root.appendChild(textHeader("hand DRAWN"));
+        root.appendChild(checkRow("Enabled", fx.handdrawEnabled, v => { fx.handdrawEnabled = v; }));
+        root.appendChild(sliderRow("Shade Noise",    fx.handShadeNoise,   0.0, 0.2,   0.01,  v => fx.handShadeNoise = v));
+        root.appendChild(sliderRow("Gradient Noise", fx.handGradientNoise,0.0, 0.1,   0.005, v => fx.handGradientNoise = v, 3));
+        root.appendChild(sliderRow("Edge Bleed",     fx.handEdgeBleed,    0.0, 0.2,   0.01,  v => fx.handEdgeBleed = v));
+
+        root.appendChild(div());
+
+        // Shadow
+        root.appendChild(textHeader("Shadow"));
+        root.appendChild(checkRow("Enabled", fx.shadowEnabled, v => { fx.shadowEnabled = v; }));
+        root.appendChild(sliderRow("Multiplier", fx.shadowMult, 0.0, 1.0, 0.01, v => fx.shadowMult = v));
+        root.appendChild(sliderRow("Bias", fx.shadowBias, 0.0, 0.02, 0.0005, v => fx.shadowBias = v, 4));
+        root.appendChild(sliderRow("Softness", fx.shadowSoftness, 0.0, 3.0, 0.05, v => fx.shadowSoftness = v));
+        root.appendChild(sliderRow("Radius", fx.shadowRadius, 4.0, 80.0, 1.0, v => fx.shadowRadius = v, 0));
+        root.appendChild(sliderRow("Distance", fx.shadowDistance, 4.0, 120.0, 1.0, v => fx.shadowDistance = v, 0));
 
         root.appendChild(div());
 
@@ -1834,6 +2170,26 @@
     camHudHead.addEventListener("click", () => camHud.classList.toggle("collapsed"));
     const f2 = n => (n >= 0 ? " " : "") + n.toFixed(2);
 
+    function updateShadowCamera() {
+        _shadowDir.set(fx.light);
+        EzMath.normalize(_shadowDir, _shadowDir);
+        if (_shadowDir.data[0] === 0 && _shadowDir.data[1] === 0 && _shadowDir.data[2] === 0) {
+            _shadowDir.data[0] = 0.4; _shadowDir.data[1] = 0.8; _shadowDir.data[2] = 0.6;
+            EzMath.normalize(_shadowDir, _shadowDir);
+        }
+
+        shadowCam.orthoSize = fx.shadowRadius;
+
+        _shadowCenter.copy(project.camera.position);
+        _shadowPos.data[0] = _shadowCenter.data[0] - _shadowDir.data[0] * fx.shadowDistance;
+        _shadowPos.data[1] = _shadowCenter.data[1] - _shadowDir.data[1] * fx.shadowDistance;
+        _shadowPos.data[2] = _shadowCenter.data[2] - _shadowDir.data[2] * fx.shadowDistance;
+
+        shadowCam.position.copy(_shadowPos);
+        shadowCam.lookAt(_shadowCenter);
+        EzMath.mult(shadowViewProj, shadowCam.projection, shadowCam.view);
+    }
+
     /* ----------------
        RENDER LOOP - camera control, optional outline pass, lit pass.
        ---------------- */
@@ -1866,6 +2222,24 @@
         // Scene update - composes world transforms + skeleton palettes.
         project.update(dt);
 
+        updateShadowCamera();
+
+        if (fx.shadowEnabled && shadowTarget?.fbo) {
+            EzRender.withRenderTarget(project.gl, shadowTarget, () => {
+                const restore = [];
+                for (const n of mainScene._nodes) {
+                    if (n === skyNode || !n.meshRender || !n.meshRender.visible) continue;
+                    restore.push([n, n.meshRender.shaderKey]);
+                    n.meshRender.shaderKey = SHADER_SHADOW;
+                }
+                project.render(shadowCam, mainScene, {
+                    clear: false,
+                    nodeFilter: n => n !== skyNode,
+                });
+                for (const [n, k] of restore) n.meshRender.shaderKey = k;
+            }, { clear: true, clearDepth: 1 });
+        }
+
         // Render. Outline (when enabled) is a separate pass with shader-key
         // swap so the SAME nodes are drawn with the outline shader first
         // (depth-on, cull=front), then the lit pass overdraws normally.
@@ -1895,10 +2269,21 @@
             for (const [n, k] of restore) n.meshRender.shaderKey = k;
         }
 
+        const handRestore = [];
+        if (fx.handdrawEnabled) {
+            for (const n of mainScene._nodes) {
+                if (n === skyNode || !n.meshRender || !n.meshRender.visible) continue;
+                handRestore.push([n, n.meshRender.shaderKey]);
+                n.meshRender.shaderKey = SHADER_HANDDRAW;
+            }
+        }
+
         project.render(project.camera, mainScene, {
             clear: false,
             nodeFilter: n => n !== skyNode,
         });
+
+        for (const [n, k] of handRestore) n.meshRender.shaderKey = k;
 
         // HUD (cheap DOM writes, only when expanded)
         fpsAccum += dt; fpsFrames++;
