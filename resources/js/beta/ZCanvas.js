@@ -10,7 +10,7 @@ Contains
     ZCanvas   thin wrapper around <canvas> + WebGL2 context
 
     -- Highly specialized --
-    EzCamera3D   view/projection helper
+    ZCamera   view/projection helper
     EzMesh3D     VAO + VBO geometry container
     EzSkeleton3D bone rig + skinning palette builder
 */
@@ -996,7 +996,7 @@ Contains
 // Every thing below this line is highly specialized for 3D-object-driven rendering
 // --------------------------------------------------------------------------------
 
-    class EzCamera3D {
+    class ZCamera {
         position    = ZMath.V3();
         orientation = ZMath.Q.identity();
 
@@ -1316,6 +1316,6 @@ Contains
 
     window.EzMesh3D        = EzMesh3D;
     window.EzSkeleton3D    = EzSkeleton3D;
-    window.EzCamera3D      = EzCamera3D;
+    window.ZCamera      = ZCamera;
 
 })();

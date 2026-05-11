@@ -686,7 +686,7 @@
     const SHADOW_FAR = 120;
     const SHADOW_TEX_UNIT = 8;
 
-    const shadowCam = new EzCamera3D();
+    const shadowCam = new ZCamera();
     shadowCam.set({ orthographic: true, orthoSize: fx.shadowRadius, aspect: 1, near: SHADOW_NEAR, far: SHADOW_FAR });
     const shadowViewProj = new Mat4();
     const _shadowDir = new Vec3();

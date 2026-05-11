@@ -13,12 +13,12 @@ function Transform3D(local = new Mat4()) {
 
 function MeshRenderer3D(opts = {}) {
     return {
+        active:       opts.active    ?? true,
         meshKey:      opts.meshKey   ?? null,
         shaderKey:    opts.shaderKey ?? null,
         color:        opts.color     ? Float32Array.from(opts.color) : new Float32Array([1, 1, 1, 1]),
         morphWeights: opts.morphWeights ? Float32Array.from(opts.morphWeights) : null,
         skeletonNode: opts.skeletonNode ?? null, // key to node with skeleton component
-        active:       opts.active     ?? true,
     }
 }
 
@@ -30,7 +30,6 @@ I don't know where you store them, that's none of my concern
 
 */
 class ZScene extends ZTree {
-
     updateTransform(id, node) {
         const transform = node.get('transform');
         if (!transform) return;

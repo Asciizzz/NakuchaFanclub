@@ -5,7 +5,7 @@ ez.mount(container).fitContainer();
 
 const gl = ez.gl;
 
-const camera = new EzCamera3D();
+const camera = new ZCamera();
 camera.fov = 45;
 camera.near = 0.1;
 camera.far = 200;

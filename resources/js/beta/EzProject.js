@@ -17,7 +17,7 @@
  * (shader, mesh). Meshes themselves stay shader-agnostic.
  *
  * Dependencies:
- *   ZCanvas.js   - ZMath/ZShader/EzMesh3D/ZRender/EzCamera3D
+ *   ZCanvas.js   - ZMath/ZShader/EzMesh3D/ZRender/ZCamera
  *   EzLoader.js     - only used implicitly when you feed addModel() a model
  *                     loaded by EzLoader.load(...).
  *
@@ -218,7 +218,7 @@
             this.scenes      = new Map();
             this.activeScene = null;
 
-            this.camera = new EzCamera3D();
+            this.camera = new ZCamera();
             this.camera.set({ aspect: canvas3d.info?.aspectRatio ?? 1 });
 
             // Default shader - first registered, can be overridden per node.
