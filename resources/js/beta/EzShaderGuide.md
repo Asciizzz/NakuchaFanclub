@@ -1,8 +1,8 @@
-# EzShader Builder Guide
+# ZShader Builder Guide
 
 ## Overview
 
-**EzShader** is an agnostic GLSL shader compiler that uses a fluent builder pattern to construct shaders without any domain-specific knowledge (no 3D/2D concepts). It generates both vertex and fragment shaders from a single unified specification and handles reflection for attribute/uniform location resolution.
+**ZShader** is an agnostic GLSL shader compiler that uses a fluent builder pattern to construct shaders without any domain-specific knowledge (no 3D/2D concepts). It generates both vertex and fragment shaders from a single unified specification and handles reflection for attribute/uniform location resolution.
 
 ## Key Concepts
 
@@ -12,18 +12,18 @@
 - Both stages receive the same input declarations but generate different GLSL code
 
 ### Builder Pattern
-EzShader uses method chaining to construct shader specifications before compilation:
+ZShader uses method chaining to construct shader specifications before compilation:
 
 ```javascript
-const shader = new EzShader();
+const shader = new ZShader();
 shader.version("300 es")
-    .stage(EzShader.STAGE.VERTEX)
+    .stage(ZShader.STAGE.VERTEX)
     .input({name: "a_position", type: "vec3"})
     .output({name: "v_color", type: "vec4"})
     .uniform({name: "u_mvp", type: "mat4"})
     .method({signature: "vec4 myFunc()", body: "return vec4(1.0);"})
     .main("gl_Position = u_mvp * vec4(a_position, 1.0);")
-    .stage(EzShader.STAGE.FRAGMENT)
+    .stage(ZShader.STAGE.FRAGMENT)
     .input({name: "v_color", type: "vec4"})
     .output({name: "fragColor", type: "vec4"})
     .main("fragColor = v_color;")
@@ -55,19 +55,19 @@ shader.setRenderCfg({
 Set a callback that runs when the shader program is bound
 ```javascript
 shader.setOnbind((gl, prog) => {
-    EzRender.setUniform(gl, prog, "vec3", "u_light", [0.5, 0.8, 0.6]);
+    ZRender.setUniform(gl, prog, "vec3", "u_light", [0.5, 0.8, 0.6]);
 });
 ```
 
-#### `EzShader.STAGE` (Static Constants)
+#### `ZShader.STAGE` (Static Constants)
 Predefined stage constants for better code readability
 ```javascript
-EzShader.STAGE.VERTEX = 0;      // Vertex shader stage
-EzShader.STAGE.FRAGMENT = 1;    // Fragment shader stage
+ZShader.STAGE.VERTEX = 0;      // Vertex shader stage
+ZShader.STAGE.FRAGMENT = 1;    // Fragment shader stage
 
 // Usage:
-shader.stage(EzShader.STAGE.VERTEX);
-shader.stage(EzShader.STAGE.FRAGMENT);
+shader.stage(ZShader.STAGE.VERTEX);
+shader.stage(ZShader.STAGE.FRAGMENT);
 ```
 
 ### Stage Selection
@@ -75,8 +75,8 @@ shader.stage(EzShader.STAGE.FRAGMENT);
 #### `stage(stageIndex)`
 Switch to vertex or fragment stage
 ```javascript
-shader.stage(EzShader.STAGE.VERTEX);
-shader.stage(EzShader.STAGE.FRAGMENT);
+shader.stage(ZShader.STAGE.VERTEX);
+shader.stage(ZShader.STAGE.FRAGMENT);
 ```
 
 ### Declarations
@@ -222,12 +222,12 @@ shader.methods([
 #### `main(sourceCode)`
 Set the main function body (vertex or fragment depending on current stage)
 ```javascript
-shader.stage(EzShader.STAGE.VERTEX)
+shader.stage(ZShader.STAGE.VERTEX)
     .main(`
         gl_Position = u_projection * u_view * a_position;
     `);
 
-shader.stage(EzShader.STAGE.FRAGMENT)
+shader.stage(ZShader.STAGE.FRAGMENT)
     .main(`
         fragColor = vec4(1.0);
     `);
@@ -260,7 +260,7 @@ After `compile(gl)`, the shader exposes:
 ```javascript
 shader.vertexInputs       // Array of inputs with resolved GL locations
 shader.attributeLocations // Map of {name → location}
-shader.getAttributeLocation(name)  // Get location or -1
+shader.getInputLocation(name)  // Get location or -1
 ```
 
 ### Uniform Reflection
@@ -294,14 +294,14 @@ shader.vertexInputs.forEach(attr => {
 
 ```javascript
 function buildMyShader(gl) {
-    const shader = new EzShader();
+    const shader = new ZShader();
     
     shader
         .version("300 es")
         .setRenderCfg({blend: false, cull: 'back'})
         
         // Vertex Stage
-        .stage(EzShader.STAGE.VERTEX)
+        .stage(ZShader.STAGE.VERTEX)
         .inputs([
             {name: "a_position", type: "vec3"},
             {name: "a_normal", type: "vec3"},
@@ -323,7 +323,7 @@ function buildMyShader(gl) {
         `)
         
         // Fragment Stage
-        .stage(EzShader.STAGE.FRAGMENT)
+        .stage(ZShader.STAGE.FRAGMENT)
         .inputs([{name: "v_normal", type: "vec3"}])
         .outputs([{name: "fragColor", type: "vec4"}])
         .uniforms([{name: "u_light", type: "vec3"}])
@@ -338,8 +338,8 @@ function buildMyShader(gl) {
 }
 
 const shader = buildMyShader(gl);
-console.log("a_position location:", shader.getAttributeLocation("a_position"));
-console.log("a_instMat4 location:", shader.getAttributeLocation("a_instMat4"));
+console.log("a_position location:", shader.getInputLocation("a_position"));
+console.log("a_instMat4 location:", shader.getInputLocation("a_instMat4"));
 console.log("u_view location:", shader.getUniformLocation("u_view"));
 ```
 

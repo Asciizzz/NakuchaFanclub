@@ -1,7 +1,7 @@
 /**
  * EzProject.js - high-level scene/asset/render orchestrator.
  *
- * EzProject is to EzCanvas3D what tinyProject is to tinyVk: the canvas owns
+ * EzProject is to ZCanvas what tinyProject is to tinyVk: the canvas owns
  * the GL surface and nothing else, and the project owns *everything* you
  * actually care about - assets, scenes, the camera, the render loop. A
  * project contains many EzScenes; scenes contain Nodes; Nodes carry
@@ -17,9 +17,11 @@
  * (shader, mesh). Meshes themselves stay shader-agnostic.
  *
  * Dependencies:
- *   EzCanvas3D.js   - Mat4/Vec3/Quat/EzMath/EzShader3D/EzMesh3D/EzRender/EzCamera3D
+ *   ZCanvas.js   - ZMath/ZShader/EzMesh3D/ZRender/EzCamera3D
  *   EzLoader.js     - only used implicitly when you feed addModel() a model
  *                     loaded by EzLoader.load(...).
+ *
+ * Todo: rework the scene graph to inherit from EzTree instead
  */
 
 (function () {
@@ -31,17 +33,14 @@
     const TEX_UNIT_MORPH_DELTA  = 3; // first delta channel; +1 per extra
 
     // Shared scratch - GL calls are sync so this is safe to reuse.
-    const _scratchMat = new Mat4();
+    const _scratchMat = ZMath.M4();
 
     // --------------------------------------------------------------------
     // Components - plain factories. Attach the result directly to a node.
     // --------------------------------------------------------------------
     function Transform3D(local) {
-        const t = { local: new Mat4(), world: new Mat4() };
-        if (local) {
-            if (local instanceof Float32Array && local.length === 16) t.local.data.set(local);
-            else if (local.kind === Mat4.KIND)                        t.local.copy(local);
-        }
+        const t = { local: ZMath.M4.identity(), world: ZMath.M4.identity() };
+        if (local && (ArrayBuffer.isView(local) || Array.isArray(local)) && local.length >= 16) t.local.set(local);
         return t;
     }
 
@@ -61,15 +60,15 @@
         const n = skeletonAsset.bones.length;
         const localPose = new Array(n);
         for (let i = 0; i < n; i++) {
-            const m = new Mat4();
+            const m = ZMath.M4.identity();
             const lb = skeletonAsset.bones[i].localBind;
-            if (lb) m.data.set(lb);
+            if (lb) m.set(lb);
             localPose[i] = m;
         }
         return {
             asset:      skeletonAsset,
             localPose,
-            finalPose:  Array.from({ length: n }, () => new Mat4()),
+            finalPose:  Array.from({ length: n }, () => ZMath.M4.identity()),
             skinData:   new Float32Array(n * 16),
             paletteTex: null, // GL texture, lazily uploaded each frame
         };
@@ -170,8 +169,8 @@
                 const { node, parentWorld } = stack.pop();
                 let world = parentWorld;
                 if (node.transform) {
-                    if (parentWorld) EzMath.mult(node.transform.world, parentWorld, node.transform.local);
-                    else             node.transform.world.copy(node.transform.local);
+                    if (parentWorld) ZMath.M4.mul(parentWorld, node.transform.local, node.transform.world);
+                    else             node.transform.world.set(node.transform.local);
                     world = node.transform.world;
                 }
                 for (const c of node.children) stack.push({ node: c, parentWorld: world });
@@ -188,15 +187,15 @@
             const finalPose = skel.finalPose, palette = skel.skinData;
             for (let i = 0; i < n; i++) {
                 const pIdx = bones[i].parent;
-                if (pIdx < 0) finalPose[i].copy(skel.localPose[i]);
-                else          EzMath.mult(finalPose[i], finalPose[pIdx], skel.localPose[i]);
+                if (pIdx < 0) finalPose[i].set(skel.localPose[i]);
+                else          ZMath.M4.mul(finalPose[pIdx], skel.localPose[i], finalPose[i]);
 
                 if (bones[i].inverseBind) {
-                    _scratchMat.data.set(bones[i].inverseBind);
-                    EzMath.mult(_scratchMat, finalPose[i], _scratchMat);
-                    palette.set(_scratchMat.data, i * 16);
+                    _scratchMat.set(bones[i].inverseBind);
+                    ZMath.M4.mul(finalPose[i], _scratchMat, _scratchMat);
+                    palette.set(_scratchMat, i * 16);
                 } else {
-                    palette.set(finalPose[i].data, i * 16);
+                    palette.set(finalPose[i], i * 16);
                 }
             }
         }
@@ -241,7 +240,7 @@
 
             // Default GL fallbacks (1×1 placeholders).
             const dummy = (iFmt, fmt, type, data) =>
-                EzRender.uploadTexture2D(gl, null, iFmt, fmt, type, 1, 1, data);
+                ZRender.uploadTexture2D(gl, null, iFmt, fmt, type, 1, 1, data);
             this._whiteTex         = dummy(gl.RGBA8,  gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array  ([255, 255, 255, 255]));
             this._morphDummyDelta  = dummy(gl.RGB32F, gl.RGB,  gl.FLOAT,         new Float32Array([0, 0, 0]));
             this._morphDummyWeight = dummy(gl.R32F,   gl.RED,  gl.FLOAT,         new Float32Array([0]));
@@ -252,7 +251,7 @@
             if (typeof shader.getUniformLocation === "function") return shader.getUniformLocation(name);
             if (shader.uniformLocations instanceof Map) return shader.uniformLocations.get(name) ?? null;
             if (shader.uloc && Object.prototype.hasOwnProperty.call(shader.uloc, name)) return shader.uloc[name] ?? null;
-            return EzRender.getUniformLocation(this.gl, shader.program, name);
+            return ZRender.getUniformLocation(this.gl, shader.program, name);
         }
 
         _getAttributeDecls(shader) {
@@ -329,7 +328,7 @@
                 ch === 3 ? [gl.RGB8,  gl.RGB] :
                            [gl.RGBA8, gl.RGBA];
             const wrapEnum = wrap === "clamp" ? gl.CLAMP_TO_EDGE : gl.REPEAT;
-            const glTex = EzRender.createTexture(gl, {
+            const glTex = ZRender.createTexture(gl, {
                 data, width, height,
                 format: fmt, internalFormat: iFmt,
                 wrapS: wrapEnum, wrapT: wrapEnum, mipmap,
@@ -486,7 +485,7 @@
                 if (m.parent >= 0) createNode(m.parent);
                 const parent = m.parent >= 0 ? nodeOf[m.parent] : scene.root;
                 const node   = scene.addNode(m.name, parent);
-                node.transform.local.data.set(m.local);
+                node.transform.local.set(m.local);
                 nodeOf[i] = node;
             };
             for (let i = 0; i < model.nodes.length; i++) createNode(i);
@@ -532,8 +531,8 @@
         // render only a subset of nodes for explicit pass orchestration.
         render(camera = this.camera, scene = this.activeScene, { clear = true, nodeFilter = null } = {}) {
             const gl = this.gl;
-            if (clear) EzRender.applyState(gl, { clear: ['color', 'depth'] });
-            if (!scene) { EzRender.restoreDefaultState(gl); return; }
+            if (clear) ZRender.applyState(gl, { clear: ['color', 'depth'] });
+            if (!scene) { ZRender.restoreDefaultState(gl); return; }
 
             // Group visible meshRender nodes by (shaderKey → meshKey).
             const batches = new Map();
@@ -556,13 +555,13 @@
                 (this.shaders.get(a[0])?.other.renderCfg?.rQueue ?? 1000) -
                 (this.shaders.get(b[0])?.other.renderCfg?.rQueue ?? 1000));
 
-            const viewData = camera.view.data, projData = camera.projection.data;
+            const viewData = camera.view, projData = camera.projection;
 
             for (const [shaderKey, mm] of sorted) {
                 const shader = this.shaders.get(shaderKey);
                 if (!shader) continue;
                 shader.applyRenderState(gl).bind(gl);
-                EzRender.setUniforms(gl, shader.program, [
+                ZRender.setUniforms(gl, shader.program, [
                     { loc: this._getUniformLocation(shader, "u_view"),       type: 'mat4', value: viewData },
                     { loc: this._getUniformLocation(shader, "u_projection"), type: 'mat4', value: projData },
                 ]);
@@ -575,14 +574,14 @@
                     const perInstance = this._getUniformLocation(shader, "u_bonesTex") != null;
                     const chunks = perInstance ? nodes.map(n => [n]) : [nodes];
 
-                    EzRender.withVAO(gl, vaoEntry.vao, () => {
-                        EzRender.setConstAttrs(gl, vaoEntry.defaulted);
+                    ZRender.withVAO(gl, vaoEntry.vao, () => {
+                        ZRender.setConstAttrs(gl, vaoEntry.defaulted);
                         for (const chunk of chunks) this._drawChunk(shader, mesh, chunk);
                     });
                 }
             }
 
-            EzRender.restoreDefaultState(gl);
+            ZRender.restoreDefaultState(gl);
         }
 
         // -- VAO cache ----------------------------------------------------
@@ -611,7 +610,7 @@
                     if (a) { foundAttr = a; foundVB = vb; break; }
                 }
                 if (foundAttr) {
-                    EzRender.wireAttr(gl, {
+                    ZRender.wireAttr(gl, {
                         buffer: foundVB.vbo,
                         loc:    sa.loc,
                         size:   foundAttr.size,
@@ -634,7 +633,7 @@
                 if (e.loc < 0) continue;
                 if (e.type === "mat4") {
                     for (let col = 0; col < 4; col++) {
-                        EzRender.wireAttr(gl, {
+                        ZRender.wireAttr(gl, {
                             buffer: this._instanceVBO,
                             loc:    e.loc + col,
                             size:   4,
@@ -644,7 +643,7 @@
                         });
                     }
                 } else {
-                    EzRender.wireAttr(gl, {
+                    ZRender.wireAttr(gl, {
                         buffer: this._instanceVBO,
                         loc:    e.loc,
                         size:   e.floats,
@@ -670,14 +669,14 @@
             const dataArray = nodes.map(n => {
                 const data = {};
                 for (const e of layout.entries) {
-                    if (e.type === 'mat4')              data[e.name] = n.transform.world.data;
+                    if (e.type === 'mat4')              data[e.name] = n.transform.world;
                     else if (e.name === 'a_instColor')  data[e.name] = n.meshRender.color;
                     else                                data[e.name] = e.default;
                 }
                 return data;
             });
-            const packed = EzRender.packInstances(dataArray, layout);
-            if (packed) EzRender.uploadVBO(gl, this._instanceVBO, packed);
+            const packed = ZRender.packInstances(dataArray, layout);
+            if (packed) ZRender.uploadVBO(gl, this._instanceVBO, packed);
 
             // Skeleton palette (per-instance for skinned shaders)
             const bonesTexLoc = this._getUniformLocation(shader, "u_bonesTex");
@@ -685,9 +684,9 @@
                 const skelNode = nodes[0].meshRender.skeletonNode;
                 if (skelNode && skelNode.skeleton) {
                     const skel = skelNode.skeleton;
-                    skel.paletteTex = EzRender.uploadTexture2D(gl, skel.paletteTex,
+                    skel.paletteTex = ZRender.uploadTexture2D(gl, skel.paletteTex,
                         gl.RGBA32F, gl.RGBA, gl.FLOAT, 4, skel.asset.bones.length, skel.skinData);
-                    EzRender.bindSampler(gl, bonesTexLoc, TEX_UNIT_BONES, skel.paletteTex);
+                    ZRender.bindSampler(gl, bonesTexLoc, TEX_UNIT_BONES, skel.paletteTex);
                 }
             }
 
@@ -695,7 +694,7 @@
             const morphWeightLoc = this._getUniformLocation(shader, "u_morphWeightTex");
             if (morphWeightLoc != null) {
                 if (mesh.morphTargetCount <= 0) {
-                    EzRender.bindSampler(gl, morphWeightLoc, TEX_UNIT_MORPH_WEIGHT, this._morphDummyWeight);
+                    ZRender.bindSampler(gl, morphWeightLoc, TEX_UNIT_MORPH_WEIGHT, this._morphDummyWeight);
                 } else {
                     const W = mesh.morphTargetCount, H = nodes.length;
                     const data = new Float32Array(W * H);
@@ -703,9 +702,9 @@
                         const w = nodes[i].meshRender.morphWeights;
                         if (w) data.set(w.subarray(0, Math.min(w.length, W)), i * W);
                     }
-                    this._morphWeightTex = EzRender.uploadTexture2D(gl, this._morphWeightTex,
+                    this._morphWeightTex = ZRender.uploadTexture2D(gl, this._morphWeightTex,
                         gl.R32F, gl.RED, gl.FLOAT, W, H, data);
-                    EzRender.bindSampler(gl, morphWeightLoc, TEX_UNIT_MORPH_WEIGHT, this._morphWeightTex);
+                    ZRender.bindSampler(gl, morphWeightLoc, TEX_UNIT_MORPH_WEIGHT, this._morphWeightTex);
                 }
             }
 
@@ -716,8 +715,8 @@
                 const fill = mat ? mat.fill : [1, 1, 1, 1];
                 const tex  = mat?.albedo ? this.textures.get(mat.albedo) : null;
 
-                EzRender.bindSampler(gl, this._getUniformLocation(shader, "u_albedo"), TEX_UNIT_ALBEDO, tex ? tex.glTex : this._whiteTex);
-                EzRender.setUniforms(gl, shader.program, [
+                ZRender.bindSampler(gl, this._getUniformLocation(shader, "u_albedo"), TEX_UNIT_ALBEDO, tex ? tex.glTex : this._whiteTex);
+                ZRender.setUniforms(gl, shader.program, [
                     { loc: this._getUniformLocation(shader, "u_fill"), type: 'vec4', value: fill },
                 ]);
 
@@ -726,7 +725,7 @@
                 const morphVertexBaseLoc = this._getUniformLocation(shader, "u_morphVertexBase");
                 if (morphCountLoc != null) {
                     const m = sm.morph;
-                    EzRender.setUniforms(gl, shader.program, [
+                    ZRender.setUniforms(gl, shader.program, [
                         { loc: morphCountLoc,        type: 'int', value: m ? m.targetCount : 0 },
                         { loc: morphWeightOffsetLoc, type: 'int', value: 0 }, // mesh-level shared weights
                         { loc: morphVertexBaseLoc,   type: 'int', value: m ? m.vertexBase  : 0 },
@@ -738,19 +737,19 @@
                         const chLoc = this._getUniformLocation(shader, `u_morphDelta_${i}`);
                         if (chLoc == null) continue;
                         const dltTex  = m ? m.channels.get(chName) : null;
-                        EzRender.bindSampler(gl, chLoc, TEX_UNIT_MORPH_DELTA + i, dltTex || this._morphDummyDelta);
+                        ZRender.bindSampler(gl, chLoc, TEX_UNIT_MORPH_DELTA + i, dltTex || this._morphDummyDelta);
                     }
                 }
 
                 if (sm.indexCount > 0 && mesh.ebo) {
-                    EzRender.drawInstanced(gl, {
+                    ZRender.drawInstanced(gl, {
                         indexed:     true,
                         indexCount:  sm.indexCount,
                         indexType:   mesh.indexType,
                         indexOffset: sm.indexOffset * mesh.indexBytes,
                     }, nodes.length);
                 } else {
-                    EzRender.drawInstanced(gl, {
+                    ZRender.drawInstanced(gl, {
                         indexed:      false,
                         vertexOffset: sm.vertexOffset,
                         vertexCount:  sm.vertexCount,

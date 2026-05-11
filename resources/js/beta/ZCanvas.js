@@ -1,14 +1,13 @@
 /*
-EzCanvas3D
+ZCanvas
 By Asciiz
 
 Holy crap guys I actually made a proper 3D html webgl renderer instead of using canvas2d lmao
 
 Contains
-    EzMath       Mat4 / Quat / Vec3 / etc. utilities 
-    EzRender     static, dimension-agnostic GL helpers
-    EzShader     low-level shader compile + render-state base
-    EzCanvas3D   thin wrapper around <canvas> + WebGL2 context
+    ZRender     static, dimension-agnostic GL helpers
+    ZShader     low-level shader compile + render-state base
+    ZCanvas   thin wrapper around <canvas> + WebGL2 context
 
     -- Highly specialized --
     EzCamera3D   view/projection helper
@@ -29,644 +28,8 @@ Contains
         static sampler = t => t === "sampler2D" || t === "highp sampler2D"
     }
 
-    const KIND_SCALAR = 'scalar';
-    const KIND_VEC2   = 'vec2';
-    const KIND_VEC3   = 'vec3';
-    const KIND_VEC4   = 'vec4';
-    const KIND_QUAT   = 'quat';
-    const KIND_MAT4   = 'mat4';
-
-    class Vec2 {
-        static KIND = KIND_VEC2;
-        static SIZE = 2;
-        constructor(x = 0, y = 0) {
-            this.data = new Float32Array(2);
-            this.kind = KIND_VEC2;
-            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; }
-            else { this.data[0] = x; this.data[1] = y; }
-        }
-        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; return this; }
-        copy(o)         { this.data.set(o.data); return this; }
-        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
-        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
-    }
-
-    class Vec3 {
-        static KIND = KIND_VEC3;
-        static SIZE = 3;
-        constructor(x = 0, y = 0, z = 0) {
-            this.data = new Float32Array(3);
-            this.kind = KIND_VEC3;
-            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; this.data[2]=x[2]||0; }
-            else { this.data[0]=x; this.data[1]=y; this.data[2]=z; }
-        }
-        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; this.data[2]=a[off+2]; return this; }
-        copy(o)         { this.data.set(o.data); return this; }
-        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
-        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
-        get z() { return this.data[2]; }  set z(v) { this.data[2] = v; }
-    }
-
-    class Vec4 {
-        static KIND = KIND_VEC4;
-        static SIZE = 4;
-        constructor(x = 0, y = 0, z = 0, w = 0) {
-            this.data = new Float32Array(4);
-            this.kind = KIND_VEC4;
-            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; this.data[2]=x[2]||0; this.data[3]=x[3]||0; }
-            else { this.data[0]=x; this.data[1]=y; this.data[2]=z; this.data[3]=w; }
-        }
-        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; this.data[2]=a[off+2]; this.data[3]=a[off+3]; return this; }
-        copy(o)         { this.data.set(o.data); return this; }
-        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
-        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
-        get z() { return this.data[2]; }  set z(v) { this.data[2] = v; }
-        get w() { return this.data[3]; }  set w(v) { this.data[3] = v; }
-    }
-
-    class Quat {
-        static KIND = KIND_QUAT;
-        static SIZE = 4;
-        constructor(x = 0, y = 0, z = 0, w = 1) {
-            this.data = new Float32Array(4);
-            this.kind = KIND_QUAT;
-            if (x != null && typeof x === 'object') { this.data[0]=x[0]||0; this.data[1]=x[1]||0; this.data[2]=x[2]||0; this.data[3]=x[3]!=null?x[3]:1; }
-            else { this.data[0]=x; this.data[1]=y; this.data[2]=z; this.data[3]=w; }
-        }
-        set(a, off = 0) { this.data[0]=a[off]; this.data[1]=a[off+1]; this.data[2]=a[off+2]; this.data[3]=a[off+3]; return this; }
-        copy(o)         { this.data.set(o.data); return this; }
-        identity()      { this.data[0]=0; this.data[1]=0; this.data[2]=0; this.data[3]=1; return this; }
-        get x() { return this.data[0]; }  set x(v) { this.data[0] = v; }
-        get y() { return this.data[1]; }  set y(v) { this.data[1] = v; }
-        get z() { return this.data[2]; }  set z(v) { this.data[2] = v; }
-        get w() { return this.data[3]; }  set w(v) { this.data[3] = v; }
-    }
-
-    class Mat4 {
-        static KIND = KIND_MAT4;
-        static SIZE = 16;
-        constructor(a) {
-            this.data = new Float32Array(16);
-            this.kind = KIND_MAT4;
-            if (a != null && typeof a === 'object') { this.set(a); }
-            else { this.data[0] = 1; this.data[5] = 1; this.data[10] = 1; this.data[15] = 1; }
-        }
-        set(a, off = 0) {
-            const d = this.data;
-            for (let i = 0; i < 16; i++) d[i] = a[off + i];
-            return this;
-        }
-        copy(o) { this.data.set(o.data); return this; }
-        identity() {
-            const d = this.data;
-            d[0] =1; d[1] =0; d[2] =0; d[3]= 0;
-            d[4] =0; d[5] =1; d[6] =0; d[7] =0;
-            d[8] =0; d[9] =0; d[10]=1; d[11]=0;
-            d[12]=0; d[13]=0; d[14]=0; d[15]=1;
-            return this;
-        }
-    }
-
-    class EzMath {
-        static clamp = (p, min, max) => Math.max(min, Math.min(max, p));
-
-        static kindOf(v) {
-            if (typeof v === 'number') return KIND_SCALAR;
-            if (v && typeof v.kind === 'string') return v.kind;
-            return null;
-        }
-
-        static #scratchM = new Float32Array(16);
-        static #scratchQ = new Float32Array(4);
-        static #scratchV = new Float32Array(4);
-        static #_pos = new Vec3();
-        static #_scl = new Vec3(1, 1, 1);
-        static #_rot = new Quat();
-
-        static copy(out, a) {
-            if (!out || !a || out.kind !== a.kind) return null;
-            out.data.set(a.data);
-            return out;
-        }
-
-        static identity(out) {
-            if (!out) return null;
-            if (out.kind === KIND_MAT4 || out.kind === KIND_QUAT) { out.identity(); return out; }
-            return null;
-        }
-
-        static add(out, a, b) {
-            if (!out || !out.data) return null;
-            const ko = out.kind, sz = out.data.length;
-            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
-            if (!ka || !kb) return null;
-            const isScA = ka === KIND_SCALAR, isScB = kb === KIND_SCALAR;
-            const od = out.data;
-            if (!isScA && !isScB) {
-                if (ka !== ko || kb !== ko) return null;
-                const ad = a.data, bd = b.data;
-                for (let i = 0; i < sz; i++) od[i] = ad[i] + bd[i];
-                return out;
-            }
-            if (isScA && isScB) {
-                const v = a + b;
-                for (let i = 0; i < sz; i++) od[i] = v;
-                return out;
-            }
-            const sized = isScA ? b : a;
-            if (sized.kind !== ko) return null;
-            const sd = sized.data;
-            const sc = isScA ? a : b;
-            for (let i = 0; i < sz; i++) od[i] = sd[i] + sc;
-            return out;
-        }
-
-        static sub(out, a, b) {
-            if (!out || !out.data) return null;
-            const ko = out.kind, sz = out.data.length;
-            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
-            if (!ka || !kb) return null;
-            const isScA = ka === KIND_SCALAR, isScB = kb === KIND_SCALAR;
-            const od = out.data;
-            if (!isScA && !isScB) {
-                if (ka !== ko || kb !== ko) return null;
-                const ad = a.data, bd = b.data;
-                for (let i = 0; i < sz; i++) od[i] = ad[i] - bd[i];
-                return out;
-            }
-            if (isScA && isScB) {
-                const v = a - b;
-                for (let i = 0; i < sz; i++) od[i] = v;
-                return out;
-            }
-            if (isScA) {
-                if (b.kind !== ko) return null;
-                const bd = b.data;
-                for (let i = 0; i < sz; i++) od[i] = a - bd[i];
-                return out;
-            }
-            // isScB
-            if (a.kind !== ko) return null;
-            const ad = a.data;
-            for (let i = 0; i < sz; i++) od[i] = ad[i] - b;
-            return out;
-        }
-
-        static mult(out, a, b) {
-            if (!out || !out.data) return null;
-            const ko = out.kind;
-            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
-            if (!ka || !kb) return null;
-
-            if (ka === KIND_SCALAR && kb === KIND_SCALAR) return null;
-            if (ka === KIND_SCALAR) {
-                if (ko !== kb) return null;
-                return EzMath.#scaleInto(out, b, a);
-            }
-            if (kb === KIND_SCALAR) {
-                if (ko !== ka) return null;
-                return EzMath.#scaleInto(out, a, b);
-            }
-
-            if (ka === KIND_MAT4 && kb === KIND_MAT4 && ko === KIND_MAT4) return EzMath.#multM4M4(out, a, b);
-            if (ka === KIND_QUAT && kb === KIND_QUAT && ko === KIND_QUAT) return EzMath.#multQQ(out, a, b);
-            if (ka === KIND_MAT4 && kb === KIND_VEC4 && ko === KIND_VEC4) return EzMath.#multM4V4(out, a, b);
-            if (ka === KIND_MAT4 && kb === KIND_VEC3 && ko === KIND_VEC3) return EzMath.#multM4Point(out, a, b);
-            if (ka === KIND_QUAT && kb === KIND_VEC3 && ko === KIND_VEC3) return EzMath.#multQV3(out, a, b);
-
-            if (ka === kb && ko === ka && (ka === KIND_VEC2 || ka === KIND_VEC3 || ka === KIND_VEC4)) {
-                const ad = a.data, bd = b.data, od = out.data;
-                for (let i = 0; i < od.length; i++) od[i] = ad[i] * bd[i];
-                return out;
-            }
-            return null;
-        }
-
-        static #scaleInto(out, sized, s) {
-            if (out.kind !== sized.kind || out.data.length !== sized.data.length) return null;
-            const od = out.data, sd = sized.data;
-            for (let i = 0; i < od.length; i++) od[i] = sd[i] * s;
-            return out;
-        }
-
-        static #multM4M4(out, A, B) {
-            const a = A.data, b = B.data, t = EzMath.#scratchM;
-            for (let c = 0; c < 4; c++) {
-                const b0=b[c*4], b1=b[c*4+1], b2=b[c*4+2], b3=b[c*4+3];
-                t[c*4  ] = a[0]*b0 + a[4]*b1 + a[ 8]*b2 + a[12]*b3;
-                t[c*4+1] = a[1]*b0 + a[5]*b1 + a[ 9]*b2 + a[13]*b3;
-                t[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
-                t[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
-            }
-            out.data.set(t);
-            return out;
-        }
-
-        static #multQQ(out, A, B) {
-            const a = A.data, b = B.data, t = EzMath.#scratchQ;
-            const ax=a[0], ay=a[1], az=a[2], aw=a[3];
-            const bx=b[0], by=b[1], bz=b[2], bw=b[3];
-            t[0] = aw*bx + ax*bw + ay*bz - az*by;
-            t[1] = aw*by - ax*bz + ay*bw + az*bx;
-            t[2] = aw*bz + ax*by - ay*bx + az*bw;
-            t[3] = aw*bw - ax*bx - ay*by - az*bz;
-            const od = out.data;
-            od[0]=t[0]; od[1]=t[1]; od[2]=t[2]; od[3]=t[3];
-            return out;
-        }
-
-        static #multM4V4(out, M, V) {
-            const m = M.data, v = V.data, t = EzMath.#scratchV;
-            const x=v[0], y=v[1], z=v[2], w=v[3];
-            t[0] = m[0]*x + m[4]*y + m[ 8]*z + m[12]*w;
-            t[1] = m[1]*x + m[5]*y + m[ 9]*z + m[13]*w;
-            t[2] = m[2]*x + m[6]*y + m[10]*z + m[14]*w;
-            t[3] = m[3]*x + m[7]*y + m[11]*z + m[15]*w;
-            const od = out.data;
-            od[0]=t[0]; od[1]=t[1]; od[2]=t[2]; od[3]=t[3];
-            return out;
-        }
-
-        // Mat4 * Vec3 (point) - assumes w=1; performs perspective divide.
-        static #multM4Point(out, M, V) {
-            const m = M.data, v = V.data;
-            const x=v[0], y=v[1], z=v[2];
-            const tx = m[0]*x + m[4]*y + m[ 8]*z + m[12];
-            const ty = m[1]*x + m[5]*y + m[ 9]*z + m[13];
-            const tz = m[2]*x + m[6]*y + m[10]*z + m[14];
-            const tw = m[3]*x + m[7]*y + m[11]*z + m[15] || 1;
-            const inv = 1 / tw;
-            const od = out.data;
-            od[0] = tx * inv; od[1] = ty * inv; od[2] = tz * inv;
-            return out;
-        }
-
-        // Quat * Vec3 - rotate vector by quaternion.
-        static #multQV3(out, Q, V) {
-            const q = Q.data, v = V.data;
-            const qx=q[0], qy=q[1], qz=q[2], qw=q[3];
-            const vx=v[0], vy=v[1], vz=v[2];
-            const tx = 2*(qy*vz - qz*vy);
-            const ty = 2*(qz*vx - qx*vz);
-            const tz = 2*(qx*vy - qy*vx);
-            const od = out.data;
-            od[0] = vx + qw*tx + qy*tz - qz*ty;
-            od[1] = vy + qw*ty + qz*tx - qx*tz;
-            od[2] = vz + qw*tz + qx*ty - qy*tx;
-            return out;
-        }
-
-        static scale(out, a, s) {
-            if (!out || !a) return null;
-            if (out.kind !== a.kind || out.data.length !== a.data.length) return null;
-            if (typeof s !== 'number') return null;
-            const od = out.data, ad = a.data;
-            for (let i = 0; i < od.length; i++) od[i] = ad[i] * s;
-            return out;
-        }
-
-        static negate(out, a) {
-            if (!out || !a) return null;
-            if (out.kind !== a.kind || out.data.length !== a.data.length) return null;
-            const od = out.data, ad = a.data;
-            for (let i = 0; i < od.length; i++) od[i] = -ad[i];
-            return out;
-        }
-
-        static normalize(out, a) {
-            if (!out || !a) return null;
-            if (out.kind !== a.kind) return null;
-            const k = a.kind;
-            if (k !== KIND_VEC2 && k !== KIND_VEC3 && k !== KIND_VEC4 && k !== KIND_QUAT) return null;
-            const ad = a.data, od = out.data;
-            let lsq = 0;
-            for (let i = 0; i < ad.length; i++) lsq += ad[i]*ad[i];
-            const inv = lsq > 0 ? 1/Math.sqrt(lsq) : 0;
-            for (let i = 0; i < ad.length; i++) od[i] = ad[i] * inv;
-            return out;
-        }
-
-        static invert(out, a) {
-            if (!out || !a || out.kind !== a.kind) return null;
-            if (a.kind === KIND_QUAT) {
-                const ad = a.data, od = out.data;
-                const lsq = ad[0]*ad[0] + ad[1]*ad[1] + ad[2]*ad[2] + ad[3]*ad[3];
-                if (lsq === 0) return null;
-                const inv = 1 / lsq;
-                od[0] = -ad[0]*inv; od[1] = -ad[1]*inv; od[2] = -ad[2]*inv; od[3] = ad[3]*inv;
-                return out;
-            }
-            if (a.kind === KIND_MAT4) {
-                const m = a.data, t = EzMath.#scratchM;
-                const a00=m[0],  a01=m[1],  a02=m[2],  a03=m[3];
-                const a10=m[4],  a11=m[5],  a12=m[6],  a13=m[7];
-                const a20=m[8],  a21=m[9],  a22=m[10], a23=m[11];
-                const a30=m[12], a31=m[13], a32=m[14], a33=m[15];
-                const b00 = a00*a11 - a01*a10, b01 = a00*a12 - a02*a10, b02 = a00*a13 - a03*a10;
-                const b03 = a01*a12 - a02*a11, b04 = a01*a13 - a03*a11, b05 = a02*a13 - a03*a12;
-                const b06 = a20*a31 - a21*a30, b07 = a20*a32 - a22*a30, b08 = a20*a33 - a23*a30;
-                const b09 = a21*a32 - a22*a31, b10 = a21*a33 - a23*a31, b11 = a22*a33 - a23*a32;
-                const det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
-                if (!det) return null;
-                const id = 1 / det;
-                t[ 0] = (a11*b11 - a12*b10 + a13*b09) * id;
-                t[ 1] = (a02*b10 - a01*b11 - a03*b09) * id;
-                t[ 2] = (a31*b05 - a32*b04 + a33*b03) * id;
-                t[ 3] = (a22*b04 - a21*b05 - a23*b03) * id;
-                t[ 4] = (a12*b08 - a10*b11 - a13*b07) * id;
-                t[ 5] = (a00*b11 - a02*b08 + a03*b07) * id;
-                t[ 6] = (a32*b02 - a30*b05 - a33*b01) * id;
-                t[ 7] = (a20*b05 - a22*b02 + a23*b01) * id;
-                t[ 8] = (a10*b10 - a11*b08 + a13*b06) * id;
-                t[ 9] = (a01*b08 - a00*b10 - a03*b06) * id;
-                t[10] = (a30*b04 - a31*b02 + a33*b00) * id;
-                t[11] = (a21*b02 - a20*b04 - a23*b00) * id;
-                t[12] = (a11*b07 - a10*b09 - a12*b06) * id;
-                t[13] = (a00*b09 - a01*b07 + a02*b06) * id;
-                t[14] = (a31*b01 - a30*b03 - a32*b00) * id;
-                t[15] = (a20*b03 - a21*b01 + a22*b00) * id;
-                out.data.set(t);
-                return out;
-            }
-            return null;
-        }
-
-        static transpose(out, a) {
-            if (!out || !a) return null;
-            if (out.kind !== KIND_MAT4 || a.kind !== KIND_MAT4) return null;
-            const m = a.data, t = EzMath.#scratchM;
-            t[ 0]=m[ 0]; t[ 1]=m[ 4]; t[ 2]=m[ 8]; t[ 3]=m[12];
-            t[ 4]=m[ 1]; t[ 5]=m[ 5]; t[ 6]=m[ 9]; t[ 7]=m[13];
-            t[ 8]=m[ 2]; t[ 9]=m[ 6]; t[10]=m[10]; t[11]=m[14];
-            t[12]=m[ 3]; t[13]=m[ 7]; t[14]=m[11]; t[15]=m[15];
-            out.data.set(t);
-            return out;
-        }
-
-        static dot(a, b) {
-            const ka = EzMath.kindOf(a), kb = EzMath.kindOf(b);
-            if (!ka || !kb || ka !== kb) return NaN;
-            if (ka === KIND_SCALAR) return a * b;
-            if (ka !== KIND_VEC2 && ka !== KIND_VEC3 && ka !== KIND_VEC4 && ka !== KIND_QUAT) return NaN;
-            const ad = a.data, bd = b.data;
-            let s = 0;
-            for (let i = 0; i < ad.length; i++) s += ad[i]*bd[i];
-            return s;
-        }
-
-        static lengthSq(a) {
-            const k = EzMath.kindOf(a);
-            if (!k) return NaN;
-            if (k === KIND_SCALAR) return a*a;
-            const d = a.data;
-            let s = 0;
-            for (let i = 0; i < d.length; i++) s += d[i]*d[i];
-            return s;
-        }
-
-        static length(a) {
-            return Math.sqrt(EzMath.lengthSq(a));
-        }
-
-        static cross(out, a, b) {
-            if (!out || !a || !b) return null;
-            if (out.kind !== KIND_VEC3 || a.kind !== KIND_VEC3 || b.kind !== KIND_VEC3) return null;
-            const ad = a.data, bd = b.data;
-            const ax=ad[0], ay=ad[1], az=ad[2];
-            const bx=bd[0], by=bd[1], bz=bd[2];
-            const od = out.data;
-            od[0] = ay*bz - az*by;
-            od[1] = az*bx - ax*bz;
-            od[2] = ax*by - ay*bx;
-            return out;
-        }
-
-        static lerp(out, a, b, t) {
-            if (!out || !a || !b) return null;
-            if (out.kind !== a.kind || a.kind !== b.kind) return null;
-            const ad = a.data, bd = b.data, od = out.data;
-            if (od.length !== ad.length || ad.length !== bd.length) return null;
-            for (let i = 0; i < od.length; i++) od[i] = ad[i] + (bd[i] - ad[i]) * t;
-            return out;
-        }
-
-        static slerp(out, a, b, t) {
-            if (!out || !a || !b) return null;
-            if (out.kind !== KIND_QUAT || a.kind !== KIND_QUAT || b.kind !== KIND_QUAT) return null;
-            const ad = a.data, bd = b.data, od = out.data;
-            let ax=ad[0], ay=ad[1], az=ad[2], aw=ad[3];
-            let bx=bd[0], by=bd[1], bz=bd[2], bw=bd[3];
-            let dot = ax*bx + ay*by + az*bz + aw*bw;
-            if (dot < 0) { bx=-bx; by=-by; bz=-bz; bw=-bw; dot=-dot; }
-            if (dot > 0.9995) {
-                const x = ax + t*(bx-ax), y = ay + t*(by-ay), z = az + t*(bz-az), w = aw + t*(bw-aw);
-                const inv = 1 / (Math.hypot(x,y,z,w) || 1);
-                od[0]=x*inv; od[1]=y*inv; od[2]=z*inv; od[3]=w*inv;
-                return out;
-            }
-            const th0 = Math.acos(dot), th = th0 * t;
-            const sinTh0 = Math.sin(th0);
-            const s0 = Math.cos(th) - dot * Math.sin(th) / sinTh0;
-            const s1 = Math.sin(th) / sinTh0;
-            od[0] = s0*ax + s1*bx;
-            od[1] = s0*ay + s1*by;
-            od[2] = s0*az + s1*bz;
-            od[3] = s0*aw + s1*bw;
-            return out;
-        }
-
-        static fromAxisAngle(outQuat, axis, angle) {
-            if (!outQuat || outQuat.kind !== KIND_QUAT) return null;
-            if (!axis    || axis.kind    !== KIND_VEC3) return null;
-            if (typeof angle !== 'number') return null;
-            const ad = axis.data;
-            const lx=ad[0], ly=ad[1], lz=ad[2];
-            const len = Math.hypot(lx, ly, lz) || 1;
-            const half = angle * 0.5;
-            const s = Math.sin(half) / len;
-            const od = outQuat.data;
-            od[0] = lx*s; od[1] = ly*s; od[2] = lz*s; od[3] = Math.cos(half);
-            return outQuat;
-        }
-
-        // outQuat from intrinsic ZYX Euler (radians). `euler` is a Vec3 (x, y, z).
-        static fromEulerZYX(outQuat, euler) {
-            if (!outQuat || outQuat.kind !== KIND_QUAT) return null;
-            if (!euler   || euler.kind   !== KIND_VEC3) return null;
-            const e = euler.data;
-            const cx = Math.cos(e[0]*0.5), sx = Math.sin(e[0]*0.5);
-            const cy = Math.cos(e[1]*0.5), sy = Math.sin(e[1]*0.5);
-            const cz = Math.cos(e[2]*0.5), sz = Math.sin(e[2]*0.5);
-            const od = outQuat.data;
-            od[0] = sx*cy*cz - cx*sy*sz;
-            od[1] = cx*sy*cz + sx*cy*sz;
-            od[2] = cx*cy*sz - sx*sy*cz;
-            od[3] = cx*cy*cz + sx*sy*sz;
-            return outQuat;
-        }
-
-        // outVec3 = (yaw, pitch, roll) in degrees, decoded from a quaternion.
-        static toEulerYPR(outVec3, q) {
-            if (!outVec3 || outVec3.kind !== KIND_VEC3) return null;
-            if (!q       || q.kind       !== KIND_QUAT) return null;
-            const r2d = 180 / Math.PI;
-            const x=q.data[0], y=q.data[1], z=q.data[2], w=q.data[3];
-            const sp = 2 * (w*x - y*z);
-            let pitch, yaw, roll;
-            if (Math.abs(sp) >= 0.999999) {
-                pitch = Math.sign(sp) * 90;
-                yaw   = Math.atan2(-2*(x*y - w*z), 1 - 2*(y*y + z*z)) * r2d;
-                roll  = 0;
-            } else {
-                pitch = Math.asin(sp) * r2d;
-                yaw   = Math.atan2(2*(x*z + w*y), 1 - 2*(x*x + y*y)) * r2d;
-                roll  = -Math.atan2(2*(x*y + w*z), 1 - 2*(x*x + z*z)) * r2d;
-            }
-            const od = outVec3.data;
-            od[0] = yaw; od[1] = pitch; od[2] = roll;
-            return outVec3;
-        }
-
-        // outMat4 = T(pos) * R(rot) * S(scl) - column-major.
-        static compose(outMat4, pos, rot, scl) {
-            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
-            if (!pos     || pos.kind     !== KIND_VEC3) return null;
-            if (!rot     || rot.kind     !== KIND_QUAT) return null;
-            if (!scl     || scl.kind     !== KIND_VEC3) return null;
-            const p = pos.data, r = rot.data, s = scl.data, o = outMat4.data;
-            const qx=r[0], qy=r[1], qz=r[2], qw=r[3];
-            const sx=s[0], sy=s[1], sz=s[2];
-            const x2=qx+qx, y2=qy+qy, z2=qz+qz;
-            const xx=qx*x2, xy=qx*y2, xz=qx*z2;
-            const yy=qy*y2, yz=qy*z2, zz=qz*z2;
-            const wx=qw*x2, wy=qw*y2, wz=qw*z2;
-            o[ 0] = (1-(yy+zz))*sx; o[ 1] = (xy+wz)*sx;     o[ 2] = (xz-wy)*sx;     o[ 3] = 0;
-            o[ 4] = (xy-wz)*sy;     o[ 5] = (1-(xx+zz))*sy; o[ 6] = (yz+wx)*sy;     o[ 7] = 0;
-            o[ 8] = (xz+wy)*sz;     o[ 9] = (yz-wx)*sz;     o[10] = (1-(xx+yy))*sz; o[11] = 0;
-            o[12] = p[0];           o[13] = p[1];           o[14] = p[2];           o[15] = 1;
-            return outMat4;
-        }
-
-        static lookAt(outMat4, eye, target, up) {
-            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
-            if (!eye    || eye.kind    !== KIND_VEC3) return null;
-            if (!target || target.kind !== KIND_VEC3) return null;
-            if (!up     || up.kind     !== KIND_VEC3) return null;
-            const ed=eye.data, td=target.data, ud=up.data;
-            const px=ed[0], py=ed[1], pz=ed[2];
-            let fx=td[0]-px, fy=td[1]-py, fz=td[2]-pz;
-            const fl = Math.hypot(fx, fy, fz) || 1;
-            fx/=fl; fy/=fl; fz/=fl;
-            const ux=ud[0], uy=ud[1], uz=ud[2];
-            let rx=fy*uz - fz*uy, ry=fz*ux - fx*uz, rz=fx*uy - fy*ux;
-            const rl = Math.hypot(rx, ry, rz) || 1;
-            rx/=rl; ry/=rl; rz/=rl;
-            const Ux=ry*fz - rz*fy, Uy=rz*fx - rx*fz, Uz=rx*fy - ry*fx;
-            const o = outMat4.data;
-            o[ 0]=rx;                    o[ 1]=Ux;                    o[ 2]=-fx;                  o[ 3]=0;
-            o[ 4]=ry;                    o[ 5]=Uy;                    o[ 6]=-fy;                  o[ 7]=0;
-            o[ 8]=rz;                    o[ 9]=Uz;                    o[10]=-fz;                  o[11]=0;
-            o[12]=-(rx*px+ry*py+rz*pz);  o[13]=-(Ux*px+Uy*py+Uz*pz);  o[14]=fx*px+fy*py+fz*pz;    o[15]=1;
-            return outMat4;
-        }
-
-        static perspective(outMat4, fovY, aspect, near, far) {
-            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
-            const f = 1.0 / Math.tan(fovY/2), nf = 1/(near-far), o = outMat4.data;
-            o[ 0]=f/aspect; o[ 1]=0; o[ 2]=0;             o[ 3]=0;
-            o[ 4]=0;        o[ 5]=f; o[ 6]=0;             o[ 7]=0;
-            o[ 8]=0;        o[ 9]=0; o[10]=(far+near)*nf; o[11]=-1;
-            o[12]=0;        o[13]=0; o[14]=2*far*near*nf; o[15]=0;
-            return outMat4;
-        }
-
-        static ortho(outMat4, left, right, bottom, top, near, far) {
-            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
-            const lr = 1/(left-right), bt = 1/(bottom-top), nf = 1/(near-far), o = outMat4.data;
-            o[ 0]=-2*lr;             o[ 1]=0;                 o[ 2]=0;             o[ 3]=0;
-            o[ 4]=0;                 o[ 5]=-2*bt;             o[ 6]=0;             o[ 7]=0;
-            o[ 8]=0;                 o[ 9]=0;                 o[10]=2*nf;          o[11]=0;
-            o[12]=(left+right)*lr;   o[13]=(top+bottom)*bt;   o[14]=(far+near)*nf; o[15]=1;
-            return outMat4;
-        }
-
-        // outQuat from yaw/pitch/roll in degrees (extrinsic Y-up * X-right * (-Z) order).
-        static fromEulerYPR(outQuat, yawDeg, pitchDeg, rollDeg) {
-            if (!outQuat || outQuat.kind !== KIND_QUAT) return null;
-            const d2r = Math.PI / 180;
-            const hy = yawDeg   * d2r * 0.5;
-            const hp = pitchDeg * d2r * 0.5;
-            const hr = (rollDeg || 0) * d2r * 0.5;
-            // qY = (0, sin(hy), 0, cos(hy));  qP = (sin(hp), 0, 0, cos(hp));  qR = (0, 0, -sin(hr), cos(hr))
-            const sy = Math.sin(hy), cy = Math.cos(hy);
-            const sp = Math.sin(hp), cp = Math.cos(hp);
-            // qYP = qY * qP
-            let qx = cy*sp, qy = sy*cp, qz = -sy*sp, qw = cy*cp;
-            if (rollDeg) {
-                const sr = Math.sin(hr), cr = Math.cos(hr);
-                // qR = (0, 0, -sr, cr); apply on the right: q = qYP * qR
-                const rx =  qx*cr + qy*(-sr);
-                const ry =  qy*cr - qx*(-sr);
-                const rz =  qz*cr + qw*(-sr);
-                const rw =  qw*cr - qz*(-sr);
-                qx = rx; qy = ry; qz = rz; qw = rw;
-            }
-            // normalize (cheap; mul of unit quats is unit, but be safe)
-            const inv = 1 / (Math.hypot(qx, qy, qz, qw) || 1);
-            const od = outQuat.data;
-            od[0] = qx*inv; od[1] = qy*inv; od[2] = qz*inv; od[3] = qw*inv;
-            return outQuat;
-        }
-
-        // outVec3 = upper-3x3(M) * V  (direction transform: no translation, no /w).
-        static mulDir(outVec3, M, V) {
-            if (!outVec3 || outVec3.kind !== KIND_VEC3) return null;
-            if (!M || M.kind !== KIND_MAT4) return null;
-            if (!V || V.kind !== KIND_VEC3) return null;
-            const m = M.data, v = V.data;
-            const x=v[0], y=v[1], z=v[2];
-            const tx = m[0]*x + m[4]*y + m[ 8]*z;
-            const ty = m[1]*x + m[5]*y + m[ 9]*z;
-            const tz = m[2]*x + m[6]*y + m[10]*z;
-            const od = outVec3.data;
-            od[0] = tx; od[1] = ty; od[2] = tz;
-            return outVec3;
-        }
-
-        static resolveTransform(outMat4, spec, fallback = null) {
-            if (!outMat4 || outMat4.kind !== KIND_MAT4) return null;
-            if (spec && spec.kind === KIND_MAT4) {
-                outMat4.data.set(spec.data);
-                return outMat4;
-            }
-            if (spec && typeof spec === 'object') {
-                const pos = EzMath.#_pos, scl = EzMath.#_scl, rot = EzMath.#_rot;
-                if (spec.position && spec.position.kind === KIND_VEC3) pos.copy(spec.position);
-                else if (fallback && fallback.kind === KIND_MAT4) {
-                    const f = fallback.data; pos.data[0]=f[12]; pos.data[1]=f[13]; pos.data[2]=f[14];
-                } else { pos.data[0]=0; pos.data[1]=0; pos.data[2]=0; }
-
-                if (spec.scale && spec.scale.kind === KIND_VEC3) scl.copy(spec.scale);
-                else { scl.data[0]=1; scl.data[1]=1; scl.data[2]=1; }
-
-                if (spec.rotation && spec.rotation.kind === KIND_QUAT) rot.copy(spec.rotation);
-                else if (spec.euler && spec.euler.kind === KIND_VEC3) EzMath.fromEulerZYX(rot, spec.euler);
-                else rot.identity();
-
-                return EzMath.compose(outMat4, pos, rot, scl);
-            }
-            if (fallback && fallback.kind === KIND_MAT4) {
-                outMat4.data.set(fallback.data);
-                return outMat4;
-            }
-            outMat4.identity();
-            return outMat4;
-        }
-
-    }
-
-    const TAGRENDER = "[EzRender]";
-    class EzRender {
+    const TAGRENDER = "[ZRender]";
+    class ZRender {
         static #BLEND_ENUM_BY_NAME = {
             ZERO:                     0,
             ONE:                      1,
@@ -691,15 +54,14 @@ Contains
                 const key = spec.trim();
                 if (!key) return fallback;
                 if (Object.prototype.hasOwnProperty.call(gl, key)) return gl[key];
-                const mapped = EzRender.#BLEND_ENUM_BY_NAME[key.toUpperCase()];
+                const mapped = ZRender.#BLEND_ENUM_BY_NAME[key.toUpperCase()];
                 if (mapped != null) return mapped;
             }
             return fallback;
         }
 
-        static bind(gl, program, onbind=null) {
+        static bind(gl, program) {
             gl.useProgram(program);
-            if (onbind) onbind(gl, program);
         }
 
         static applyState(gl, cfg) {
@@ -714,8 +76,8 @@ Contains
                 cfg.blend ? gl.enable(gl.BLEND) : gl.disable(gl.BLEND);
 
                 if (cfg.blend && (hasProp('blendSrc') || hasProp('blendDst'))) {
-                    const src = EzRender.#resolveBlendEnum(gl, cfg.blendSrc, gl.SRC_ALPHA);
-                    const dst = EzRender.#resolveBlendEnum(gl, cfg.blendDst, gl.ONE_MINUS_SRC_ALPHA);
+                    const src = ZRender.#resolveBlendEnum(gl, cfg.blendSrc, gl.SRC_ALPHA);
+                    const dst = ZRender.#resolveBlendEnum(gl, cfg.blendDst, gl.ONE_MINUS_SRC_ALPHA);
                     gl.blendFunc(src, dst);
                 }
             }
@@ -792,44 +154,6 @@ Contains
             if (divisor) gl.vertexAttribDivisor(loc, divisor);
         }
 
-        static #UNI = {
-            mat4:  (gl, loc, v) => gl.uniformMatrix4fv(loc, false, v),
-            mat3:  (gl, loc, v) => gl.uniformMatrix3fv(loc, false, v),
-            vec4:  (gl, loc, v) => gl.uniform4fv(loc, v),
-            vec3:  (gl, loc, v) => gl.uniform3fv(loc, v),
-            vec2:  (gl, loc, v) => gl.uniform2fv(loc, v),
-            float: (gl, loc, v) => gl.uniform1f(loc, v),
-            int:   (gl, loc, v) => gl.uniform1i(loc, v),
-            bool:  (gl, loc, v) => gl.uniform1i(loc, v ? 1 : 0),
-        };
-
-        static getUniformLocation(gl, program, name) {
-            if (!program || !name) return null;
-            if (!program._ezUniformLocCache) program._ezUniformLocCache = new Map();
-            const cache = program._ezUniformLocCache;
-            if (cache.has(name)) return cache.get(name);
-            const loc = gl.getUniformLocation(program, name);
-            cache.set(name, loc);
-            return loc;
-        }
-
-        static setUniform(gl, program, type, nameOrLoc, value) {
-            const setter = EzRender.#UNI[type];
-            if (!setter) return null;
-            const isName = typeof nameOrLoc === 'string' 
-            const loc = isName ? EzRender.getUniformLocation(gl, program, nameOrLoc) : nameOrLoc;
-            if (loc == null) return null;
-            setter(gl, loc, value);
-            return loc;
-        }
-
-        static setUniforms(gl, program, list) {
-            for (const u of list) {
-                const key = (u.loc !== undefined) ? u.loc : u.name;
-                EzRender.setUniform(gl, program, u.type, key, u.value);
-            }
-        }
-
         static bindSampler(gl, loc, unit, tex, target) {
             if (loc == null) return;
             gl.activeTexture(gl.TEXTURE0 + unit);
@@ -873,7 +197,7 @@ Contains
             const tex = existing ?? gl.createTexture();
             const explicit = unit != null;
             const prevActive = explicit ? 0 : gl.getParameter(gl.ACTIVE_TEXTURE);
-            gl.activeTexture(gl.TEXTURE0 + (explicit ? unit : EzRender.SCRATCH_TEX_UNIT));
+            gl.activeTexture(gl.TEXTURE0 + (explicit ? unit : ZRender.SCRATCH_TEX_UNIT));
             gl.bindTexture(gl.TEXTURE_2D, tex);
             if (!existing) {
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -1089,12 +413,12 @@ Contains
             if (stride === 0) return null;
             const flat = new Float32Array(dataArray.length * stride);
             for (let i = 0; i < dataArray.length; i++)
-                EzRender.packInstanceRow(flat, i * stride, dataArray[i], layout);
+                ZRender.packInstanceRow(flat, i * stride, dataArray[i], layout);
             return flat;
         }
     }
 
-    class EzShader {
+    class ZShader {
         program   = null;
         other     = {};   // free whatever things (includes renderCfg, onbind, custom data)
 
@@ -1173,8 +497,8 @@ Contains
 
         #normalizeDecl(kind, typeOrSpec, name = null, options = {}) {
             const spec = _is.obj(typeOrSpec) ? { ...typeOrSpec } : { type: typeOrSpec, name };
-            if (!_is.str(spec.name)) throw new Error('[EzShader] declaration requires a name');
-            if (!_is.str(spec.type)) throw new Error(`[EzShader] declaration "${spec.name}" requires a type`);
+            if (!_is.str(spec.name)) throw new Error('[ZShader] declaration requires a name');
+            if (!_is.str(spec.type)) throw new Error(`[ZShader] declaration "${spec.name}" requires a type`);
             const out = {
                 kind,
                 name: spec.name,
@@ -1195,22 +519,22 @@ Contains
         #normalizeMethod(methodOrSig, body = null) {
             if (_is.str(methodOrSig)) {
                 const signature = methodOrSig.trim().replace(/[\s;{]+$/, '');
-                if (!signature) throw new Error('[EzShader] method signature cannot be empty');
+                if (!signature) throw new Error('[ZShader] method signature cannot be empty');
                 return { signature, body: body != null ? String(body) : '' };
             }
-            if (!_is.obj(methodOrSig)) throw new Error('[EzShader] method requires a signature string or descriptor object');
+            if (!_is.obj(methodOrSig)) throw new Error('[ZShader] method requires a signature string or descriptor object');
             const spec = { ...methodOrSig };
             let signature = _is.str(spec.signature) ? spec.signature.trim().replace(/[\s;{]+$/, '') : null;
             if (!signature) {
-                if (!_is.str(spec.name)) throw new Error('[EzShader] method descriptor requires name');
+                if (!_is.str(spec.name)) throw new Error('[ZShader] method descriptor requires name');
                 const returnType = _is.str(spec.returnType) ? spec.returnType : 'void';
                 const args = Array.isArray(spec.args)
                     ? spec.args.map(arg => {
                         if (_is.str(arg)) return arg.trim();
-                        if (!_is.obj(arg)) throw new Error(`[EzShader] method "${spec.name}" has an invalid argument descriptor`);
+                        if (!_is.obj(arg)) throw new Error(`[ZShader] method "${spec.name}" has an invalid argument descriptor`);
                         const argType = _is.str(arg.type) ? arg.type : null;
                         const argName = _is.str(arg.name) ? arg.name : null;
-                        if (!argType || !argName) throw new Error(`[EzShader] method "${spec.name}" argument requires type and name`);
+                        if (!argType || !argName) throw new Error(`[ZShader] method "${spec.name}" argument requires type and name`);
                         return `${argType} ${argName}`;
                     })
                     : [];
@@ -1242,7 +566,7 @@ Contains
         }
 
         #assertStageIndex(stage) {
-            if (stage !== 0 && stage !== 1) throw new Error('[EzShader] stage index must be 0 or 1');
+            if (stage !== 0 && stage !== 1) throw new Error('[ZShader] stage index must be 0 or 1');
             return stage;
         }
 
@@ -1261,7 +585,7 @@ Contains
         }
 
         precision(type, value, options = {}) {
-            if (!_is.str(type) || !_is.str(value)) throw new Error('[EzShader] precision requires type and value');
+            if (!_is.str(type) || !_is.str(value)) throw new Error('[ZShader] precision requires type and value');
             const stages = this.#resolveStages(options);
             for (const stage of stages) {
                 this.#spec.passes[stage].precision[type] = value;
@@ -1337,11 +661,6 @@ Contains
             return this;
         }
 
-        onbind(fn = null) {
-            this.other.onbind = typeof fn === 'function' ? fn : null;
-            return this;
-        }
-
         custom(nameOrObj, value = undefined) {
             if (_is.obj(nameOrObj)) {
                 for (const [key, val] of Object.entries(nameOrObj)) {
@@ -1354,9 +673,7 @@ Contains
         }
 
         customs(obj) {
-            if (_is.obj(obj)) {
-                Object.assign(this.other, obj);
-            }
+            if (_is.obj(obj)) { Object.assign(this.other, obj); }
             return this;
         }
 
@@ -1364,7 +681,7 @@ Contains
             const spec = this.#spec.passes[stageIndex];
             const seen = new Set();
             const checkName = (name, where) => {
-                if (seen.has(name)) throw new Error(`[EzShader] duplicate name "${name}" in ${where}`);
+                if (seen.has(name)) throw new Error(`[ZShader] duplicate name "${name}" in ${where}`);
                 seen.add(name);
             };
 
@@ -1404,7 +721,7 @@ Contains
                 lines.push(this.#formatMethod(method));
             }
 
-            if (!spec.main) throw new Error(`[EzShader] ${this.#stageLabel(stageIndex)} stage is missing main body`);
+            if (!spec.main) throw new Error(`[ZShader] ${this.#stageLabel(stageIndex)} stage is missing main body`);
             lines.push(`void main() {`, this.#indentBlock(spec.main), `}`);
             return lines.join('\n');
         }
@@ -1431,14 +748,14 @@ Contains
                 gl = vertSrc;
                 const built = this.build();
                 this.program = this.#createProgram(gl, built.primary, built.secondary);
-                if (!this.program) throw new Error('[EzShader] GL program compilation failed');
+                if (!this.program) throw new Error('[ZShader] GL program compilation failed');
                 this.#refreshReflection(gl);
                 this._compiled = true;
                 return this;
             }
 
             this.program = this.#createProgram(gl, vertSrc, fragSrc);
-            if (!this.program) throw new Error("[EzShader] GL program compilation failed");
+            if (!this.program) throw new Error("[ZShader] GL program compilation failed");
             this.#refreshReflection(gl);
             this._compiled = true;
             return this;
@@ -1475,7 +792,7 @@ Contains
             this.uniforms = [...this.vertexUniforms, ...this.fragmentUniforms];
         }
 
-        getAttributeLocation(name) {
+        getInputLocation(name) {
             return this.attributeLocations.get(name) ?? -1;
         }
 
@@ -1483,13 +800,41 @@ Contains
             return this.uniformLocations.get(name) ?? null;
         }
 
+        static #UNI = {
+            mat4:  (gl, loc, v) => gl.uniformMatrix4fv(loc, false, v),
+            mat3:  (gl, loc, v) => gl.uniformMatrix3fv(loc, false, v),
+            vec4:  (gl, loc, v) => gl.uniform4fv(loc, v),
+            vec3:  (gl, loc, v) => gl.uniform3fv(loc, v),
+            vec2:  (gl, loc, v) => gl.uniform2fv(loc, v),
+            float: (gl, loc, v) => gl.uniform1f(loc, v),
+            int:   (gl, loc, v) => gl.uniform1i(loc, v),
+            bool:  (gl, loc, v) => gl.uniform1i(loc, v ? 1 : 0),
+        };
+
+        setUniform(gl, name, value) {
+            const loc = this.getUniformLocation(name);
+            if (loc == null) return false;
+            const decl = this.uniforms.find(u => u.name === name);
+            if (!decl) return false;
+            const setter = ZShader.#UNI[decl.type];
+            if (!setter) throw new Error(`[ZShader] unsupported uniform type "${decl.type}" for "${name}"`);
+            setter(gl, loc, value);
+            return true;
+        }
+
+        setUniforms(gl, list) {
+            for (const { name, value } of list) {
+                this.setUniform(gl, name, value);
+            }
+        }
+
         bind(gl) {
-            EzRender.bind(gl, this.program, this.other.onbind);
+            ZRender.bind(gl, this.program);
             return this;
         }
 
-        applyRenderState(gl) { EzRender.applyState(gl, this.other.renderCfg); return this; }
-        static restoreRenderState(gl) { EzRender.restoreDefaultState(gl); }
+        applyRenderState(gl) { ZRender.applyState(gl, this.other.renderCfg); return this; }
+        static restoreRenderState(gl) { ZRender.restoreDefaultState(gl); }
 
         #compileShader(gl, type, src) {
             const shader = gl.createShader(type);
@@ -1497,7 +842,7 @@ Contains
             gl.shaderSource(shader, src);
             gl.compileShader(shader);
             if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                _c.err("[EzShader]", "shader compile error:", gl.getShaderInfoLog(shader));
+                _c.err("[ZShader]", "shader compile error:", gl.getShaderInfoLog(shader));
                 gl.deleteShader(shader);
                 return null;
             }
@@ -1516,7 +861,7 @@ Contains
             gl.linkProgram(program);
 
             if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                _c.err("[EzShader]", "program link error:", gl.getProgramInfoLog(program));
+                _c.err("[ZShader]", "program link error:", gl.getProgramInfoLog(program));
                 return null;
             }
 
@@ -1526,8 +871,8 @@ Contains
         }
     }
 
-    const TAGC3D = "[EzCanvas3D]";
-    class EzCanvas3D {
+    const TAGC3D = "[ZCanvas]";
+    class ZCanvas {
         name    = null;
         #canvas = null;
         #gl     = null;
@@ -1607,7 +952,7 @@ Contains
         #clampPixelRatio(v) {
             const n = Number(v);
             if (!Number.isFinite(n) || n <= 0) return 1;
-            return EzMath.clamp(n, 0.5, this.#maxPixelRatio);
+            return Math.min(Math.max(0.5, n), this.#maxPixelRatio);
         }
 
         #applyViewportSize() {
@@ -1644,221 +989,87 @@ Contains
         }
     }
 
-    window.Vec2            = Vec2;
-    window.Vec3            = Vec3;
-    window.Vec4            = Vec4;
-    window.Quat            = Quat;
-    window.Mat4            = Mat4;
-    window.EzMath          = EzMath;
-
-    window.EzRender        = EzRender;
-    window.EzShader        = EzShader;
-    window.EzCanvas3D      = EzCanvas3D;
+    window.ZRender        = ZRender;
+    window.ZShader        = ZShader;
+    window.ZCanvas      = ZCanvas;
 
 // Every thing below this line is highly specialized for 3D-object-driven rendering
 // --------------------------------------------------------------------------------
+
     class EzCamera3D {
-        position    = new Vec3(0, 0, 3);
-        orientation = new Quat();
+        position    = ZMath.V3();
+        orientation = ZMath.Q.identity();
 
         near = 0.1; far = 1000;
-        fov  = 45;
+        fov  = 45;  // degrees
         aspect = 1;
 
         orthographic = false;
         orthoSize    = 5;   // half-height
 
-        #forward = new Vec3();
-        #right   = new Vec3();
-        #up      = new Vec3();
-        #view    = new Mat4();
-        #proj    = new Mat4();
-        #ypr     = new Vec3(); // (yaw, pitch, roll) in degrees
-
-        static #LOCAL_FWD   = new Vec3( 0,  0, -1);
-        static #LOCAL_RIGHT = new Vec3( 1,  0,  0);
-        static #LOCAL_UP    = new Vec3( 0,  1,  0);
-
-        #scratchQ    = new Quat();
-        #scratchAxis = new Vec3();
-        #scratchTgt  = new Vec3();
-        #scratchDir  = new Vec3();
-        #scratchOff  = new Vec3();
-
-        constructor() {}
-
-        get forward() { return EzMath.mult(this.#forward, this.orientation, EzCamera3D.#LOCAL_FWD); }
-        get right()   { return EzMath.mult(this.#right,   this.orientation, EzCamera3D.#LOCAL_RIGHT); }
-        get up()      { return EzMath.mult(this.#up,      this.orientation, EzCamera3D.#LOCAL_UP); }
-        get vectors() { return { forward: this.forward, right: this.right, up: this.up }; }
-
-        get yaw()   { EzMath.toEulerYPR(this.#ypr, this.orientation); return this.#ypr.data[0]; }
-        get pitch() { EzMath.toEulerYPR(this.#ypr, this.orientation); return this.#ypr.data[1]; }
-        get roll()  { EzMath.toEulerYPR(this.#ypr, this.orientation); return this.#ypr.data[2]; }
+        get forward() { return ZMath.Q.transformV3(this.orientation, ZMath.V3.FORWARD); }
+        get right()   { return ZMath.Q.transformV3(this.orientation, ZMath.V3.RIGHT);   }
+        get up()      { return ZMath.Q.transformV3(this.orientation, ZMath.V3.UP);      }
 
         get view() {
-            const f = this.forward, u = this.up, p = this.position;
-            EzMath.add(this.#scratchTgt, p, f);
-            EzMath.lookAt(this.#view, p, this.#scratchTgt, u);
-            return this.#view;
+            const target = ZMath.V3.add(this.position, this.forward);
+            return ZMath.M4.lookAt(this.position, target, this.up);
         }
 
         get projection() {
             if (this.orthographic) {
-                const h = this.orthoSize, w = h * this.aspect;
-                EzMath.ortho(this.#proj, -w, w, -h, h, this.near, this.far);
-            } else {
-                EzMath.perspective(this.#proj, this.fov * (Math.PI / 180), this.aspect, this.near, this.far);
+                const h = this.orthoSize;
+                const w = h * this.aspect;
+                return ZMath.M4.ortho(-w, w, -h, h, this.near, this.far);
             }
-            return this.#proj;
+
+            return ZMath.M4.perspective(this.fov * ZMath.DEG2RAD, this.aspect, this.near, this.far);
         }
 
-        set(cfg = {}) {
-            if (cfg.position != null) {
-                if (cfg.position.kind === KIND_VEC3) this.position.copy(cfg.position);
-                else this.position.set(cfg.position);
-            }
-            if (cfg.orientation != null) {
-                if (cfg.orientation.kind === KIND_QUAT) this.orientation.copy(cfg.orientation);
-                else this.orientation.set(cfg.orientation);
-                EzMath.normalize(this.orientation, this.orientation);
-            }
-            if (cfg.near         != null) this.near         = cfg.near;
-            if (cfg.far          != null) this.far          = cfg.far;
-            if (cfg.aspect       != null) this.aspect       = cfg.aspect;
-            if (cfg.fov          != null) this.fov          = cfg.fov;
-            if (cfg.orthoSize    != null) this.orthoSize    = cfg.orthoSize;
-            if (cfg.orthographic != null) this.orthographic = !!cfg.orthographic;
+        rotate(axis, angle) {
+            const q = ZMath.Q.fromAxisAngle(axis, angle);
+            // local-space: existing orientation first, then new rotation
+            ZMath.Q.mul(this.orientation, q, this.orientation);
+            ZMath.Q.norm(this.orientation, this.orientation);
             return this;
         }
 
-        rotate(yawDelta = 0, pitchDelta = 0, rollDelta = 0) {
-            const d2r = Math.PI / 180;
-            const tmpQ = this.#scratchQ, axis = this.#scratchAxis;
-            if (yawDelta) {
-                axis.data[0]=0; axis.data[1]=1; axis.data[2]=0;
-                EzMath.fromAxisAngle(tmpQ, axis, yawDelta * d2r);
-                EzMath.mult(this.orientation, tmpQ, this.orientation);
-            }
-            if (pitchDelta) {
-                axis.data[0]=1; axis.data[1]=0; axis.data[2]=0;
-                EzMath.fromAxisAngle(tmpQ, axis, pitchDelta * d2r);
-                EzMath.mult(this.orientation, this.orientation, tmpQ);
-            }
-            if (rollDelta) {
-                axis.data[0]=0; axis.data[1]=0; axis.data[2]=-1;
-                EzMath.fromAxisAngle(tmpQ, axis, rollDelta * d2r);
-                EzMath.mult(this.orientation, this.orientation, tmpQ);
-            }
-            EzMath.normalize(this.orientation, this.orientation);
+        translate(offset) {
+            const worldOffset = ZMath.Q.transformV3(this.orientation, offset);
+            ZMath.V3.add(this.position, worldOffset, this.position);
             return this;
         }
 
         lookAt(target, up = null) {
-            const tgt = (target && target.kind === KIND_VEC3)
-                ? target
-                : this.#scratchTgt.set(target);
-            const upv = up == null
-                ? EzCamera3D.#LOCAL_UP
-                : (up.kind === KIND_VEC3 ? up : this.#scratchAxis.set(up));
+            up ??= ZMath.V3.UP;
 
-            const pd = this.position.data;
-            const td = tgt.data;
-            const ud = upv.data;
-            let fx = td[0] - pd[0], fy = td[1] - pd[1], fz = td[2] - pd[2];
-            const fl = Math.hypot(fx, fy, fz);
-            if (fl < 1e-8) return this;
-            fx /= fl; fy /= fl; fz /= fl;
+            const forward = ZMath.V3.norm(ZMath.V3.sub(target, this.position));
+            const right   = ZMath.V3.norm(ZMath.V3.cross(up, forward));
+            const camUp   = ZMath.V3.cross(forward, right);
 
-            let rx = fy * ud[2] - fz * ud[1];
-            let ry = fz * ud[0] - fx * ud[2];
-            let rz = fx * ud[1] - fy * ud[0];
-            let rl = Math.hypot(rx, ry, rz);
-            if (rl < 1e-6) {
-                const ax = 0, ay = Math.abs(fy) > 0.9 ? 0 : 1, az = Math.abs(fy) > 0.9 ? 1 : 0;
-                rx = fy * az - fz * ay;
-                ry = fz * ax - fx * az;
-                rz = fx * ay - fy * ax;
-                rl = Math.hypot(rx, ry, rz) || 1;
-            }
-            rx /= rl; ry /= rl; rz /= rl;
-            const uxv = ry * fz - rz * fy;
-            const uyv = rz * fx - rx * fz;
-            const uzv = rx * fy - ry * fx;
+            const m = ZMath.M4.identity();
 
-            // Rotation matrix columns: right, up, -forward.
-            const m00 = rx,  m01 = uxv, m02 = -fx;
-            const m10 = ry,  m11 = uyv, m12 = -fy;
-            const m20 = rz,  m21 = uzv, m22 = -fz;
+            m[0] = right[0];   m[4] = camUp[0];   m[8]  = -forward[0];
+            m[1] = right[1];   m[5] = camUp[1];   m[9]  = -forward[1];
+            m[2] = right[2];   m[6] = camUp[2];   m[10] = -forward[2];
 
-            const tr = m00 + m11 + m22;
-            let qx, qy, qz, qw;
-            if (tr > 0) {
-                const s = Math.sqrt(tr + 1) * 2;
-                qw = 0.25 * s;
-                qx = (m21 - m12) / s;
-                qy = (m02 - m20) / s;
-                qz = (m10 - m01) / s;
-            } else if (m00 > m11 && m00 > m22) {
-                const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
-                qw = (m21 - m12) / s;
-                qx = 0.25 * s;
-                qy = (m01 + m10) / s;
-                qz = (m02 + m20) / s;
-            } else if (m11 > m22) {
-                const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
-                qw = (m02 - m20) / s;
-                qx = (m01 + m10) / s;
-                qy = 0.25 * s;
-                qz = (m12 + m21) / s;
-            } else {
-                const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
-                qw = (m10 - m01) / s;
-                qx = (m02 + m20) / s;
-                qy = (m12 + m21) / s;
-                qz = 0.25 * s;
-            }
-            const od = this.orientation.data;
-            od[0] = qx; od[1] = qy; od[2] = qz; od[3] = qw;
-            EzMath.normalize(this.orientation, this.orientation);
+            ZMath.Q.fromM4(m, this.orientation);
             return this;
         }
 
-        // { origin: Vec3, direction: Vec3 }
         raygen(ndc) {
-            const x = ndc[0], y = ndc[1];
-            const f = this.forward.data, r = this.right.data, u = this.up.data;
-            const direction = new Vec3();
-            const dd = direction.data;
+            const tan = Math.tan(this.fov * ZMath.DEG2RAD * 0.5);
 
-            if (!this.orthographic) {
-                const tanFov = Math.tan((this.fov * Math.PI / 180) * 0.5);
-                const px = x * this.aspect * tanFov;
-                const py = y * tanFov;
-                dd[0] = f[0] + r[0]*px + u[0]*py;
-                dd[1] = f[1] + r[1]*px + u[1]*py;
-                dd[2] = f[2] + r[2]*px + u[2]*py;
-                EzMath.normalize(direction, direction);
-                const origin = new Vec3();
-                origin.copy(this.position);
-                return { origin, direction };
-            } else {
-                const h = this.orthoSize, w = h * this.aspect;
-                const xw = x * w, yh = y * h;
-                const origin = new Vec3();
-                const od = origin.data, pd = this.position.data;
-                od[0] = pd[0] + r[0]*xw + u[0]*yh;
-                od[1] = pd[1] + r[1]*xw + u[1]*yh;
-                od[2] = pd[2] + r[2]*xw + u[2]*yh;
-                dd[0] = f[0]; dd[1] = f[1]; dd[2] = f[2];
-                return { origin, direction };
-            }
-        }
+            const x = ndc[0] * tan * this.aspect;
+            const y = ndc[1] * tan;
 
-        translate(offset) {
-            const off = (offset && offset.kind === KIND_VEC3) ? offset : this.#scratchOff.set(offset);
-            EzMath.add(this.position, this.position, off);
-            return this;
+            const dir = ZMath.V3.norm(ZMath.V3.set(x, y, -1));
+            ZMath.Q.transformV3(this.orientation, dir, dir);
+
+            return {
+                origin    : ZMath.V3.copy(this.position),
+                direction : dir
+            };
         }
     }
 
@@ -2007,7 +1218,7 @@ Contains
                                     packed[dst + 2] = d[v*3 + 2];
                                 }
                             }
-                            sub.morph.channels.set(ch, EzRender.uploadTexture2D(
+                            sub.morph.channels.set(ch, ZRender.uploadTexture2D(
                                 gl, null, gl.RGB32F, gl.RGB, gl.FLOAT,
                                 targetCount, vCount, packed,
                             ));
@@ -2041,8 +1252,8 @@ Contains
 
         // Scratch buffers (allocated lazily in computePalette).
         #globalCurrent  = []; // Mat4[]
-        #localScratch   = new Mat4();
-        #skinnedScratch = new Mat4();
+        #localScratch   = ZMath.M4();
+        #skinnedScratch = ZMath.M4();
 
         // bonePoses: Mat4[] (length === bones.length). Returns a Float32Array of
         // n*16 floats (column-major mat4s) suitable for upload to the bone-palette
@@ -2052,17 +1263,17 @@ Contains
             const gc = this.#globalCurrent;
             if (gc.length !== n) {
                 gc.length = 0;
-                for (let i = 0; i < n; i++) gc.push(new Mat4());
+                for (let i = 0; i < n; i++) gc.push(ZMath.M4());
             }
             const palette = new Float32Array(n * 16);
             const local = this.#localScratch, skinned = this.#skinnedScratch;
             for (let i = 0; i < n; i++) {
                 const b = this.bones[i];
-                EzMath.mult(local, b.localBind, bonePoses[i]);
-                if (b.parent < 0) gc[i].copy(local);
-                else              EzMath.mult(gc[i], gc[b.parent], local);
-                EzMath.mult(skinned, gc[i], b.inverseBind);
-                palette.set(skinned.data, i * 16);
+                ZMath.M4.mul(b.localBind, bonePoses[i], local);
+                if (b.parent < 0) gc[i].set(local);
+                else              ZMath.M4.mul(gc[b.parent], local, gc[i]);
+                ZMath.M4.mul(gc[i], b.inverseBind, skinned);
+                palette.set(skinned, i * 16);
             }
             return palette;
         }
@@ -2078,21 +1289,21 @@ Contains
                 if (parent >= i)
                     return _c.warn(`[EzSkeleton3D]`, `"${key}": bone ${i} parent must be < self`) || null;
 
-                const localBind = new Mat4();
-                EzMath.resolveTransform(localBind, b.localBind ?? null);
+                const localBind = ZMath.M4();
+                resolveTransform(localBind, b.localBind ?? null);
 
-                const gb = new Mat4();
-                if (parent < 0) gb.copy(localBind);
-                else            EzMath.mult(gb, globalBind[parent], localBind);
+                const gb = ZMath.M4();
+                if (parent < 0) gb.set(localBind);
+                else            ZMath.M4.mul(globalBind[parent], localBind, gb);
                 globalBind[i] = gb;
 
                 let inverseBind;
-                if (b.inverseBind && b.inverseBind.kind === KIND_MAT4) {
-                    inverseBind = new Mat4();
-                    inverseBind.copy(b.inverseBind);
+                if (b.inverseBind && (ArrayBuffer.isView(b.inverseBind) || Array.isArray(b.inverseBind)) && b.inverseBind.length >= 16) {
+                    inverseBind = ZMath.M4();
+                    inverseBind.set(b.inverseBind);
                 } else {
-                    inverseBind = new Mat4();
-                    if (!EzMath.invert(inverseBind, gb)) inverseBind.identity();
+                    inverseBind = ZMath.M4();
+                    if (!ZMath.M4.invert(gb, inverseBind)) ZMath.M4.identity(inverseBind);
                 }
 
                 bones.push({ parent, localBind, inverseBind, name: typeof b.name === "string" ? b.name : `Bone_${i}` });

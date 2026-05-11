@@ -1,6 +1,7 @@
-import './beta/EzCanvas3D.js';
+import './beta/ZMath.js';
+import './beta/ZCanvas.js';
 import './beta/EzLoader.js';
-import './beta/EzTree.js';
+import './beta/ZTree.js';
 import './beta/EzProject.js';
 
 import './lib/EzCanvas2D.js';

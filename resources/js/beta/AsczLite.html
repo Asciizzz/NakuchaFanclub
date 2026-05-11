@@ -617,7 +617,7 @@
         </div>
     </div>
 
-<script src="EzCanvas3D.js"></script>
+<script src="ZCanvas.js"></script>
 <script src="EzLoader.js"></script>
 <script src="EzProject.js"></script>
 <script>
@@ -643,7 +643,7 @@
 (async () => {
 
     const wrap     = document.getElementById("canvas-wrap");
-    const canvas3d = new EzCanvas3D("rig", { antialias: true, alpha: false, pixelRatio: 1.5, maxPixelRatio: 2 });
+    const canvas3d = new ZCanvas("rig", { antialias: true, alpha: false, pixelRatio: 1.5, maxPixelRatio: 2 });
     canvas3d.mount(wrap);
     canvas3d.fitContainer();
 
@@ -694,7 +694,7 @@
     const _shadowPos = new Vec3();
     let shadowTarget = null;
 
-    shadowTarget = EzRender.createRenderTarget(project.gl, {
+    shadowTarget = ZRender.createRenderTarget(project.gl, {
         width: SHADOW_MAP_SIZE,
         height: SHADOW_MAP_SIZE,
         hasColor: false,
@@ -706,7 +706,7 @@
     });
 
     function buildShader(spec) {
-        const shader = new EzShader();
+        const shader = new ZShader();
         shader.version(spec.version ?? "300 es");
         if (spec.renderCfg) shader.other.renderCfg = spec.renderCfg;
         if (spec.onbind) shader.onbind(spec.onbind);
@@ -721,8 +721,8 @@
             if (stageSpec.main != null) shader.main(stageSpec.main);
         };
 
-        applyStage(EzShader.STAGE.VERTEX, spec.vertex);
-        applyStage(EzShader.STAGE.FRAGMENT, spec.fragment);
+        applyStage(ZShader.STAGE.VERTEX, spec.vertex);
+        applyStage(ZShader.STAGE.FRAGMENT, spec.fragment);
         return shader;
     }
 
@@ -786,17 +786,17 @@
         renderCfg: { blend: true, rQueue: 1000, cull: 'back' },
         morphChannels: [MORPH_POS, MORPH_NRM],
         onbind: (gl, prog) => {
-            EzRender.setUniform(gl, prog, "vec3", "u_light", fx.light);
-            EzRender.setUniform(gl, prog, "vec2", "u_lightRange", fx.lightRange);
-            EzRender.setUniform(gl, prog, "mat4", "u_lightViewProj", shadowViewProj.data);
-            EzRender.setUniform(gl, prog, "float", "u_shadowEnabled", fx.shadowEnabled ? 1 : 0);
-            EzRender.setUniform(gl, prog, "float", "u_shadowMult", fx.shadowMult);
-            EzRender.setUniform(gl, prog, "float", "u_shadowBias", fx.shadowBias);
-            EzRender.setUniform(gl, prog, "float", "u_shadowSoftness", fx.shadowSoftness);
-            EzRender.setUniform(gl, prog, "vec2", "u_shadowTexelSize", [1 / SHADOW_MAP_SIZE, 1 / SHADOW_MAP_SIZE]);
+            ZRender.setUniform(gl, prog, "vec3", "u_light", fx.light);
+            ZRender.setUniform(gl, prog, "vec2", "u_lightRange", fx.lightRange);
+            ZRender.setUniform(gl, prog, "mat4", "u_lightViewProj", shadowViewProj.data);
+            ZRender.setUniform(gl, prog, "float", "u_shadowEnabled", fx.shadowEnabled ? 1 : 0);
+            ZRender.setUniform(gl, prog, "float", "u_shadowMult", fx.shadowMult);
+            ZRender.setUniform(gl, prog, "float", "u_shadowBias", fx.shadowBias);
+            ZRender.setUniform(gl, prog, "float", "u_shadowSoftness", fx.shadowSoftness);
+            ZRender.setUniform(gl, prog, "vec2", "u_shadowTexelSize", [1 / SHADOW_MAP_SIZE, 1 / SHADOW_MAP_SIZE]);
             if (shadowTarget?.depthTex) {
-                const loc = EzRender.getUniformLocation(gl, prog, "u_shadowMap");
-                EzRender.bindSampler(gl, loc, SHADOW_TEX_UNIT, shadowTarget.depthTex);
+                const loc = ZRender.getUniformLocation(gl, prog, "u_shadowMap");
+                ZRender.bindSampler(gl, loc, SHADOW_TEX_UNIT, shadowTarget.depthTex);
             }
         },
         vertex: {
@@ -899,22 +899,22 @@
         renderCfg: { blend: true, rQueue: 1000, cull: 'back' },
         morphChannels: [MORPH_POS, MORPH_NRM],
         onbind: (gl, prog) => {
-            EzRender.setUniform(gl, prog, "vec3", "u_light", fx.light);
-            EzRender.setUniform(gl, prog, "vec2", "u_lightRange", fx.lightRange);
-            EzRender.setUniform(gl, prog, "float", "u_time", performance.now() * 0.001);
-            EzRender.setUniform(gl, prog, "float", "u_shadeNoise", fx.handShadeNoise);
-            EzRender.setUniform(gl, prog, "float", "u_gradientNoise", fx.handGradientNoise);
-            EzRender.setUniform(gl, prog, "float", "u_edgeBleed", fx.handEdgeBleed);
-            EzRender.setUniform(gl, prog, "mat4", "u_lightViewProj", shadowViewProj.data);
-            EzRender.setUniform(gl, prog, "float", "u_shadowEnabled", fx.shadowEnabled ? 1 : 0);
-            EzRender.setUniform(gl, prog, "float", "u_shadowMult", fx.shadowMult);
-            EzRender.setUniform(gl, prog, "float", "u_shadowBias", fx.shadowBias);
-            EzRender.setUniform(gl, prog, "float", "u_shadowSoftness", fx.shadowSoftness);
-            EzRender.setUniform(gl, prog, "vec2", "u_shadowTexelSize", [1 / SHADOW_MAP_SIZE, 1 / SHADOW_MAP_SIZE]);
-            EzRender.setUniform(gl, prog, "vec3", "u_camPos", project.camera.position.data);
+            ZRender.setUniform(gl, prog, "vec3", "u_light", fx.light);
+            ZRender.setUniform(gl, prog, "vec2", "u_lightRange", fx.lightRange);
+            ZRender.setUniform(gl, prog, "float", "u_time", performance.now() * 0.001);
+            ZRender.setUniform(gl, prog, "float", "u_shadeNoise", fx.handShadeNoise);
+            ZRender.setUniform(gl, prog, "float", "u_gradientNoise", fx.handGradientNoise);
+            ZRender.setUniform(gl, prog, "float", "u_edgeBleed", fx.handEdgeBleed);
+            ZRender.setUniform(gl, prog, "mat4", "u_lightViewProj", shadowViewProj.data);
+            ZRender.setUniform(gl, prog, "float", "u_shadowEnabled", fx.shadowEnabled ? 1 : 0);
+            ZRender.setUniform(gl, prog, "float", "u_shadowMult", fx.shadowMult);
+            ZRender.setUniform(gl, prog, "float", "u_shadowBias", fx.shadowBias);
+            ZRender.setUniform(gl, prog, "float", "u_shadowSoftness", fx.shadowSoftness);
+            ZRender.setUniform(gl, prog, "vec2", "u_shadowTexelSize", [1 / SHADOW_MAP_SIZE, 1 / SHADOW_MAP_SIZE]);
+            ZRender.setUniform(gl, prog, "vec3", "u_camPos", project.camera.position.data);
             if (shadowTarget?.depthTex) {
-                const loc = EzRender.getUniformLocation(gl, prog, "u_shadowMap");
-                EzRender.bindSampler(gl, loc, SHADOW_TEX_UNIT, shadowTarget.depthTex);
+                const loc = ZRender.getUniformLocation(gl, prog, "u_shadowMap");
+                ZRender.bindSampler(gl, loc, SHADOW_TEX_UNIT, shadowTarget.depthTex);
             }
         },
         vertex: {
@@ -1125,8 +1125,8 @@
         renderCfg: { blend: true, cull: 'front', rQueue: 999 },
         morphChannels: [MORPH_POS, MORPH_NRM],
         onbind: (gl, prog) => {
-            EzRender.setUniform(gl, prog, "vec4",  "u_outlineColor", fx.outlineColor);
-            EzRender.setUniform(gl, prog, "float", "u_outlineThick", fx.outlineThick);
+            ZRender.setUniform(gl, prog, "vec4",  "u_outlineColor", fx.outlineColor);
+            ZRender.setUniform(gl, prog, "float", "u_outlineThick", fx.outlineThick);
         },
         vertex: {
             inputs: sharedVertexInputs,
@@ -2225,7 +2225,7 @@
         updateShadowCamera();
 
         if (fx.shadowEnabled && shadowTarget?.fbo) {
-            EzRender.withRenderTarget(project.gl, shadowTarget, () => {
+            ZRender.withRenderTarget(project.gl, shadowTarget, () => {
                 const restore = [];
                 for (const n of mainScene._nodes) {
                     if (n === skyNode || !n.meshRender || !n.meshRender.visible) continue;
@@ -2243,7 +2243,7 @@
         // Render. Outline (when enabled) is a separate pass with shader-key
         // swap so the SAME nodes are drawn with the outline shader first
         // (depth-on, cull=front), then the lit pass overdraws normally.
-        EzRender.applyState(project.gl, {
+        ZRender.applyState(project.gl, {
             clearColor: [0.05, 0.055, 0.067, 1.0],
             clear: ['color', 'depth'],
         });

@@ -444,6 +444,15 @@
         const nodes = buildNodes(gltf, name);
 
         return { name, textures, materials, meshes, skeletons, nodes };
+
+        // texture: { name, bitmap, width, height, channels, wrap }
+        // material: { name, baseColor: vec4, albedoIdx, metalRoughIdx, normalIdx, emissiveIdx }
+        // mesh: { name, vertices: Float32Array, attributes: [{ name, size }], indices: Uint16Array|Uint32Array,
+        //         primitives: [{ indexOffset, indexCount, vertexOffset, vertexCount, materialIdx,
+        //                        morphDeltas: { POSITION?, NORMAL?, TANGENT? }, morphTargetCount }],
+        //         morphTargetNames?, defaultWeights? }
+        // skeleton: { name, bones: [{ name, parent, localBind: mat4, inverseBind: mat4?, children[] }] }
+        // node: { name, parent, children[], local: mat4, meshIdx?, skeletonIdx?, skinSkeletonNodeIdx? }
     }
 
     window.EzLoader = { load };

@@ -1,4 +1,4 @@
-/* EzTree
+/* ZTree
 By Asciiz (duh)
 
 An agnostic tree data structure for pretty much anything
@@ -6,41 +6,41 @@ You can use it for a file system, or a game object hierarchy, not my concern.
 
 */
 
-class EzNode {
+class ZNode {
     name = "";
-    parent = null; // key ref to parent node
-    children = []; // array of child node keys
-    $ = {}; // component storage
+    parent = null;
+    children = [];
+    $ = {};
 
+    // Mostly for convenience since everything is public anyway
     rename(newName) { this.name = newName; }
     set(compKey, compData) { this.$[compKey] = compData; }
     get(compKey) { return this.$[compKey]; }
+    remove(compKey) { delete this.$[compKey]; }
 }
 
-class EzTree {
+class ZTree {
     nodes = new Map();
     rootId = null;
     #idCounter = 0;
 
-    compBehaviours = new Map();
-
     #genId() { return this.#idCounter++; }
 
     constructor(rootName) {
-        const rootNode = new EzNode();
+        const rootNode = new ZNode();
         rootNode.name = rootName;
         const id = this.#genId();
         this.nodes.set(id, rootNode);
         this.rootId = id;
     }
 
-    addNode(name, parentId=null) {
+    addNode(name, parentId = null) {
         parentId = parentId ?? this.rootId;
 
         const parentNode = this.nodes.get(parentId);
         if (!parentNode) return null;
 
-        const node = new EzNode();
+        const node = new ZNode();
         node.name = name;
         node.parent = parentId;
 
@@ -78,14 +78,13 @@ class EzTree {
         return true;
     }
 
-    removeNode(id, recursive=true) {
-        if (id === this.rootId) return false; // can't remove root
+    removeNode(id, recursive = true) {
+        if (id === this.rootId) return false;
 
         const node = this.nodes.get(id);
         if (!node) return false;
 
         if (recursive) {
-            // DFS to collect all descendants
             const toRemove = [id];
             const stack = [...node.children];
             while (stack.length > 0) {
@@ -96,8 +95,13 @@ class EzTree {
                 stack.push(...currentNode.children);
             }
             for (const removeId of toRemove) this.nodes.delete(removeId);
+
+            const parentNode = this.nodes.get(node.parent);
+            if (parentNode) {
+                const index = parentNode.children.indexOf(id);
+                if (index !== -1) parentNode.children.splice(index, 1);
+            }
         } else {
-            // Reparent children to removed node's parent before deleting
             for (const childId of node.children) {
                 const child = this.nodes.get(childId);
                 if (child) child.parent = node.parent;
@@ -111,44 +115,28 @@ class EzTree {
             this.nodes.delete(id);
         }
 
-        // Clean up parent's reference if recursive
-        if (recursive) {
-            const parentNode = this.nodes.get(node.parent);
-            if (parentNode) {
-                const index = parentNode.children.indexOf(id);
-                if (index !== -1) parentNode.children.splice(index, 1);
-            }
-        }
-
         return true;
     }
 
-
-    // behaviourFn(nodeId, nodeData, treeRef, parentData) { ... return dataToPassDown }
-    addBehaviour(compKey, behaviourFn) {
-        this.compBehaviours.set(compKey, behaviourFn);
-    }
-
-    traverse(startId, DFS=true) {
+    *traverse(startId = this.rootId, DFS = true) {
         const startNode = this.nodes.get(startId);
         if (!startNode) return;
 
-        const queue = [{ id: startId, parentData: {} }];
+        const queue = [startId];
         while (queue.length > 0) {
-            const { id: currentId, parentData } = DFS ? queue.pop() : queue.shift();
+            const currentId = DFS ? queue.pop() : queue.shift();
             const currentNode = this.nodes.get(currentId);
             if (!currentNode) continue;
 
-            const childData = {};
-            for (const compKey in currentNode.$) {
-                if (this.compBehaviours.has(compKey)) {
-                    childData[compKey] = this.compBehaviours.get(compKey)(
-                        currentId, currentNode, this, parentData[compKey]
-                    );
-                }
-            }
+            yield [currentId, currentNode];
 
-            queue.push(...currentNode.children.map(id => ({ id, parentData: childData })));
+            queue.push(...currentNode.children);
+        }
+    }
+
+    *hasComponent(compKey, startId = this.rootId) {
+        for (const [id, node] of this.traverse(startId)) {
+            if (compKey in node.$) yield [id, node];
         }
     }
 }
