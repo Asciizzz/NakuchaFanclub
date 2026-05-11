@@ -118,7 +118,8 @@ class ZTree {
         return true;
     }
 
-    *traverse(startId = this.rootId, DFS = true) {
+    // filter(id, node) { return 0: yield, 1: skip current, 2: prune branch }
+    *traverse(startId = this.rootId, filter=null, DFS=true) {
         const startNode = this.nodes.get(startId);
         if (!startNode) return;
 
@@ -128,15 +129,14 @@ class ZTree {
             const currentNode = this.nodes.get(currentId);
             if (!currentNode) continue;
 
-            yield [currentId, currentNode];
+            const result = filter ? filter(currentId, currentNode) : 0;
+
+            if (result === 2) continue; // Prune branch
 
             queue.push(...currentNode.children);
-        }
-    }
 
-    *hasComponent(compKey, startId = this.rootId) {
-        for (const [id, node] of this.traverse(startId)) {
-            if (compKey in node.$) yield [id, node];
+            if (result === 1) continue; // Skip current only
+            yield [currentId, currentNode];
         }
     }
 }
