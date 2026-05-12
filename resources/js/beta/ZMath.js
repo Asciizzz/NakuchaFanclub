@@ -137,11 +137,12 @@ ZMath.V2.len = function(a) {
 
 ZMath.V2.norm = function(a, out = null) {
     out ??= new Float32Array(2);
-    const l = ZMath.V2.len(a);
-    const _l = 1.0 / l;
-    if (l > ZMath.EPSILON) {
-        out[0] = a[0] * _l;
-        out[1] = a[1] * _l;
+    const x = a[0], y = a[1];
+    const lsq = x * x + y * y;
+    if (lsq > ZMath.EPSILON * ZMath.EPSILON) {
+        const invLen = 1.0 / Math.sqrt(lsq);
+        out[0] = x * invLen;
+        out[1] = y * invLen;
     } else {
         out[0] = 0;
         out[1] = 0;
@@ -233,12 +234,13 @@ ZMath.V3.len = function(a) {
 
 ZMath.V3.norm = function(a, out = null) {
     out ??= new Float32Array(3);
-    const l = ZMath.V3.len(a);
-    const _l = 1.0 / l;
-    if (l > ZMath.EPSILON) {
-        out[0] = a[0] * _l;
-        out[1] = a[1] * _l;
-        out[2] = a[2] * _l;
+    const x = a[0], y = a[1], z = a[2];
+    const lsq = x * x + y * y + z * z;
+    if (lsq > ZMath.EPSILON * ZMath.EPSILON) {
+        const invLen = 1.0 / Math.sqrt(lsq);
+        out[0] = x * invLen;
+        out[1] = y * invLen;
+        out[2] = z * invLen;
     } else {
         out[0] = 0;
         out[1] = 0;
@@ -322,13 +324,14 @@ ZMath.V4.len = function(a) {
 
 ZMath.V4.norm = function(a, out = null) {
     out ??= new Float32Array(4);
-    const l = ZMath.V4.len(a);
-    const _l = 1.0 / l;
-    if (l > ZMath.EPSILON) {
-        out[0] = a[0] * _l;
-        out[1] = a[1] * _l;
-        out[2] = a[2] * _l;
-        out[3] = a[3] * _l;
+    const x = a[0], y = a[1], z = a[2], w = a[3];
+    const lsq = x * x + y * y + z * z + w * w;
+    if (lsq > ZMath.EPSILON * ZMath.EPSILON) {
+        const invLen = 1.0 / Math.sqrt(lsq);
+        out[0] = x * invLen;
+        out[1] = y * invLen;
+        out[2] = z * invLen;
+        out[3] = w * invLen;
     } else {
         out[0] = 0;
         out[1] = 0;
@@ -378,13 +381,14 @@ ZMath.Q.len = function(a) {
 
 ZMath.Q.norm = function(a, out = null) {
     out ??= new Float32Array(4);
-    const l = ZMath.Q.len(a);
-    const _l = 1.0 / l;
-    if (l > ZMath.EPSILON) {
-        out[0] = a[0] * _l;
-        out[1] = a[1] * _l;
-        out[2] = a[2] * _l;
-        out[3] = a[3] * _l;
+    const x = a[0], y = a[1], z = a[2], w = a[3];
+    const lsq = x * x + y * y + z * z + w * w;
+    if (lsq > ZMath.EPSILON * ZMath.EPSILON) {
+        const invLen = 1.0 / Math.sqrt(lsq);
+        out[0] = x * invLen;
+        out[1] = y * invLen;
+        out[2] = z * invLen;
+        out[3] = w * invLen;
     } else {
         out[0] = 0;
         out[1] = 0;
@@ -546,7 +550,7 @@ ZMath.M4.identity = function(out = null) {
 
 ZMath.M4.copy = function(a, out = null) {
     out ??= new Float32Array(16);
-    for (let i = 0; i < 16; i++) out[i] = a[i];
+    out.set(a);
     return out;
 };
 
@@ -729,8 +733,18 @@ ZMath.M4.fromTRS = function(pos, rotQ, scale, out = null) {
 };
 
 ZMath.M4.translate = function(m, v, out = null) {
-    const t = ZMath.M4.fromTranslation(v);
-    return ZMath.M4.mul(m, t, out);
+    out ??= new Float32Array(16);
+    const x = v[0], y = v[1], z = v[2];
+    if (out !== m) {
+        out[0] = m[0]; out[1] = m[1]; out[2] = m[2]; out[3] = m[3];
+        out[4] = m[4]; out[5] = m[5]; out[6] = m[6]; out[7] = m[7];
+        out[8] = m[8]; out[9] = m[9]; out[10] = m[10]; out[11] = m[11];
+    }
+    out[12] = m[0] * x + m[4] * y + m[8] * z + m[12];
+    out[13] = m[1] * x + m[5] * y + m[9] * z + m[13];
+    out[14] = m[2] * x + m[6] * y + m[10] * z + m[14];
+    out[15] = m[3] * x + m[7] * y + m[11] * z + m[15];
+    return out;
 };
 
 ZMath.M4.rotateX = function(m, rad, out = null) {
@@ -754,8 +768,13 @@ ZMath.M4.rotateQ = function(m, q, out = null) {
 };
 
 ZMath.M4.scale = function(m, v, out = null) {
-    const s = ZMath.M4.fromScaling(v);
-    return ZMath.M4.mul(m, s, out);
+    out ??= new Float32Array(16);
+    const x = v[0], y = v[1], z = v[2];
+    out[0] = m[0] * x; out[1] = m[1] * x; out[2] = m[2] * x; out[3] = m[3] * x;
+    out[4] = m[4] * y; out[5] = m[5] * y; out[6] = m[6] * y; out[7] = m[7] * y;
+    out[8] = m[8] * z; out[9] = m[9] * z; out[10] = m[10] * z; out[11] = m[11] * z;
+    out[12] = m[12]; out[13] = m[13]; out[14] = m[14]; out[15] = m[15];
+    return out;
 };
 
 ZMath.M4.perspective = function(fovy, aspect, near, far, out = null) {
@@ -806,10 +825,11 @@ ZMath.M4.lookAt = function(eye, target, up, out = null) {
     let fz = eye[2] - target[2];
     let len = Math.sqrt(fx * fx + fy * fy + fz * fz);
     if (len < ZMath.EPSILON) {
-        out[10] = 1;
+        ZMath.M4.identity(out);
         return out;
     }
-    fx /= len; fy /= len; fz /= len;
+    const invLenF = 1 / len;
+    fx *= invLenF; fy *= invLenF; fz *= invLenF;
 
     // right = up × forward
     let rx = up[1] * fz - up[2] * fy;
@@ -817,7 +837,10 @@ ZMath.M4.lookAt = function(eye, target, up, out = null) {
     let rz = up[0] * fy - up[1] * fx;
     len = Math.sqrt(rx * rx + ry * ry + rz * rz);
     if (len < ZMath.EPSILON) { rx = 0; ry = 0; rz = 0; }
-    else { rx /= len; ry /= len; rz /= len; }
+    else {
+        const invLenR = 1 / len;
+        rx *= invLenR; ry *= invLenR; rz *= invLenR;
+    }
 
     // recalc up = forward × right
     const ux = fy * rz - fz * ry;

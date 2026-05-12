@@ -6,12 +6,13 @@ Holy crap guys I actually made a proper 3D html webgl renderer instead of using 
 
 Contains
     ZRender     static, dimension-agnostic GL helpers
+    ZBuffer     WebGL-backed structured buffer container
     ZShader     low-level shader compile + render-state base
     ZCanvas   thin wrapper around <canvas> + WebGL2 context
 
     -- Highly specialized --
     ZCamera   view/projection helper
-    ZMesh        dimension-agnostic VAO/VBO geometry container
+    ZMesh        paused; old geometry container intentionally removed
     EzSkeleton3D bone rig + skinning palette builder
 */
 
@@ -28,24 +29,23 @@ Contains
         static sampler = t => t === "sampler2D" || t === "highp sampler2D"
     }
 
-    const TAGRENDER = "[ZRender]";
     class ZRender {
         static #BLEND_ENUM_BY_NAME = {
-            ZERO:                     0,
-            ONE:                      1,
-            SRC_ALPHA:                0x0302,
-            ONE_MINUS_SRC_ALPHA:      0x0303,
-            DST_ALPHA:                0x0304,
-            ONE_MINUS_DST_ALPHA:      0x0305,
-            SRC_COLOR:                0x0300,
-            ONE_MINUS_SRC_COLOR:      0x0301,
-            DST_COLOR:                0x0306,
-            ONE_MINUS_DST_COLOR:      0x0307,
-            CONSTANT_COLOR:           0x8001,
+            ZERO: 0,
+            ONE: 1,
+            SRC_ALPHA: 0x0302,
+            ONE_MINUS_SRC_ALPHA: 0x0303,
+            DST_ALPHA: 0x0304,
+            ONE_MINUS_DST_ALPHA: 0x0305,
+            SRC_COLOR: 0x0300,
+            ONE_MINUS_SRC_COLOR: 0x0301,
+            DST_COLOR: 0x0306,
+            ONE_MINUS_DST_COLOR: 0x0307,
+            CONSTANT_COLOR: 0x8001,
             ONE_MINUS_CONSTANT_COLOR: 0x8002,
-            CONSTANT_ALPHA:           0x8003,
+            CONSTANT_ALPHA: 0x8003,
             ONE_MINUS_CONSTANT_ALPHA: 0x8004,
-            SRC_ALPHA_SATURATE:       0x0308,
+            SRC_ALPHA_SATURATE: 0x0308,
         };
 
         static #resolveBlendEnum(gl, spec, fallback) {
@@ -64,7 +64,7 @@ Contains
             gl.useProgram(program);
         }
 
-        static applyState(gl, cfg) {
+        static setState(gl, cfg) {
             if (!cfg) return;
             const hasProp = (prop) => Object.prototype.hasOwnProperty.call(cfg, prop);
 
@@ -83,9 +83,9 @@ Contains
             }
             if (hasProp('cull')) {
                 switch (cfg.cull) {
-                    case 'none':  gl.disable(gl.CULL_FACE); break;
-                    case 'front': gl.enable(gl.CULL_FACE);  gl.cullFace(gl.FRONT); break;
-                    default:      gl.enable(gl.CULL_FACE);  gl.cullFace(gl.BACK);  break;
+                    case 'none': gl.disable(gl.CULL_FACE); break;
+                    case 'front': gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); break;
+                    default: gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); break;
                 }
             }
             if (hasProp('clearColor') && cfg.clearColor != null) {
@@ -99,8 +99,8 @@ Contains
                 let mask = 0;
                 for (const k of list) {
                     switch (k) {
-                        case 'color':   mask |= gl.COLOR_BUFFER_BIT; break;
-                        case 'depth':   mask |= gl.DEPTH_BUFFER_BIT; break;
+                        case 'color': mask |= gl.COLOR_BUFFER_BIT; break;
+                        case 'depth': mask |= gl.DEPTH_BUFFER_BIT; break;
                         case 'stencil': mask |= gl.STENCIL_BUFFER_BIT; break;
                     }
                 }
@@ -126,12 +126,12 @@ Contains
 
         static uploadVBO(gl, vbo, data, usage) {
             const need = data.byteLength;
-            const cap  = vbo._ezCapacity | 0;
+            const cap = vbo._ezCapacity | 0;
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
             if (need > 0 && need <= cap) {
                 gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
             } else {
-                const grow   = Math.ceil(cap * 1.5);
+                const grow = Math.ceil(cap * 1.5);
                 const newCap = Math.max(need, grow);
                 gl.bufferData(gl.ARRAY_BUFFER, newCap, usage ?? gl.DYNAMIC_DRAW);
                 if (need > 0) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
@@ -139,10 +139,26 @@ Contains
             }
         }
 
+        static uploadBuffer(gl, target, buffer, data, usage, byteOffset = 0) {
+            if (!buffer || !data) return buffer;
+            gl.bindBuffer(target, buffer);
+            if (byteOffset > 0) {
+                gl.bufferSubData(target, byteOffset, data);
+                return buffer;
+            }
+            gl.bufferData(target, data, usage ?? gl.STATIC_DRAW);
+            return buffer;
+        }
+
+        static bindBuffer(gl, target, buffer) {
+            gl.bindBuffer(target, buffer ?? null);
+            return buffer;
+        }
+
         static setConstAttrs(gl, list) {
             for (const a of list) {
-                const v = a.value ?? a.default ?? [0,0,0,0];
-                gl.vertexAttrib4f(a.loc, v[0]??0, v[1]??0, v[2]??0, v[3]??0);
+                const v = a.value ?? a.default ?? [0, 0, 0, 0];
+                gl.vertexAttrib4f(a.loc, v[0] ?? 0, v[1] ?? 0, v[2] ?? 0, v[3] ?? 0);
             }
         }
 
@@ -175,7 +191,7 @@ Contains
 
             const isImageSrc = data instanceof ImageBitmap || data instanceof HTMLImageElement || data instanceof HTMLCanvasElement;
             if (isImageSrc) gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, format, type, data);
-            else            gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, data);
+            else gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, data);
 
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
@@ -202,8 +218,8 @@ Contains
             if (!existing) {
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             }
             gl.texImage2D(gl.TEXTURE_2D, 0, internalFmt, w, h, 0, fmt, type, data);
             if (!explicit) gl.activeTexture(prevActive);
@@ -264,7 +280,7 @@ Contains
             }
 
             const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-            if (status !== gl.FRAMEBUFFER_COMPLETE) _c.warn(TAGRENDER, "framebuffer incomplete:", status);
+            if (status !== gl.FRAMEBUFFER_COMPLETE) _c.warn("[ZRender]", "framebuffer incomplete:", status);
 
             gl.bindTexture(gl.TEXTURE_2D, null);
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -419,15 +435,14 @@ Contains
     }
 
     class ZShader {
-        program   = null;
-        other     = {};   // free whatever things (includes renderCfg, onbind, custom data)
+        program = null;
+        other = {};   // free whatever things (includes renderCfg, onbind, custom data)
 
         _compiled = false;
         get compiled() { return this._compiled; }
         #id = null;
         get id() { return this.#id; }
 
-        #activeStage = 0;
         #spec = null;
 
         constructor() {
@@ -449,22 +464,24 @@ Contains
             this.attributeLocations = new Map();
         }
 
+        get versionText() { return this.#spec.version; }
+
         static BLEND = {
-            ZERO:                     0,
-            ONE:                      1,
-            SRC_ALPHA:                0x0302,
-            ONE_MINUS_SRC_ALPHA:      0x0303,
-            DST_ALPHA:                0x0304,
-            ONE_MINUS_DST_ALPHA:      0x0305,
-            SRC_COLOR:                0x0300,
-            ONE_MINUS_SRC_COLOR:      0x0301,
-            DST_COLOR:                0x0306,
-            ONE_MINUS_DST_COLOR:      0x0307,
-            CONSTANT_COLOR:           0x8001,
+            ZERO: 0,
+            ONE: 1,
+            SRC_ALPHA: 0x0302,
+            ONE_MINUS_SRC_ALPHA: 0x0303,
+            DST_ALPHA: 0x0304,
+            ONE_MINUS_DST_ALPHA: 0x0305,
+            SRC_COLOR: 0x0300,
+            ONE_MINUS_SRC_COLOR: 0x0301,
+            DST_COLOR: 0x0306,
+            ONE_MINUS_DST_COLOR: 0x0307,
+            CONSTANT_COLOR: 0x8001,
             ONE_MINUS_CONSTANT_COLOR: 0x8002,
-            CONSTANT_ALPHA:           0x8003,
+            CONSTANT_ALPHA: 0x8003,
             ONE_MINUS_CONSTANT_ALPHA: 0x8004,
-            SRC_ALPHA_SATURATE:       0x0308,
+            SRC_ALPHA_SATURATE: 0x0308,
         };
 
         static STAGE = {
@@ -489,7 +506,7 @@ Contains
             return v;
         }
 
-        #resolveStages(options, fallback = [this.#activeStage]) {
+        #resolveStages(options, fallback = [0, 1]) {
             const stage = options?.stage ?? options?.pass;
             if (stage == null) return fallback.slice();
             if (stage === 'both') return [0, 1];
@@ -576,90 +593,106 @@ Contains
             return stage === 0 ? 'primary' : 'secondary';
         }
 
-        stage(stageIndex = 0) {
-            this.#activeStage = this.#assertStageIndex(stageIndex);
-            return this;
+        read() {
+            return {
+                version: this.#spec.version,
+                outputName: this.#spec.outputName,
+                links: this.#spec.links.map(decl => ({ ...decl })),
+                stages: this.#spec.passes.map(stage => ({
+                    inputs: stage.inputs.map(decl => ({ ...decl })),
+                    outputs: stage.outputs.map(decl => ({ ...decl })),
+                    uniforms: stage.uniforms.map(decl => ({ ...decl })),
+                    methods: stage.methods.map(method => ({ ...method })),
+                    precision: { ...stage.precision },
+                    main: stage.main,
+                })),
+            };
         }
 
-        version(versionText) {
-            if (_is.str(versionText)) this.#spec.version = versionText.trim();
-            return this;
+        #hasStageConfig(spec) {
+            return (
+                spec.precision != null ||
+                spec.input != null ||
+                spec.output != null ||
+                spec.uniform != null ||
+                spec.method != null ||
+                spec.main != null ||
+                Array.isArray(spec.inputs) ||
+                Array.isArray(spec.outputs) ||
+                Array.isArray(spec.uniforms) ||
+                Array.isArray(spec.methods)
+            );
         }
 
-        precision(type, value, options = {}) {
-            if (!_is.str(type) || !_is.str(value)) throw new Error('[ZShader] precision requires type and value');
-            const stages = this.#resolveStages(options);
+        #applyRootWrite(spec) {
+            if (spec.version != null) {
+                if (!_is.str(spec.version)) throw new Error('[ZShader] version must be a string');
+                this.#spec.version = spec.version.trim();
+            }
+            if (spec.outputName != null) {
+                if (!_is.str(spec.outputName)) throw new Error('[ZShader] outputName must be a string');
+                this.#spec.outputName = spec.outputName.trim();
+            }
+            if (spec.link != null) this.#spec.links.push(this.#normalizeDecl('link', spec.link));
+            if (Array.isArray(spec.links)) {
+                for (const linkSpec of spec.links) this.#spec.links.push(this.#normalizeDecl('link', linkSpec));
+            }
+        }
+
+        #writeStagePrecision(pass, spec) {
+            if (spec.precision == null) return;
+            if (_is.obj(spec.precision)) {
+                for (const [type, value] of Object.entries(spec.precision)) {
+                    if (_is.str(type) && _is.str(value)) pass.precision[type] = value;
+                }
+                return;
+            }
+            if (_is.str(spec.precisionType) && _is.str(spec.precision)) {
+                pass.precision[spec.precisionType] = spec.precision;
+                return;
+            }
+            throw new Error('[ZShader] precision must be { type: value }');
+        }
+
+        #pushStageDecls(pass, spec) {
+            if (spec.input != null) pass.inputs.push(this.#normalizeDecl('input', spec.input));
+            if (Array.isArray(spec.inputs)) {
+                for (const item of spec.inputs) pass.inputs.push(this.#normalizeDecl('input', item));
+            }
+            if (spec.output != null) pass.outputs.push(this.#normalizeDecl('output', spec.output));
+            if (Array.isArray(spec.outputs)) {
+                for (const item of spec.outputs) pass.outputs.push(this.#normalizeDecl('output', item));
+            }
+            if (spec.uniform != null) pass.uniforms.push(this.#normalizeDecl('uniform', spec.uniform));
+            if (Array.isArray(spec.uniforms)) {
+                for (const item of spec.uniforms) pass.uniforms.push(this.#normalizeDecl('uniform', item));
+            }
+            if (spec.method != null) pass.methods.push(this.#normalizeMethod(spec.method));
+            if (Array.isArray(spec.methods)) {
+                for (const item of spec.methods) pass.methods.push(this.#normalizeMethod(item));
+            }
+            if (spec.main != null) pass.main = String(spec.main);
+        }
+
+        #applyStageWrite(spec) {
+            if (!this.#hasStageConfig(spec)) return;
+            if (spec.stage == null && spec.pass == null) {
+                throw new Error('[ZShader] write() requires stage/pass when writing stage fields');
+            }
+            const stages = this.#resolveStages({ stage: spec.stage ?? spec.pass });
             for (const stage of stages) {
-                this.#spec.passes[stage].precision[type] = value;
+                const pass = this.#spec.passes[stage];
+                this.#writeStagePrecision(pass, spec);
+                this.#pushStageDecls(pass, spec);
             }
-            return this;
         }
 
-        input(typeOrSpec, name = null, options = {}) {
-            const spec = this.#normalizeDecl('input', typeOrSpec, name, options);
-            const stages = this.#resolveStages(options);
-            for (const stage of stages) this.#spec.passes[stage].inputs.push(spec);
-            return this;
-        }
-
-        inputs(specs, options = {}) {
-            if (Array.isArray(specs)) {
-                for (const spec of specs) this.input(spec, null, options);
-            }
-            return this;
-        }
-
-        output(typeOrSpec, name = null, options = {}) {
-            const spec = this.#normalizeDecl('output', typeOrSpec, name, options);
-            const stages = this.#resolveStages(options);
-            for (const stage of stages) this.#spec.passes[stage].outputs.push(spec);
-            return this;
-        }
-
-        outputs(specs, options = {}) {
-            if (Array.isArray(specs)) {
-                for (const spec of specs) this.output(spec, null, options);
-            }
-            return this;
-        }
-
-        uniform(typeOrSpec, name = null, options = {}) {
-            const spec = this.#normalizeDecl('uniform', typeOrSpec, name, options);
-            const stages = this.#resolveStages(options);
-            for (const stage of stages) this.#spec.passes[stage].uniforms.push(spec);
-            return this;
-        }
-
-        uniforms(specs, options = {}) {
-            if (Array.isArray(specs)) {
-                for (const spec of specs) this.uniform(spec, null, options);
-            }
-            return this;
-        }
-
-        link(typeOrSpec, name = null, options = {}) {
-            const spec = this.#normalizeDecl('link', typeOrSpec, name, options);
-            this.#spec.links.push(spec);
-            return this;
-        }
-
-        method(methodOrSig, body = null, options = {}) {
-            const spec = this.#normalizeMethod(methodOrSig, body);
-            const stages = this.#resolveStages(options);
-            for (const stage of stages) this.#spec.passes[stage].methods.push(spec);
-            return this;
-        }
-
-        methods(specs, options = {}) {
-            if (Array.isArray(specs)) {
-                for (const spec of specs) this.method(spec, null, options);
-            }
-            return this;
-        }
-
-        main(body, options = {}) {
-            const stage = this.#assertStageIndex(options.stage ?? options.pass ?? this.#activeStage);
-            this.#spec.passes[stage].main = String(body ?? '');
+        write(spec = {}) {
+            if (!_is.obj(spec)) throw new Error('[ZShader] write() expects an object');
+            this.#applyRootWrite(spec);
+            this.#applyStageWrite(spec);
+            if (spec.custom != null) this.custom(spec.custom);
+            if (_is.obj(spec.customs)) this.customs(spec.customs);
             return this;
         }
 
@@ -745,24 +778,31 @@ Contains
             return built;
         }
 
-        compile(vertSrc, fragSrc, gl) {
-            if (arguments.length === 1) {
-                gl = vertSrc;
-                const built = this.build();
-                this.program = this.#createProgram(gl, built.primary, built.secondary);
-                if (!this.program) throw new Error('[ZShader] GL program compilation failed');
-                this.#id = ZShader.#hashSourcePair(built.primary, built.secondary);
-                this.#refreshReflection(gl);
-                this._compiled = true;
-                return this;
-            }
+        #compileFromBuilt(gl, built) {
+            this.program = this.#createProgram(gl, built.primary, built.secondary);
+            if (!this.program) throw new Error('[ZShader] GL program compilation failed');
+            this.#id = ZShader.#hashSourcePair(built.primary, built.secondary);
+            this.#refreshReflection(gl);
+            this._compiled = true;
+            return this;
+        }
 
+        #compileFromSources(gl, vertSrc, fragSrc) {
             this.program = this.#createProgram(gl, vertSrc, fragSrc);
             if (!this.program) throw new Error("[ZShader] GL program compilation failed");
             this.#id = ZShader.#hashSourcePair(String(vertSrc ?? ""), String(fragSrc ?? ""));
             this.#refreshReflection(gl);
             this._compiled = true;
             return this;
+        }
+
+        compile(vertSrc, fragSrc, gl) {
+            if (arguments.length === 1) {
+                gl = vertSrc;
+                const built = this.build();
+                return this.#compileFromBuilt(gl, built);
+            }
+            return this.#compileFromSources(gl, vertSrc, fragSrc);
         }
 
         static #hashSourcePair(a, b) {
@@ -792,10 +832,10 @@ Contains
                 loc: gl.getUniformLocation(this.program, decl.name),
             });
 
-            this.vertexInputs   = stage0.inputs.map(resolveAttr);
-            this.vertexOutputs  = stage0.outputs.map(resolveUniform);
+            this.vertexInputs = stage0.inputs.map(resolveAttr);
+            this.vertexOutputs = stage0.outputs.map(resolveUniform);
             this.vertexUniforms = stage0.uniforms.map(resolveUniform);
-            this.fragmentInputs  = stage1.inputs.map(resolveUniform);
+            this.fragmentInputs = stage1.inputs.map(resolveUniform);
             this.fragmentOutputs = stage1.outputs.map(resolveUniform);
             this.fragmentUniforms = stage1.uniforms.map(resolveUniform);
 
@@ -819,14 +859,14 @@ Contains
         }
 
         static #UNI = {
-            mat4:  (gl, loc, v) => gl.uniformMatrix4fv(loc, false, v),
-            mat3:  (gl, loc, v) => gl.uniformMatrix3fv(loc, false, v),
-            vec4:  (gl, loc, v) => gl.uniform4fv(loc, v),
-            vec3:  (gl, loc, v) => gl.uniform3fv(loc, v),
-            vec2:  (gl, loc, v) => gl.uniform2fv(loc, v),
+            mat4: (gl, loc, v) => gl.uniformMatrix4fv(loc, false, v),
+            mat3: (gl, loc, v) => gl.uniformMatrix3fv(loc, false, v),
+            vec4: (gl, loc, v) => gl.uniform4fv(loc, v),
+            vec3: (gl, loc, v) => gl.uniform3fv(loc, v),
+            vec2: (gl, loc, v) => gl.uniform2fv(loc, v),
             float: (gl, loc, v) => gl.uniform1f(loc, v),
-            int:   (gl, loc, v) => gl.uniform1i(loc, v),
-            bool:  (gl, loc, v) => gl.uniform1i(loc, v ? 1 : 0),
+            int: (gl, loc, v) => gl.uniform1i(loc, v),
+            bool: (gl, loc, v) => gl.uniform1i(loc, v ? 1 : 0),
         };
 
         setUniform(gl, name, value) {
@@ -851,7 +891,7 @@ Contains
             return this;
         }
 
-        applyRenderState(gl) { ZRender.applyState(gl, this.other.renderCfg); return this; }
+        applyRenderState(gl) { ZRender.setState(gl, this.other.renderCfg); return this; }
         static restoreRenderState(gl) { ZRender.restoreDefaultState(gl); }
 
         #compileShader(gl, type, src) {
@@ -868,7 +908,7 @@ Contains
         }
 
         #createProgram(gl, vertSrc, fragSrc) {
-            const vshader = this.#compileShader(gl, gl.VERTEX_SHADER,   vertSrc);
+            const vshader = this.#compileShader(gl, gl.VERTEX_SHADER, vertSrc);
             const fshader = this.#compileShader(gl, gl.FRAGMENT_SHADER, fragSrc);
 
             if (!vshader || !fshader) return null;
@@ -889,29 +929,28 @@ Contains
         }
     }
 
-    const TAGC3D = "[ZCanvas]";
     class ZCanvas {
-        name    = null;
+        name = null;
         #canvas = null;
-        #gl     = null;
+        #gl = null;
 
         get canvas() { return this.#canvas; }
-        get gl()     { return this.#gl; }
+        get gl() { return this.#gl; }
 
-        #logicalWidth  = 800;
+        #logicalWidth = 800;
         #logicalHeight = 600;
-        #pixelRatio    = 1;
+        #pixelRatio = 1;
         #maxPixelRatio = 2;
-        #msaaEnabled   = false;
+        #msaaEnabled = false;
 
         get info() {
             return {
-                width:         this.#canvas.width,
-                height:        this.#canvas.height,
-                logicalWidth:  this.#logicalWidth,
+                width: this.#canvas.width,
+                height: this.#canvas.height,
+                logicalWidth: this.#logicalWidth,
                 logicalHeight: this.#logicalHeight,
-                aspectRatio:   this.#logicalWidth / Math.max(1e-6, this.#logicalHeight),
-                pixelRatio:    this.#pixelRatio,
+                aspectRatio: this.#logicalWidth / Math.max(1e-6, this.#logicalHeight),
+                pixelRatio: this.#pixelRatio,
             };
         }
 
@@ -923,9 +962,9 @@ Contains
 
         aaInfo() {
             return {
-                mode:          "msaa+ssaa",
-                msaa:          this.#msaaEnabled,
-                pixelRatio:    this.#pixelRatio,
+                mode: "msaa+ssaa",
+                msaa: this.#msaaEnabled,
+                pixelRatio: this.#pixelRatio,
                 maxPixelRatio: this.#maxPixelRatio,
             };
         }
@@ -940,7 +979,7 @@ Contains
         constructor(name, opts = {}) {
             this.name = name || "canvas";
             const c = document.createElement("canvas");
-            c.width  = 800;
+            c.width = 800;
             c.height = 600;
             c.style.background = "transparent";
             this.#canvas = c;
@@ -948,7 +987,7 @@ Contains
             const antialias = typeof opts.antialias === "boolean" ? opts.antialias : true;
             const alpha = typeof opts.alpha === "boolean" ? opts.alpha : true;
             const gl = c.getContext("webgl2", { alpha, antialias });
-            if (!gl) throw new Error(`${TAGC3D} WebGL2 not supported`);
+            if (!gl) throw new Error(`[ZCanvas] WebGL2 not supported`);
             this.#gl = gl;
 
             this.#maxPixelRatio = (typeof opts.maxPixelRatio === "number" && Number.isFinite(opts.maxPixelRatio))
@@ -974,13 +1013,13 @@ Contains
         }
 
         #applyViewportSize() {
-            const drawW = Math.max(1, Math.round(this.#logicalWidth  * this.#pixelRatio));
+            const drawW = Math.max(1, Math.round(this.#logicalWidth * this.#pixelRatio));
             const drawH = Math.max(1, Math.round(this.#logicalHeight * this.#pixelRatio));
 
-            this.#canvas.style.width  = `${this.#logicalWidth}px`;
+            this.#canvas.style.width = `${this.#logicalWidth}px`;
             this.#canvas.style.height = `${this.#logicalHeight}px`;
 
-            if (this.#canvas.width  !== drawW) this.#canvas.width  = drawW;
+            if (this.#canvas.width !== drawW) this.#canvas.width = drawW;
             if (this.#canvas.height !== drawH) this.#canvas.height = drawH;
 
             this.#gl.viewport(0, 0, drawW, drawH);
@@ -995,7 +1034,7 @@ Contains
             return this;
         }
         resize(w, h) {
-            this.#logicalWidth  = Math.max(1, Math.round(w));
+            this.#logicalWidth = Math.max(1, Math.round(w));
             this.#logicalHeight = Math.max(1, Math.round(h));
             this.#applyViewportSize();
             return this;
@@ -1011,23 +1050,23 @@ Contains
     window.ZShader = ZShader;
     window.ZCanvas = ZCanvas;
 
-// Every thing below this line is highly specialized for 3D-object-driven rendering
-// --------------------------------------------------------------------------------
+    // Every thing below this line is highly specialized for 3D-object-driven rendering
+    // --------------------------------------------------------------------------------
 
     class ZCamera {
-        position    = ZMath.V3();
+        position = ZMath.V3();
         orientation = ZMath.Q.identity();
 
         near = 0.1; far = 1000;
-        fov  = 45;  // degrees
+        fov = 45;  // degrees
         aspect = 1;
 
         orthographic = false;
-        orthoSize    = 5;   // half-height
+        orthoSize = 5;   // half-height
 
         get forward() { return ZMath.Q.transformV3(this.orientation, ZMath.V3.FORWARD); }
-        get right()   { return ZMath.Q.transformV3(this.orientation, ZMath.V3.RIGHT);   }
-        get up()      { return ZMath.Q.transformV3(this.orientation, ZMath.V3.UP);      }
+        get right() { return ZMath.Q.transformV3(this.orientation, ZMath.V3.RIGHT); }
+        get up() { return ZMath.Q.transformV3(this.orientation, ZMath.V3.UP); }
 
         get view() {
             const target = ZMath.V3.add(this.position, this.forward);
@@ -1062,14 +1101,14 @@ Contains
             up ??= ZMath.V3.UP;
 
             const forward = ZMath.V3.norm(ZMath.V3.sub(target, this.position));
-            const right   = ZMath.V3.norm(ZMath.V3.cross(up, forward));
-            const camUp   = ZMath.V3.cross(forward, right);
+            const right = ZMath.V3.norm(ZMath.V3.cross(up, forward));
+            const camUp = ZMath.V3.cross(forward, right);
 
             const m = ZMath.M4.identity();
 
-            m[0] = right[0];   m[4] = camUp[0];   m[8]  = -forward[0];
-            m[1] = right[1];   m[5] = camUp[1];   m[9]  = -forward[1];
-            m[2] = right[2];   m[6] = camUp[2];   m[10] = -forward[2];
+            m[0] = right[0]; m[4] = camUp[0]; m[8] = -forward[0];
+            m[1] = right[1]; m[5] = camUp[1]; m[9] = -forward[1];
+            m[2] = right[2]; m[6] = camUp[2]; m[10] = -forward[2];
 
             ZMath.Q.fromM4(m, this.orientation);
             return this;
@@ -1085,306 +1124,136 @@ Contains
             ZMath.Q.transformV3(this.orientation, dir, dir);
 
             return {
-                origin    : ZMath.V3.copy(this.position),
-                direction : dir
+                origin: ZMath.V3.copy(this.position),
+                direction: dir
             };
         }
     }
 
-    class ZSubmesh {
-        constructor(data = {}) {
-            this.vertexOffset = data.vertexOffset ?? 0;
-            this.vertexCount  = data.vertexCount ?? 0;
-            this.baseVertex   = data.baseVertex ?? this.vertexOffset ?? 0;
-            this.indexOffset  = data.indexOffset ?? 0;
-            this.indexCount   = data.indexCount ?? 0;
-            this.mode         = data.mode ?? null;
-            this.info         = data.info ?? null;
+    class ZBuffer {
+        #gl;          // WebGLRenderingContext
+        #handle;      // WebGLBuffer (opaque GPU handle)
+        #target;      // binding point (ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER…)
+        #usage;       // driver hint (STATIC_DRAW, DYNAMIC_DRAW…)
+        #byteLength;  // allocated byte size on GPU (0 = empty)
+
+        /**
+         * @param {WebGLRenderingContext} gl
+         * @param {GLenum} target  - default: ARRAY_BUFFER
+         * @param {GLenum} usage   - default: STATIC_DRAW
+         */
+        constructor(gl, target, usage) {
+            this.#gl = gl;
+            this.#target = target ?? gl.ARRAY_BUFFER;
+            this.#usage = usage ?? gl.STATIC_DRAW;
+            this.#handle = gl.createBuffer();
+            this.#byteLength = 0;
+            if (!this.#handle) throw new Error('ZBuffer: createBuffer() failed');
+        }
+
+        get byteLength() { return this.#byteLength; }
+        get target() { return this.#target; }
+        get handle() { return this.#handle; } // escape hatch
+        get alive() { return this.#handle !== null; }
+
+        bind() {
+            this.#gl.bindBuffer(this.#target, this.#handle);
+            return this;
+        }
+
+        unbind() {
+            this.#gl.bindBuffer(this.#target, null);
+            return this;
+        }
+
+        delete() {
+            this.#gl.deleteBuffer(this.#handle);
+            this.#handle = null;
+            this.#byteLength = 0;
+        }
+
+        /**
+         * Full upload - allocates (or re-allocates) GPU memory.
+         * Orphans the old store if size changed, hinting the driver
+         * to give us fresh memory without a sync stall.
+         * @param {TypedArray|ArrayBuffer} data
+         */
+        upload(data) {
+            this.bind();
+            this.#gl.bufferData(this.#target, data, this.#usage);
+            this.#byteLength = data.byteLength ?? data;
+            return this;
+        }
+
+        /**
+         * Partial upload - writes into an already-allocated buffer.
+         * No reallocation. Use this for streaming / per-frame updates.
+         * @param {TypedArray} data
+         * @param {number}     byteOffset  - byte offset into the GPU buffer
+         */
+        uploadSub(data, byteOffset = 0) {
+            this.bind();
+            this.#gl.bufferSubData(this.#target, byteOffset, data);
+            return this;
+        }
+
+        /**
+         * Allocate empty GPU memory - fill later with uploadSub().
+         * @param {number} byteLength
+         */
+        allocate(byteLength) {
+            this.bind();
+            this.#gl.bufferData(this.#target, byteLength, this.#usage);
+            this.#byteLength = byteLength;
+            return this;
+        }
+
+        /**
+         * Declare a float vertex attribute layout and enable it.
+         * @param {number} loc       - attribute location
+         * @param {number} size      - components per vertex (1–4)
+         * @param {GLenum} type      - gl.FLOAT, gl.BYTE, gl.SHORT…
+         * @param {boolean} normalize
+         * @param {number} stride    - bytes between vertex starts (0 = tight)
+         * @param {number} offset    - bytes to first component
+         */
+        attrib(loc, size, type, normalize = false, stride = 0, offset = 0) {
+            this.bind();
+            this.#gl.vertexAttribPointer(loc, size, type, normalize, stride, offset);
+            this.#gl.enableVertexAttribArray(loc);
+            return this;
+        }
+
+        /**
+         * Set the instanced divisor for an attribute (WebGL2 / ANGLE ext).
+         * 0 = per-vertex (default), 1 = per-instance, N = every N instances.
+         */
+        divisor(loc, d = 1) {
+            const gl = this.#gl;
+            if (gl.vertexAttribDivisor) {
+                gl.vertexAttribDivisor(loc, d);
+            } else {
+                // WebGL1 fallback via ANGLE_instanced_arrays extension
+                const ext = gl.getExtension('ANGLE_instanced_arrays');
+                if (ext) ext.vertexAttribDivisorANGLE(loc, d);
+            }
+            return this;
         }
     }
 
     class ZMesh {
         constructor() {
-            this._vertexLayout = [];
-            this._instanceLayout = [];
-            this._submeshDefs = [];
-            this._meshBuffers = [];
-            this._mode = null;
-            this._built = false;
-            this.vertexLayoutDef = [];
-            this.instanceLayoutDef = [];
-            this.vertexBuffer = null;
-            this.vertexStride = 0;
-            this.vertexAttributes = [];
-            this.indexBuffer = null;
-            this.indexType = 0;
-            this.indexBytes = 0;
-            this.indexCount = 0;
-            this.vertexCount = 0;
-            this.submeshes = [];
-            this.auxBuffers = [];
-            this.mode = null;
-            this.dimensions = 0;
-            this._vaoCache = new Map();
-        }
-        vertexLayout(layout) { this._vertexLayout = Array.isArray(layout) ? layout.slice() : []; return this; }
-        instanceLayout(layout) { this._instanceLayout = Array.isArray(layout) ? layout.slice() : []; return this; }
-        mode(mode) { this._mode = mode; return this; }
-        buffer(desc) { if (_is.obj(desc)) this._meshBuffers.push(desc); return this; }
-        submesh(submesh) {
-            if (submesh instanceof ZSubmesh) {
-                this._submeshDefs.push(submesh);
-                return this;
-            }
-            if (_is.obj(submesh)) {
-                const packed = {
-                    vertices: submesh.vertices ?? null,
-                    indices: submesh.indices ?? null,
-                    mode: submesh.mode ?? null,
-                    info: submesh.info ?? null,
-                };
-                this._submeshDefs.push(packed);
-            }
-            return this;
-        }
-        submeshes(list) { if (Array.isArray(list)) for (const sm of list) this.submesh(sm); return this; }
-
-        destroy(gl) {
-            for (const entry of this._vaoCache.values()) if (entry?.vao) gl.deleteVertexArray(entry.vao);
-            this._vaoCache.clear();
-            if (this.vertexBuffer) gl.deleteBuffer(this.vertexBuffer);
-            if (this.indexBuffer) gl.deleteBuffer(this.indexBuffer);
-            for (const b of this.auxBuffers) if (b.vbo) gl.deleteBuffer(b.vbo);
-            this.vertexBuffer = null;
-            this.vertexStride = 0;
-            this.vertexAttributes = [];
-            this.indexBuffer = null;
-            this.submeshes = [];
-            this.auxBuffers = [];
-            this._built = false;
-            return this;
-        }
-
-        build(gl) {
-            this.destroy(gl);
-            const layout = this._vertexLayout;
-            const strideBytes = ZMesh.#layoutStride(gl, layout);
-            if (strideBytes <= 0) throw new Error("[ZMesh] vertexLayout is required before build(gl)");
-            this.vertexLayoutDef = layout.slice();
-            this.instanceLayoutDef = this._instanceLayout.slice();
-            this.mode = ZMesh.#resolveDrawMode(gl, this._mode) ?? gl.TRIANGLES;
-            this.dimensions = ZMesh.#resolveDimensionsFromLayout(layout);
-            this.submeshes = [];
-
-            const parts = [];
-            let vertexBase = 0;
-            let totalFloatCount = 0;
-            for (const sm of this._submeshDefs) {
-                const isBuiltSubmesh = sm instanceof ZSubmesh;
-                const verts = ZMesh.#toFloatArray(isBuiltSubmesh ? null : sm.vertices);
-                if (!verts || verts.length === 0) continue;
-                const vertexCount = strideBytes > 0 ? (verts.byteLength / strideBytes) | 0 : 0;
-                const idx = (!isBuiltSubmesh && sm.indices != null) ? ZMesh.#toIndexArray(sm.indices) : null;
-                parts.push({ sm, isBuiltSubmesh, verts, idx, vertexCount, vertexBase });
-                totalFloatCount += verts.length;
-                vertexBase += vertexCount;
-            }
-
-            for (const b of this._meshBuffers) {
-                const bLayout = Array.isArray(b.layout) ? b.layout : [];
-                const bStride = ZMesh.#layoutStride(gl, bLayout);
-                const bData = ZMesh.#toFloatArray(b.data);
-                if (!bData || !bStride) continue;
-                const bVbo = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, bVbo);
-                gl.bufferData(gl.ARRAY_BUFFER, bData, gl.STATIC_DRAW);
-                this.auxBuffers.push({
-                    name: b.name ?? null,
-                    layout: bLayout.slice(),
-                    info: b.info ?? null,
-                    vbo: bVbo,
-                    stride: bStride,
-                    count: (bData.byteLength / bStride) | 0,
-                });
-            }
-
-            const mergedVerts = new Float32Array(totalFloatCount);
-            let vf = 0;
-            for (const p of parts) {
-                mergedVerts.set(p.verts, vf);
-                vf += p.verts.length;
-            }
-            this.vertexBuffer = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, mergedVerts, gl.STATIC_DRAW);
-
-            this.vertexCount = vertexBase;
-            this.vertexStride = strideBytes;
-            this.vertexAttributes = ZMesh.#layoutToAttributes(gl, layout);
-
-            const hasAnyIndex = parts.some(p => p.idx && p.idx.length > 0);
-            if (hasAnyIndex) {
-                const u32 = [];
-                let maxIndex = 0;
-                for (const p of parts) {
-                    if (!p.idx || p.idx.length === 0) continue;
-                    for (let i = 0; i < p.idx.length; i++) {
-                        const v = (p.idx[i] | 0) + p.vertexBase;
-                        u32.push(v);
-                        if (v > maxIndex) maxIndex = v;
-                    }
-                }
-                const mergedIdx = maxIndex > 65535 ? Uint32Array.from(u32) : Uint16Array.from(u32);
-                this.indexBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mergedIdx, gl.STATIC_DRAW);
-                this.indexType = mergedIdx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-                this.indexBytes = mergedIdx instanceof Uint32Array ? 4 : 2;
-                this.indexCount = mergedIdx.length;
-            }
-
-            let indexCursor = 0;
-            for (const p of parts) {
-                const indexCount = p.idx ? p.idx.length : 0;
-                if (p.isBuiltSubmesh) {
-                    p.sm.vertexOffset = p.vertexBase;
-                    p.sm.vertexCount = p.vertexCount;
-                    p.sm.baseVertex = p.vertexBase;
-                    p.sm.indexOffset = indexCursor;
-                    p.sm.indexCount = indexCount;
-                    this.submeshes.push(p.sm);
-                } else {
-                    this.submeshes.push(new ZSubmesh({
-                        vertexOffset: p.vertexBase,
-                        vertexCount: p.vertexCount,
-                        baseVertex: p.vertexBase,
-                        indexOffset: indexCursor,
-                        indexCount,
-                        mode: ZMesh.#resolveDrawMode(gl, p.sm.mode) ?? this.mode,
-                        info: p.sm.info ?? null,
-                    }));
-                }
-                indexCursor += indexCount;
-            }
-
-            gl.bindBuffer(gl.ARRAY_BUFFER, null);
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-            this._built = true;
-            return this;
-        }
-
-        getVAO(gl, shader, attributeMap = null, submeshIndex = 0) {
-            if (!shader || !shader.program) throw new Error("[ZMesh] getVAO requires a compiled shader");
-            if (!this.vertexBuffer || !this.vertexAttributes.length || this.vertexStride <= 0) return null;
-
-            const mapEntries = attributeMap && _is.obj(attributeMap) ? Object.entries(attributeMap) : [];
-            const mapKey = mapEntries.length
-                ? mapEntries.sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => `${k}:${v}`).join("|")
-                : "";
-            const key = `${shader.id ?? "shader"}|${mapKey}`;
-            const cached = this._vaoCache.get(key);
-            if (cached?.vao) return cached;
-
-            const vao = gl.createVertexArray();
-            gl.bindVertexArray(vao);
-
-            for (const attr of this.vertexAttributes) {
-                const shaderInputName = (attributeMap && attributeMap[attr.name]) ? attributeMap[attr.name] : attr.name;
-                const loc = shader.getInputLocation(shaderInputName);
-                if (loc == null || loc < 0) continue;
-                ZRender.wireAttr(gl, {
-                    buffer: this.vertexBuffer,
-                    loc,
-                    size: attr.size,
-                    type: attr.type,
-                    normalized: attr.normalized,
-                    stride: this.vertexStride,
-                    offset: attr.offset,
-                });
-            }
-            if (this.indexBuffer) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-
-            gl.bindVertexArray(null);
-            const entry = { vao, key };
-            this._vaoCache.set(key, entry);
-            return entry;
-        }
-
-        static #resolveDrawMode(gl, mode) {
-            if (mode == null) return null;
-            if (typeof mode === "number" && Number.isFinite(mode)) return mode;
-            if (typeof mode !== "string") return null;
-            const key = mode.trim().toUpperCase();
-            return Object.prototype.hasOwnProperty.call(gl, key) ? gl[key] : null;
-        }
-        static #componentBytes(gl, type) {
-            switch (type) {
-                case gl.BYTE: case gl.UNSIGNED_BYTE: return 1;
-                case gl.SHORT: case gl.UNSIGNED_SHORT: case gl.HALF_FLOAT: return 2;
-                case gl.INT: case gl.UNSIGNED_INT: case gl.FLOAT: default: return 4;
-            }
-        }
-        static #resolveType(gl, type) {
-            if (typeof type === "number") return type;
-            if (typeof type === "string") {
-                const t = type.trim().toLowerCase();
-                if (t === "float" || t === "float32") return gl.FLOAT;
-                if (t === "uint32") return gl.UNSIGNED_INT;
-                if (t === "uint16") return gl.UNSIGNED_SHORT;
-                if (t === "uint8") return gl.UNSIGNED_BYTE;
-                if (t === "int32") return gl.INT;
-                if (t === "int16") return gl.SHORT;
-                if (t === "int8") return gl.BYTE;
-            }
-            return gl.FLOAT;
-        }
-        static #layoutStride(gl, layout) {
-            let stride = 0;
-            for (const a of layout) stride += Math.max(1, (a?.size | 0) || 0) * ZMesh.#componentBytes(gl, ZMesh.#resolveType(gl, a?.type));
-            return stride;
-        }
-        static #layoutToAttributes(gl, layout) {
-            const attrs = [];
-            let offset = 0;
-            for (const a of layout) {
-                const size = Math.max(1, (a?.size | 0) || 0);
-                const type = ZMesh.#resolveType(gl, a?.type);
-                attrs.push({ name: a?.name ?? "", size, type, normalized: !!a?.normalized, offset });
-                offset += size * ZMesh.#componentBytes(gl, type);
-            }
-            return attrs;
-        }
-        static #resolveDimensionsFromLayout(layout) {
-            const p = layout.find(a => a?.name === "position" || a?.name === "a_position");
-            return p?.size ?? 0;
-        }
-        static #toFloatArray(data) {
-            if (data == null) return null;
-            if (data instanceof Float32Array) return data;
-            if (ArrayBuffer.isView(data)) return new Float32Array(data.buffer, data.byteOffset, (data.byteLength / 4) | 0);
-            if (Array.isArray(data)) return Float32Array.from(data);
-            return null;
-        }
-        static #toIndexArray(data) {
-            if (data instanceof Uint16Array || data instanceof Uint32Array) return data;
-            if (Array.isArray(data)) {
-                let max = 0;
-                for (let i = 0; i < data.length; i++) if (data[i] > max) max = data[i];
-                return max > 65535 ? Uint32Array.from(data) : Uint16Array.from(data);
-            }
-            if (data instanceof Int32Array) return Uint32Array.from(data);
-            if (data instanceof Int16Array) return Uint16Array.from(data);
-            if (data instanceof Uint8Array || data instanceof Int8Array) return Uint16Array.from(data);
-            return Uint16Array.from([]);
+            throw new Error("[ZMesh] paused during buffer/geometry rework. Build on ZBuffer directly for now.");
         }
     }
+
     class EzSkeleton3D {
         // bones: [{ parent: int, localBind: Mat4, inverseBind: Mat4, name: string }]
         bones = [];
 
         // Scratch buffers (allocated lazily in computePalette).
-        #globalCurrent  = []; // Mat4[]
-        #localScratch   = ZMath.M4();
+        #globalCurrent = []; // Mat4[]
+        #localScratch = ZMath.M4();
         #skinnedScratch = ZMath.M4();
 
         // bonePoses: Mat4[] (length === bones.length). Returns a Float32Array of
@@ -1403,7 +1272,7 @@ Contains
                 const b = this.bones[i];
                 ZMath.M4.mul(b.localBind, bonePoses[i], local);
                 if (b.parent < 0) gc[i].set(local);
-                else              ZMath.M4.mul(gc[b.parent], local, gc[i]);
+                else ZMath.M4.mul(gc[b.parent], local, gc[i]);
                 ZMath.M4.mul(gc[i], b.inverseBind, skinned);
                 palette.set(skinned, i * 16);
             }
@@ -1426,7 +1295,7 @@ Contains
 
                 const gb = ZMath.M4();
                 if (parent < 0) gb.set(localBind);
-                else            ZMath.M4.mul(globalBind[parent], localBind, gb);
+                else ZMath.M4.mul(globalBind[parent], localBind, gb);
                 globalBind[i] = gb;
 
                 let inverseBind;
@@ -1446,9 +1315,10 @@ Contains
         }
     }
 
-    window.ZSubmesh        = ZSubmesh;
-    window.ZMesh           = ZMesh;
-    window.EzSkeleton3D    = EzSkeleton3D;
-    window.ZCamera      = ZCamera;
+    window.ZBuffer = ZBuffer;
+    window.ZMesh = ZMesh;
+    delete window.ZSubmesh;
+    window.EzSkeleton3D = EzSkeleton3D;
+    window.ZCamera = ZCamera;
 
 })();
