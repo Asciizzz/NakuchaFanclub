@@ -4,9 +4,9 @@ By Asciiz
 # Has
 
 Constants
-    EPSILON
-    DEG2RAD
-    RAD2DEG
+    EPSILON = 0.0001
+    DEG2RAD = 0.017453292519943295
+    RAD2DEG = 57.29577951308232
 
 [V2]
     V2()
@@ -40,7 +40,7 @@ Constants
     slerp(a, b, t, out?)  from.euler(x, y, z, out?)
     transformV3(q, v, out?)
 
-[M4]
+[M4] (4x4 Matrix, column-major)
     M4()
     identity(out?)
     copy(a, out?)
