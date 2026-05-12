@@ -17,7 +17,7 @@
  * (shader, mesh). Meshes themselves stay shader-agnostic.
  *
  * Dependencies:
- *   ZCanvas.js   - ZMath/ZShader/EzMesh3D/ZRender/ZCamera
+ *   ZCanvas.js   - ZMath/ZShader/ZMesh/ZRender/ZCamera
  *   EzLoader.js     - only used implicitly when you feed addModel() a model
  *                     loaded by EzLoader.load(...).
  *
@@ -347,15 +347,16 @@
             return m;
         }
 
-        // Shader-agnostic. Hands the desc straight to EzMesh3D.fromDesc with
+        // Shader-agnostic. Hands the desc straight to ZMesh.fromDesc with
         // material indices resolved into project material keys. Accepts either
-        // the EzMesh3D-native `submeshes` shape or the EzLoader-style
+        // the ZMesh-native `submeshes` shape or the EzLoader-style
         // `primitives` shape (auto-translated).
         //
         // opts:
-        //   vertexBuffers? / vertices? + attributes? - see EzMesh3D.fromDesc
+        //   dimensions?, mode?
+        //   vertexBuffers? / vertices? + attributes? - see ZMesh.fromDesc
         //   indices?
-        //   submeshes?: [{ ...EzMesh3D.fromDesc submeshes ... }]
+        //   submeshes?: [{ ...ZMesh.fromDesc submeshes ... }]
         //   primitives?: [{ indexOffset, indexCount, vertexOffset, vertexCount,
         //                   materialIdx, morphDeltas?, morphTargetCount? }]
         //   materialKeyOf?: (matIdx) => key|null
@@ -384,7 +385,9 @@
                 });
             }
 
-            const mesh = EzMesh3D.fromDesc(this.gl, {
+            const mesh = ZMesh.fromDesc(this.gl, {
+                dimensions:       opts.dimensions,
+                mode:             opts.mode,
                 vertexBuffers:    opts.vertexBuffers,
                 vertices:         opts.vertices,
                 attributes:       opts.attributes,
@@ -743,6 +746,7 @@
 
                 if (sm.indexCount > 0 && mesh.ebo) {
                     ZRender.drawInstanced(gl, {
+                        mode:        sm.mode ?? mesh.mode ?? gl.TRIANGLES,
                         indexed:     true,
                         indexCount:  sm.indexCount,
                         indexType:   mesh.indexType,
@@ -750,6 +754,7 @@
                     }, nodes.length);
                 } else {
                     ZRender.drawInstanced(gl, {
+                        mode:         sm.mode ?? mesh.mode ?? gl.TRIANGLES,
                         indexed:      false,
                         vertexOffset: sm.vertexOffset,
                         vertexCount:  sm.vertexCount,
@@ -760,7 +765,7 @@
     }
 
     // Slice a flat-packed [target0..targetN] buffer (each target = vcount*3
-    // floats) into the per-target Float32Array list EzMesh3D.fromDesc wants.
+    // floats) into the per-target Float32Array list ZMesh.fromDesc wants.
     function sliceTargets(packed, targetCount) {
         const stride = packed.length / targetCount;
         const out = new Array(targetCount);

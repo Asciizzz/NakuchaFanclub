@@ -11,7 +11,7 @@ Contains
 
     -- Highly specialized --
     ZCamera   view/projection helper
-    EzMesh3D     VAO + VBO geometry container
+    ZMesh        dimension-agnostic VAO/VBO geometry container
     EzSkeleton3D bone rig + skinning palette builder
 */
 
@@ -424,6 +424,8 @@ Contains
 
         _compiled = false;
         get compiled() { return this._compiled; }
+        #id = null;
+        get id() { return this.#id; }
 
         #activeStage = 0;
         #spec = null;
@@ -749,6 +751,7 @@ Contains
                 const built = this.build();
                 this.program = this.#createProgram(gl, built.primary, built.secondary);
                 if (!this.program) throw new Error('[ZShader] GL program compilation failed');
+                this.#id = ZShader.#hashSourcePair(built.primary, built.secondary);
                 this.#refreshReflection(gl);
                 this._compiled = true;
                 return this;
@@ -756,9 +759,24 @@ Contains
 
             this.program = this.#createProgram(gl, vertSrc, fragSrc);
             if (!this.program) throw new Error("[ZShader] GL program compilation failed");
+            this.#id = ZShader.#hashSourcePair(String(vertSrc ?? ""), String(fragSrc ?? ""));
             this.#refreshReflection(gl);
             this._compiled = true;
             return this;
+        }
+
+        static #hashSourcePair(a, b) {
+            const s = `${a}\n//---\n${b}`;
+            let h1 = 0x811c9dc5;
+            let h2 = 0x9e3779b9;
+            for (let i = 0; i < s.length; i++) {
+                const c = s.charCodeAt(i);
+                h1 ^= c;
+                h1 = Math.imul(h1, 0x01000193);
+                h2 ^= c + (h2 << 6) + (h2 >> 2);
+                h2 |= 0;
+            }
+            return `zs_${(h1 >>> 0).toString(16)}_${(h2 >>> 0).toString(16)}`;
         }
 
         #refreshReflection(gl) {
@@ -989,9 +1007,9 @@ Contains
         }
     }
 
-    window.ZRender        = ZRender;
-    window.ZShader        = ZShader;
-    window.ZCanvas      = ZCanvas;
+    window.ZRender = ZRender;
+    window.ZShader = ZShader;
+    window.ZCanvas = ZCanvas;
 
 // Every thing below this line is highly specialized for 3D-object-driven rendering
 // --------------------------------------------------------------------------------
@@ -1073,179 +1091,216 @@ Contains
         }
     }
 
+    class ZSubmesh {
+        constructor() { this._vertices = null; this._indices = null; this._buffers = []; this._mode = null; this._info = null; }
+        vertices(data) { this._vertices = data; return this; }
+        indices(data) { this._indices = data; return this; }
+        mode(mode) { this._mode = mode; return this; }
+        info(info) { this._info = info; return this; }
+        buffer(desc) { if (_is.obj(desc)) this._buffers.push(desc); return this; }
+    }
 
-    class EzMesh3D {
+    class ZMesh {
         constructor() {
-            this.vertexBuffers = []; // [{ vbo, stride, vertexCount, attributes:[{name, size, type, normalized, offset}] }]
-
-            this.ebo        = null;
-            this.indexType  = 0;
-            this.indexBytes = 0;
-            this.indexCount = 0;
-
+            this._vertexLayout = [];
+            this._instanceLayout = [];
+            this._submeshDefs = [];
+            this._mode = null;
+            this._built = false;
+            this.vertexLayoutDef = [];
+            this.instanceLayoutDef = [];
+            this.vertexBuffers = [];
             this.submeshes = [];
-
-            this.morphTargetCount = 0;
-            this.morphTargetNames = null;
-
-            this.ABmin = [ Infinity,  Infinity,  Infinity];
-            this.ABmax = [-Infinity, -Infinity, -Infinity];
+            this.mode = null;
+            this.dimensions = 0;
+            this._vaoCache = new Map();
         }
+        vertexLayout(layout) { this._vertexLayout = Array.isArray(layout) ? layout.slice() : []; return this; }
+        instanceLayout(layout) { this._instanceLayout = Array.isArray(layout) ? layout.slice() : []; return this; }
+        mode(mode) { this._mode = mode; return this; }
+        submesh(submesh) { if (submesh instanceof ZSubmesh) this._submeshDefs.push(submesh); return this; }
+        submeshes(list) { if (Array.isArray(list)) for (const sm of list) this.submesh(sm); return this; }
 
         destroy(gl) {
+            for (const entry of this._vaoCache.values()) if (entry?.vao) gl.deleteVertexArray(entry.vao);
+            this._vaoCache.clear();
             for (const vb of this.vertexBuffers) if (vb.vbo) gl.deleteBuffer(vb.vbo);
-            if (this.ebo) gl.deleteBuffer(this.ebo);
             for (const sm of this.submeshes) {
-                if (sm.morph) for (const t of sm.morph.channels.values()) gl.deleteTexture(t);
+                if (sm.ebo) gl.deleteBuffer(sm.ebo);
+                if (Array.isArray(sm.buffers)) for (const b of sm.buffers) if (b.vbo) gl.deleteBuffer(b.vbo);
             }
             this.vertexBuffers = [];
-            this.ebo = null;
             this.submeshes = [];
+            this._built = false;
+            return this;
         }
 
-        // Build a mesh from a description
-        // opts:
-        //   vertexBuffers?: [{ data, attributes: [{ name, size, type?, normalized?, offset? }], stride? }]
-        //   vertices?:   Float32Array | TypedArray
-        //   attributes?: [{ name, size, type?, normalized? }]
-        //   indices?:   Uint16Array | Uint32Array
-        //   submeshes?: [{
-        //       indexOffset?, indexCount?, vertexOffset?, vertexCount?,
-        //       materialKey?,
-        //       ABmin?, ABmax?,
-        //       morphTargets?: { [channelName]: Float32Array[] }   // each target = vec3[]
-        //   }]
-        //   morphTargetNames?: string[]
-        static fromDesc(gl, opts = {}) {
-            const mesh = new EzMesh3D();
+        build(gl) {
+            this.destroy(gl);
+            const layout = this._vertexLayout;
+            const strideBytes = ZMesh.#layoutStride(gl, layout);
+            if (strideBytes <= 0) throw new Error("[ZMesh] vertexLayout is required before build(gl)");
+            this.vertexLayoutDef = layout.slice();
+            this.instanceLayoutDef = this._instanceLayout.slice();
+            this.mode = ZMesh.#resolveDrawMode(gl, this._mode) ?? gl.TRIANGLES;
+            this.dimensions = ZMesh.#resolveDimensionsFromLayout(layout);
 
-            // -- Vertex buffers -----------------------------------------
-            const vbDescs = (Array.isArray(opts.vertexBuffers) && opts.vertexBuffers.length)
-                ? opts.vertexBuffers
-                : (opts.vertices != null
-                    ? [{ data: opts.vertices, attributes: opts.attributes ?? [{name:"a_position", size:3}, {name:"a_uv", size:2}], stride: opts.stride }]
-                    : []);
-
-            for (const vb of vbDescs) {
-                const data = vb.data;
-                if (!data) continue;
-                const attrs = [];
-                let off = 0;
-                for (const a of (vb.attributes || [])) {
-                    const o = a.offset != null ? a.offset : off;
-                    attrs.push({
-                        name:       a.name,
-                        size:       a.size,
-                        type:       a.type ?? gl.FLOAT,
-                        normalized: !!a.normalized,
-                        offset:     o,
-                    });
-                    off = o + a.size * 4;
-                }
-                const stride = vb.stride != null ? vb.stride : off;
-
+            let cursor = 0;
+            for (const sm of this._submeshDefs) {
+                const verts = ZMesh.#toFloatArray(sm._vertices);
+                if (!verts || verts.length === 0) continue;
                 const vbo = gl.createBuffer();
                 gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+                gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+                const vertexCount = strideBytes > 0 ? (verts.byteLength / strideBytes) | 0 : 0;
+                this.vertexBuffers.push({ vbo, stride: strideBytes, attributes: ZMesh.#layoutToAttributes(gl, layout), vertexCount });
+                const vbIndex = this.vertexBuffers.length - 1;
 
-                mesh.vertexBuffers.push({
-                    vbo, stride, attributes: attrs,
-                    vertexCount: stride > 0 ? (data.byteLength / stride) | 0 : 0,
+                let ebo = null, indexType = 0, indexBytes = 0, indexCount = 0;
+                if (sm._indices != null) {
+                    const idx = ZMesh.#toIndexArray(sm._indices);
+                    indexType = idx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+                    indexBytes = idx instanceof Uint32Array ? 4 : 2;
+                    indexCount = idx.length;
+                    ebo = gl.createBuffer();
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+                }
+
+                const packedBuffers = [];
+                for (const b of sm._buffers) {
+                    const bLayout = Array.isArray(b.layout) ? b.layout : [];
+                    const bStride = ZMesh.#layoutStride(gl, bLayout);
+                    const bData = ZMesh.#toFloatArray(b.data);
+                    if (!bData || !bStride) continue;
+                    const bVbo = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, bVbo);
+                    gl.bufferData(gl.ARRAY_BUFFER, bData, gl.STATIC_DRAW);
+                    packedBuffers.push({ name: b.name ?? null, layout: bLayout.slice(), info: b.info ?? null, vbo: bVbo, stride: bStride, count: (bData.byteLength / bStride) | 0 });
+                }
+
+                this.submeshes.push({
+                    vbIndex, vertexOffset: cursor, vertexCount,
+                    indexOffset: 0, indexCount, indexType, indexBytes, ebo,
+                    buffers: packedBuffers,
+                    mode: ZMesh.#resolveDrawMode(gl, sm._mode) ?? this.mode,
+                    info: sm._info ?? null,
+                });
+                cursor += vertexCount;
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+            this._built = true;
+            return this;
+        }
+
+        getVAO(gl, shader, attributeMap = null, submeshIndex = 0) {
+            if (!shader || !shader.program) throw new Error("[ZMesh] getVAO requires a compiled shader");
+            const sm = this.submeshes[submeshIndex];
+            if (!sm) return null;
+            const vb = this.vertexBuffers[sm.vbIndex];
+            if (!vb) return null;
+
+            const mapEntries = attributeMap && _is.obj(attributeMap) ? Object.entries(attributeMap) : [];
+            const mapKey = mapEntries.length
+                ? mapEntries.sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => `${k}:${v}`).join("|")
+                : "";
+            const key = `${shader.id ?? "shader"}|${submeshIndex}|${mapKey}`;
+            const cached = this._vaoCache.get(key);
+            if (cached?.vao) return cached;
+
+            const vao = gl.createVertexArray();
+            gl.bindVertexArray(vao);
+
+            for (const attr of vb.attributes) {
+                const shaderInputName = (attributeMap && attributeMap[attr.name]) ? attributeMap[attr.name] : attr.name;
+                const loc = shader.getInputLocation(shaderInputName);
+                if (loc == null || loc < 0) continue;
+                ZRender.wireAttr(gl, {
+                    buffer: vb.vbo,
+                    loc,
+                    size: attr.size,
+                    type: attr.type,
+                    normalized: attr.normalized,
+                    stride: vb.stride,
+                    offset: attr.offset,
                 });
             }
 
-            // -- Indices ------------------------------------------------
-            const indices = opts.indices;
-            if (indices) {
-                mesh.indexType  = indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-                mesh.indexBytes = indices instanceof Uint32Array ? 4 : 2;
-                mesh.indexCount = indices.length;
-                mesh.ebo = gl.createBuffer();
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ebo);
-                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+            gl.bindVertexArray(null);
+            const entry = { vao, submeshIndex, key };
+            this._vaoCache.set(key, entry);
+            return entry;
+        }
+
+        static #resolveDrawMode(gl, mode) {
+            if (mode == null) return null;
+            if (typeof mode === "number" && Number.isFinite(mode)) return mode;
+            if (typeof mode !== "string") return null;
+            const key = mode.trim().toUpperCase();
+            return Object.prototype.hasOwnProperty.call(gl, key) ? gl[key] : null;
+        }
+        static #componentBytes(gl, type) {
+            switch (type) {
+                case gl.BYTE: case gl.UNSIGNED_BYTE: return 1;
+                case gl.SHORT: case gl.UNSIGNED_SHORT: case gl.HALF_FLOAT: return 2;
+                case gl.INT: case gl.UNSIGNED_INT: case gl.FLOAT: default: return 4;
             }
-
-            // -- Submeshes ----------------------------------------------
-            const defaultVCount = mesh.vertexBuffers[0]?.vertexCount ?? 0;
-            const subs = (Array.isArray(opts.submeshes) && opts.submeshes.length)
-                ? opts.submeshes
-                : (indices
-                    ? [{ indexOffset: 0, indexCount: indices.length, vertexOffset: 0, vertexCount: defaultVCount }]
-                    : [{ vertexOffset: 0, vertexCount: defaultVCount }]);
-
-            for (const s of subs) {
-                const sub = {
-                    indexOffset:  s.indexOffset  ?? 0,
-                    indexCount:   s.indexCount   ?? 0,
-                    vertexOffset: s.vertexOffset ?? 0,
-                    vertexCount:  s.vertexCount  ?? defaultVCount,
-                    materialKey:  s.materialKey  ?? null,
-                    ABmin: s.ABmin ? s.ABmin.slice() : [ Infinity,  Infinity,  Infinity],
-                    ABmax: s.ABmax ? s.ABmax.slice() : [-Infinity, -Infinity, -Infinity],
-                    morph: null,
-                };
-
-                // Per-submesh morph deltas - keyed by channel name; the
-                // project resolves names to shader sampler bindings.
-                if (s.morphTargets && _is.obj(s.morphTargets) && !Array.isArray(s.morphTargets)) {
-                    const names = Object.keys(s.morphTargets);
-                    let targetCount = 0;
-                    for (const ch of names) {
-                        const arr = s.morphTargets[ch];
-                        if (Array.isArray(arr) && arr.length > targetCount) targetCount = arr.length;
-                    }
-                    const vCount = sub.vertexCount;
-                    if (targetCount > 0 && vCount > 0) {
-                        sub.morph = {
-                            targetCount,
-                            vertexBase:  sub.vertexOffset,
-                            vertexCount: vCount,
-                            channels:    new Map(),
-                        };
-                        for (const ch of names) {
-                            const arr = s.morphTargets[ch];
-                            if (!Array.isArray(arr) || !arr.length) continue;
-                            // Pack as a (vCount × targetCount) RGB32F texture, with the
-                            // shader fetching texel(t, vertexLocal). Inner loop = target
-                            // index, outer = vertex - matches the existing rig shader.
-                            const packed = new Float32Array(vCount * targetCount * 3);
-                            for (let t = 0; t < targetCount; t++) {
-                                const d = arr[t]; if (!d) continue;
-                                for (let v = 0; v < vCount; v++) {
-                                    const dst = (v * targetCount + t) * 3;
-                                    packed[dst    ] = d[v*3    ];
-                                    packed[dst + 1] = d[v*3 + 1];
-                                    packed[dst + 2] = d[v*3 + 2];
-                                }
-                            }
-                            sub.morph.channels.set(ch, ZRender.uploadTexture2D(
-                                gl, null, gl.RGB32F, gl.RGB, gl.FLOAT,
-                                targetCount, vCount, packed,
-                            ));
-                        }
-                        if (targetCount > mesh.morphTargetCount) mesh.morphTargetCount = targetCount;
-                    }
-                }
-
-                mesh.submeshes.push(sub);
-                for (let k = 0; k < 3; k++) {
-                    if (sub.ABmin[k] < mesh.ABmin[k]) mesh.ABmin[k] = sub.ABmin[k];
-                    if (sub.ABmax[k] > mesh.ABmax[k]) mesh.ABmax[k] = sub.ABmax[k];
-                }
+        }
+        static #resolveType(gl, type) {
+            if (typeof type === "number") return type;
+            if (typeof type === "string") {
+                const t = type.trim().toLowerCase();
+                if (t === "float" || t === "float32") return gl.FLOAT;
+                if (t === "uint32") return gl.UNSIGNED_INT;
+                if (t === "uint16") return gl.UNSIGNED_SHORT;
+                if (t === "uint8") return gl.UNSIGNED_BYTE;
+                if (t === "int32") return gl.INT;
+                if (t === "int16") return gl.SHORT;
+                if (t === "int8") return gl.BYTE;
             }
-
-            if (Array.isArray(opts.morphTargetNames) && opts.morphTargetNames.length) {
-                mesh.morphTargetNames = opts.morphTargetNames.slice(0, mesh.morphTargetCount);
-                while (mesh.morphTargetNames.length < mesh.morphTargetCount)
-                    mesh.morphTargetNames.push(`Target_${mesh.morphTargetNames.length}`);
+            return gl.FLOAT;
+        }
+        static #layoutStride(gl, layout) {
+            let stride = 0;
+            for (const a of layout) stride += Math.max(1, (a?.size | 0) || 0) * ZMesh.#componentBytes(gl, ZMesh.#resolveType(gl, a?.type));
+            return stride;
+        }
+        static #layoutToAttributes(gl, layout) {
+            const attrs = [];
+            let offset = 0;
+            for (const a of layout) {
+                const size = Math.max(1, (a?.size | 0) || 0);
+                const type = ZMesh.#resolveType(gl, a?.type);
+                attrs.push({ name: a?.name ?? "", size, type, normalized: !!a?.normalized, offset });
+                offset += size * ZMesh.#componentBytes(gl, type);
             }
-
-            gl.bindBuffer(gl.ARRAY_BUFFER, null);
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-            return mesh;
+            return attrs;
+        }
+        static #resolveDimensionsFromLayout(layout) {
+            const p = layout.find(a => a?.name === "position" || a?.name === "a_position");
+            return p?.size ?? 0;
+        }
+        static #toFloatArray(data) {
+            if (data == null) return null;
+            if (data instanceof Float32Array) return data;
+            if (ArrayBuffer.isView(data)) return new Float32Array(data.buffer, data.byteOffset, (data.byteLength / 4) | 0);
+            if (Array.isArray(data)) return Float32Array.from(data);
+            return null;
+        }
+        static #toIndexArray(data) {
+            if (data instanceof Uint16Array || data instanceof Uint32Array) return data;
+            if (Array.isArray(data)) {
+                let max = 0;
+                for (let i = 0; i < data.length; i++) if (data[i] > max) max = data[i];
+                return max > 65535 ? Uint32Array.from(data) : Uint16Array.from(data);
+            }
+            if (data instanceof Int32Array) return Uint32Array.from(data);
+            if (data instanceof Int16Array) return Uint16Array.from(data);
+            if (data instanceof Uint8Array || data instanceof Int8Array) return Uint16Array.from(data);
+            return Uint16Array.from([]);
         }
     }
-
     class EzSkeleton3D {
         // bones: [{ parent: int, localBind: Mat4, inverseBind: Mat4, name: string }]
         bones = [];
@@ -1314,7 +1369,8 @@ Contains
         }
     }
 
-    window.EzMesh3D        = EzMesh3D;
+    window.ZSubmesh        = ZSubmesh;
+    window.ZMesh           = ZMesh;
     window.EzSkeleton3D    = EzSkeleton3D;
     window.ZCamera      = ZCamera;
 

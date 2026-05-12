@@ -34,7 +34,7 @@ class ZScene extends ZTree {
         const transform = node.get('transform');
         if (!transform) return;
 
-        if (node.parent === null) {
+        if (node.parent === null) { // Root
             transform.world = transform.local;
         }
     }
@@ -42,7 +42,7 @@ class ZScene extends ZTree {
     update(DFS=true) {
 
         for (const [id, node] of this.traverse(this.rootId, DFS)) {
-            updateTransform(id, node);
+            this.updateTransform(id, node);
         }
     }
 

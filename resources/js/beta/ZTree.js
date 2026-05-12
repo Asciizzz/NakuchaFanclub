@@ -3,7 +3,6 @@ By Asciiz (duh)
 
 An agnostic tree data structure for pretty much anything
 You can use it for a file system, or a game object hierarchy, not my concern.
-
 */
 
 class ZNode {
