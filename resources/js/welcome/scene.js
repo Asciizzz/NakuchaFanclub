@@ -52,16 +52,15 @@ function buildRectMesh() {
     ];
     const rectIndices = [0, 1, 2, 0, 2, 3];
 
-    const submesh = new ZSubmesh()
-        .vertices(rectVerts)
-        .indices(rectIndices);
-
     return new ZMesh()
         .vertexLayout([
             { name: "a_position", type: "float32", size: 2 },
             { name: "a_color", type: "float32", size: 3 },
         ])
-        .submesh(submesh)
+        .submesh({
+            vertices: rectVerts,
+            indices: rectIndices,
+        })
         .build(gl);
 }
 
@@ -87,16 +86,15 @@ function buildCubeMesh() {
         4, 5, 1, 4, 1, 0, // bottom
     ];
 
-    const submesh = new ZSubmesh()
-        .vertices(p)
-        .indices(idx);
-
     return new ZMesh()
         .vertexLayout([
             { name: "a_position", type: "float32", size: 3 },
             { name: "a_color", type: "float32", size: 3 },
         ])
-        .submesh(submesh)
+        .submesh({
+            vertices: p,
+            indices: idx,
+        })
         .build(gl);
 }
 
@@ -124,9 +122,8 @@ function drawMesh(mesh, vaoEntry) {
     ZRender.withVAO(gl, vaoEntry.vao, () => {
         for (let i = 0; i < mesh.submeshes.length; i++) {
             const sm = mesh.submeshes[i];
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm.ebo);
-            if (sm.indexCount > 0 && sm.ebo) {
-                gl.drawElements(sm.mode ?? gl.TRIANGLES, sm.indexCount, sm.indexType, sm.indexOffset * sm.indexBytes);
+            if (sm.indexCount > 0 && mesh.indexBuffer) {
+                gl.drawElements(sm.mode ?? gl.TRIANGLES, sm.indexCount, mesh.indexType, sm.indexOffset * mesh.indexBytes);
             } else {
                 gl.drawArrays(sm.mode ?? gl.TRIANGLES, sm.vertexOffset, sm.vertexCount);
             }
@@ -148,7 +145,6 @@ function frame() {
     shader.bind(gl);
     shader.setUniform(gl, "u_view", camera.view);
     shader.setUniform(gl, "u_proj", camera.projection);
-
     shader.setUniform(gl, "u_model", rectModel);
     drawMesh(rectMesh, rectVaoEntry);
 

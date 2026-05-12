@@ -1092,12 +1092,15 @@ Contains
     }
 
     class ZSubmesh {
-        constructor() { this._vertices = null; this._indices = null; this._buffers = []; this._mode = null; this._info = null; }
-        vertices(data) { this._vertices = data; return this; }
-        indices(data) { this._indices = data; return this; }
-        mode(mode) { this._mode = mode; return this; }
-        info(info) { this._info = info; return this; }
-        buffer(desc) { if (_is.obj(desc)) this._buffers.push(desc); return this; }
+        constructor(data = {}) {
+            this.vertexOffset = data.vertexOffset ?? 0;
+            this.vertexCount  = data.vertexCount ?? 0;
+            this.baseVertex   = data.baseVertex ?? this.vertexOffset ?? 0;
+            this.indexOffset  = data.indexOffset ?? 0;
+            this.indexCount   = data.indexCount ?? 0;
+            this.mode         = data.mode ?? null;
+            this.info         = data.info ?? null;
+        }
     }
 
     class ZMesh {
@@ -1105,12 +1108,21 @@ Contains
             this._vertexLayout = [];
             this._instanceLayout = [];
             this._submeshDefs = [];
+            this._meshBuffers = [];
             this._mode = null;
             this._built = false;
             this.vertexLayoutDef = [];
             this.instanceLayoutDef = [];
-            this.vertexBuffers = [];
+            this.vertexBuffer = null;
+            this.vertexStride = 0;
+            this.vertexAttributes = [];
+            this.indexBuffer = null;
+            this.indexType = 0;
+            this.indexBytes = 0;
+            this.indexCount = 0;
+            this.vertexCount = 0;
             this.submeshes = [];
+            this.auxBuffers = [];
             this.mode = null;
             this.dimensions = 0;
             this._vaoCache = new Map();
@@ -1118,19 +1130,37 @@ Contains
         vertexLayout(layout) { this._vertexLayout = Array.isArray(layout) ? layout.slice() : []; return this; }
         instanceLayout(layout) { this._instanceLayout = Array.isArray(layout) ? layout.slice() : []; return this; }
         mode(mode) { this._mode = mode; return this; }
-        submesh(submesh) { if (submesh instanceof ZSubmesh) this._submeshDefs.push(submesh); return this; }
+        buffer(desc) { if (_is.obj(desc)) this._meshBuffers.push(desc); return this; }
+        submesh(submesh) {
+            if (submesh instanceof ZSubmesh) {
+                this._submeshDefs.push(submesh);
+                return this;
+            }
+            if (_is.obj(submesh)) {
+                const packed = {
+                    vertices: submesh.vertices ?? null,
+                    indices: submesh.indices ?? null,
+                    mode: submesh.mode ?? null,
+                    info: submesh.info ?? null,
+                };
+                this._submeshDefs.push(packed);
+            }
+            return this;
+        }
         submeshes(list) { if (Array.isArray(list)) for (const sm of list) this.submesh(sm); return this; }
 
         destroy(gl) {
             for (const entry of this._vaoCache.values()) if (entry?.vao) gl.deleteVertexArray(entry.vao);
             this._vaoCache.clear();
-            for (const vb of this.vertexBuffers) if (vb.vbo) gl.deleteBuffer(vb.vbo);
-            for (const sm of this.submeshes) {
-                if (sm.ebo) gl.deleteBuffer(sm.ebo);
-                if (Array.isArray(sm.buffers)) for (const b of sm.buffers) if (b.vbo) gl.deleteBuffer(b.vbo);
-            }
-            this.vertexBuffers = [];
+            if (this.vertexBuffer) gl.deleteBuffer(this.vertexBuffer);
+            if (this.indexBuffer) gl.deleteBuffer(this.indexBuffer);
+            for (const b of this.auxBuffers) if (b.vbo) gl.deleteBuffer(b.vbo);
+            this.vertexBuffer = null;
+            this.vertexStride = 0;
+            this.vertexAttributes = [];
+            this.indexBuffer = null;
             this.submeshes = [];
+            this.auxBuffers = [];
             this._built = false;
             return this;
         }
@@ -1144,50 +1174,99 @@ Contains
             this.instanceLayoutDef = this._instanceLayout.slice();
             this.mode = ZMesh.#resolveDrawMode(gl, this._mode) ?? gl.TRIANGLES;
             this.dimensions = ZMesh.#resolveDimensionsFromLayout(layout);
+            this.submeshes = [];
 
-            let cursor = 0;
+            const parts = [];
+            let vertexBase = 0;
+            let totalFloatCount = 0;
             for (const sm of this._submeshDefs) {
-                const verts = ZMesh.#toFloatArray(sm._vertices);
+                const isBuiltSubmesh = sm instanceof ZSubmesh;
+                const verts = ZMesh.#toFloatArray(isBuiltSubmesh ? null : sm.vertices);
                 if (!verts || verts.length === 0) continue;
-                const vbo = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
                 const vertexCount = strideBytes > 0 ? (verts.byteLength / strideBytes) | 0 : 0;
-                this.vertexBuffers.push({ vbo, stride: strideBytes, attributes: ZMesh.#layoutToAttributes(gl, layout), vertexCount });
-                const vbIndex = this.vertexBuffers.length - 1;
-
-                let ebo = null, indexType = 0, indexBytes = 0, indexCount = 0;
-                if (sm._indices != null) {
-                    const idx = ZMesh.#toIndexArray(sm._indices);
-                    indexType = idx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-                    indexBytes = idx instanceof Uint32Array ? 4 : 2;
-                    indexCount = idx.length;
-                    ebo = gl.createBuffer();
-                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
-                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
-                }
-
-                const packedBuffers = [];
-                for (const b of sm._buffers) {
-                    const bLayout = Array.isArray(b.layout) ? b.layout : [];
-                    const bStride = ZMesh.#layoutStride(gl, bLayout);
-                    const bData = ZMesh.#toFloatArray(b.data);
-                    if (!bData || !bStride) continue;
-                    const bVbo = gl.createBuffer();
-                    gl.bindBuffer(gl.ARRAY_BUFFER, bVbo);
-                    gl.bufferData(gl.ARRAY_BUFFER, bData, gl.STATIC_DRAW);
-                    packedBuffers.push({ name: b.name ?? null, layout: bLayout.slice(), info: b.info ?? null, vbo: bVbo, stride: bStride, count: (bData.byteLength / bStride) | 0 });
-                }
-
-                this.submeshes.push({
-                    vbIndex, vertexOffset: cursor, vertexCount,
-                    indexOffset: 0, indexCount, indexType, indexBytes, ebo,
-                    buffers: packedBuffers,
-                    mode: ZMesh.#resolveDrawMode(gl, sm._mode) ?? this.mode,
-                    info: sm._info ?? null,
-                });
-                cursor += vertexCount;
+                const idx = (!isBuiltSubmesh && sm.indices != null) ? ZMesh.#toIndexArray(sm.indices) : null;
+                parts.push({ sm, isBuiltSubmesh, verts, idx, vertexCount, vertexBase });
+                totalFloatCount += verts.length;
+                vertexBase += vertexCount;
             }
+
+            for (const b of this._meshBuffers) {
+                const bLayout = Array.isArray(b.layout) ? b.layout : [];
+                const bStride = ZMesh.#layoutStride(gl, bLayout);
+                const bData = ZMesh.#toFloatArray(b.data);
+                if (!bData || !bStride) continue;
+                const bVbo = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, bVbo);
+                gl.bufferData(gl.ARRAY_BUFFER, bData, gl.STATIC_DRAW);
+                this.auxBuffers.push({
+                    name: b.name ?? null,
+                    layout: bLayout.slice(),
+                    info: b.info ?? null,
+                    vbo: bVbo,
+                    stride: bStride,
+                    count: (bData.byteLength / bStride) | 0,
+                });
+            }
+
+            const mergedVerts = new Float32Array(totalFloatCount);
+            let vf = 0;
+            for (const p of parts) {
+                mergedVerts.set(p.verts, vf);
+                vf += p.verts.length;
+            }
+            this.vertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, mergedVerts, gl.STATIC_DRAW);
+
+            this.vertexCount = vertexBase;
+            this.vertexStride = strideBytes;
+            this.vertexAttributes = ZMesh.#layoutToAttributes(gl, layout);
+
+            const hasAnyIndex = parts.some(p => p.idx && p.idx.length > 0);
+            if (hasAnyIndex) {
+                const u32 = [];
+                let maxIndex = 0;
+                for (const p of parts) {
+                    if (!p.idx || p.idx.length === 0) continue;
+                    for (let i = 0; i < p.idx.length; i++) {
+                        const v = (p.idx[i] | 0) + p.vertexBase;
+                        u32.push(v);
+                        if (v > maxIndex) maxIndex = v;
+                    }
+                }
+                const mergedIdx = maxIndex > 65535 ? Uint32Array.from(u32) : Uint16Array.from(u32);
+                this.indexBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mergedIdx, gl.STATIC_DRAW);
+                this.indexType = mergedIdx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+                this.indexBytes = mergedIdx instanceof Uint32Array ? 4 : 2;
+                this.indexCount = mergedIdx.length;
+            }
+
+            let indexCursor = 0;
+            for (const p of parts) {
+                const indexCount = p.idx ? p.idx.length : 0;
+                if (p.isBuiltSubmesh) {
+                    p.sm.vertexOffset = p.vertexBase;
+                    p.sm.vertexCount = p.vertexCount;
+                    p.sm.baseVertex = p.vertexBase;
+                    p.sm.indexOffset = indexCursor;
+                    p.sm.indexCount = indexCount;
+                    this.submeshes.push(p.sm);
+                } else {
+                    this.submeshes.push(new ZSubmesh({
+                        vertexOffset: p.vertexBase,
+                        vertexCount: p.vertexCount,
+                        baseVertex: p.vertexBase,
+                        indexOffset: indexCursor,
+                        indexCount,
+                        mode: ZMesh.#resolveDrawMode(gl, p.sm.mode) ?? this.mode,
+                        info: p.sm.info ?? null,
+                    }));
+                }
+                indexCursor += indexCount;
+            }
+
             gl.bindBuffer(gl.ARRAY_BUFFER, null);
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
             this._built = true;
@@ -1196,39 +1275,37 @@ Contains
 
         getVAO(gl, shader, attributeMap = null, submeshIndex = 0) {
             if (!shader || !shader.program) throw new Error("[ZMesh] getVAO requires a compiled shader");
-            const sm = this.submeshes[submeshIndex];
-            if (!sm) return null;
-            const vb = this.vertexBuffers[sm.vbIndex];
-            if (!vb) return null;
+            if (!this.vertexBuffer || !this.vertexAttributes.length || this.vertexStride <= 0) return null;
 
             const mapEntries = attributeMap && _is.obj(attributeMap) ? Object.entries(attributeMap) : [];
             const mapKey = mapEntries.length
                 ? mapEntries.sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => `${k}:${v}`).join("|")
                 : "";
-            const key = `${shader.id ?? "shader"}|${submeshIndex}|${mapKey}`;
+            const key = `${shader.id ?? "shader"}|${mapKey}`;
             const cached = this._vaoCache.get(key);
             if (cached?.vao) return cached;
 
             const vao = gl.createVertexArray();
             gl.bindVertexArray(vao);
 
-            for (const attr of vb.attributes) {
+            for (const attr of this.vertexAttributes) {
                 const shaderInputName = (attributeMap && attributeMap[attr.name]) ? attributeMap[attr.name] : attr.name;
                 const loc = shader.getInputLocation(shaderInputName);
                 if (loc == null || loc < 0) continue;
                 ZRender.wireAttr(gl, {
-                    buffer: vb.vbo,
+                    buffer: this.vertexBuffer,
                     loc,
                     size: attr.size,
                     type: attr.type,
                     normalized: attr.normalized,
-                    stride: vb.stride,
+                    stride: this.vertexStride,
                     offset: attr.offset,
                 });
             }
+            if (this.indexBuffer) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
 
             gl.bindVertexArray(null);
-            const entry = { vao, submeshIndex, key };
+            const entry = { vao, key };
             this._vaoCache.set(key, entry);
             return entry;
         }
