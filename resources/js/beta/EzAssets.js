@@ -70,6 +70,7 @@ WebGL-backed ECS asset storage and scene registry.
 
         static FIXED_FRAGMENT_UNIFORMS = Object.freeze([
             Object.freeze({ name: "u_matAlbedoTex", type: "sampler2D" }),
+            Object.freeze({ name: "u_matAlbedoColor", type: "vec4" }),
         ]);
 
         static #SYMBOLS = Object.freeze({
@@ -111,6 +112,7 @@ WebGL-backed ECS asset storage and scene registry.
             "$INST_SLOT2$": "a_instData2",
             "$INST_SLOT3$": "a_instData3",
             "$ALBEDO_TEX$": "u_matAlbedoTex",
+            "$ALBEDO_COLOR$": "u_matAlbedoColor",
             "$VIEW$": "u_view",
             "$PROJECTION$": "u_proj",
             "$SKIN_PALETTE$": "u_skinPalette",
@@ -211,6 +213,7 @@ WebGL-backed ECS asset storage and scene registry.
             if (!linked) return out;
 
             if (out.albedoTex == null && linked.albedoTex != null) out.albedoTex = linked.albedoTex;
+            if (out.albedoColor == null && linked.albedoColor != null) out.albedoColor = cloneData(linked.albedoColor);
             return out;
         }
 

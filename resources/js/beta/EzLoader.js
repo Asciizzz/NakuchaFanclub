@@ -265,6 +265,14 @@
             const pbr = m.pbrMetallicRoughness || {};
 
             const albedoTex = pbr.baseColorTexture?.index != null ? texIndexToId[pbr.baseColorTexture.index] ?? null : null;
+            const albedoColor = Array.isArray(pbr.baseColorFactor) && pbr.baseColorFactor.length >= 4
+                ? [
+                    Number(pbr.baseColorFactor[0] ?? 1) || 1,
+                    Number(pbr.baseColorFactor[1] ?? 1) || 1,
+                    Number(pbr.baseColorFactor[2] ?? 1) || 1,
+                    Number(pbr.baseColorFactor[3] ?? 1) || 1,
+                ]
+                : [1, 1, 1, 1];
             const metalRoughTex = pbr.metallicRoughnessTexture?.index != null ? texIndexToId[pbr.metallicRoughnessTexture.index] ?? null : null;
             const normalTex = m.normalTexture?.index != null ? texIndexToId[m.normalTexture.index] ?? null : null;
             const emissiveTex = m.emissiveTexture?.index != null ? texIndexToId[m.emissiveTexture.index] ?? null : null;
@@ -273,11 +281,12 @@
             const raw = {
                 name,
                 albedoTex,
+                albedoColor,
                 metalRoughTex,
                 normalTex,
                 emissiveTex,
             };
-            const baseId = createID("mat", name, albedoTex, metalRoughTex, normalTex, emissiveTex);
+            const baseId = createID("mat", name, albedoTex, albedoColor, metalRoughTex, normalTex, emissiveTex);
             const id = upsertById(materials, baseId, { id: baseId, ...raw });
             matIndexToId[mi] = id;
         }
@@ -426,7 +435,7 @@
 
             const material = materialID
                 ? { materialID }
-                : { albedoTex: null };
+                : { albedoTex: null, albedoColor: [1, 1, 1, 1] };
 
             const submeshRaw = {
                 name,
@@ -608,12 +617,7 @@
 
         return {
             id: createID("payload", url, Object.keys(meshes), Object.keys(textures), Object.keys(materials), Object.keys(skeletons), scene.id),
-            name,
-            meshes,
-            textures,
-            materials,
-            skeletons,
-            scene,
+            name, meshes, textures, materials, skeletons, scene,
         };
     }
 

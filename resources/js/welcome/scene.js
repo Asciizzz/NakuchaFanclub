@@ -8,8 +8,7 @@ if (camera) {
     camera.fov = 45;
     camera.near = 0.1;
     camera.far = 200;
-    camera.position = ZMath.V3.set(0, 0.5, 0.8);
-    // camera.lookAt(ZMath.V3.set(0, 0.0, 0));
+    camera.position = ZMath.V3.set(0, 0, 0);
     camera.aspect = container.clientWidth / container.clientHeight;
 }
 
@@ -23,7 +22,7 @@ project.registerShader("model-default", {
         cull: "back",
         blend: true,
         depthTest: true,
-        depthWrite: true
+        depthWrite: true,
     },
     vertex: {
         outputs: [
@@ -57,14 +56,18 @@ project.registerShader("model-default", {
         ],
         main: `
             vec4 texel = texture($ALBEDO_TEX$, v_uv);
-            vec3 baseColor = texel.rgb * v_slot0Color.rgb;
-            $OUT_COLOR$ = vec4(baseColor, texel.a * v_slot0Color.a);
+
+            float alpha = texel.a * v_slot0Color.a * $ALBEDO_COLOR$.a;
+            if (alpha < 0.01) discard;
+
+            vec3 rgb = texel.rgb * v_slot0Color.rgb * $ALBEDO_COLOR$.rgb;
+            $OUT_COLOR$ = vec4(rgb, texel.a * v_slot0Color.a);
         `,
     },
 });
 
 async function main() {
-    const sourceSceneID = await project.loadFromURL("/Models/Agnes.glb", {
+    const sourceSceneID = await project.loadFromURL("/Models/Nakurin.glb", {
         defaultShaderID: "model-default",
     });
     const sourceScene = project.getScene(sourceSceneID);
@@ -117,9 +120,10 @@ async function main() {
         const t = (performance.now() - start) * 0.001;
 
         if (addedData.transform) {
-            const y = Math.sin(t * 1.4) * 0.35;
-            const tr = ZMath.M4.fromTranslation(ZMath.V3.set(0, y, -1.8));
-            addedData.transform.local = tr;
+            const y = Math.sin(t * 1.4) * 0.35 - 1.4;
+            const tr = ZMath.M4.fromTranslation(ZMath.V3.set(0, y, -4.8));
+            const scl = ZMath.M4.fromScaling(ZMath.V3.set(1, 1, 1));
+            ZMath.M4.mul(tr, scl, addedData.transform.local);
         }
 
         for (const meshRenderer of addedData.meshRenderers) {
