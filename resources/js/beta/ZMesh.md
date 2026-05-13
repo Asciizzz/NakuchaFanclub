@@ -1,46 +1,88 @@
-// usage.js — building vertex + index buffers with ZBuffer
-// The class knows nothing about "triangles" or "vertices";
-// we bring all that meaning here.
+Note: Every assets will have a unique string ID created from their data (for example, you can use the vertices, indices and submesh data to generate a unique ID), some assets will rely on the ID to be referenced.
 
-const canvas = document.querySelector('canvas');
-const gl     = canvas.getContext('webgl');
+You should also store the ID directly in the asset data as well, for convenience.
 
-// ── 1. Geometry data (CPU side) ───────────────────────────
+ZLoader: no GL context, generate the assets and hierarchy data to be handled by ZProject
+	Material: {
+		fillColor
+		albedoTex: ID of a texture asset
+	}
 
-const vertices = new Float32Array([
-  // x       y      r     g     b
-   0.0,   0.6,   1.0, 0.4, 0.4,   // top — red
-  -0.5,  -0.4,   0.4, 1.0, 0.5,   // bottom-left — green
-   0.5,  -0.4,   0.4, 0.6, 1.0,   // bottom-right — blue
-]);
+	return {
+		meshes: {
+			"meshID": {
+				some mesh and submesh data
+				for submesh's material: {
+					fillColor
+					albedoTex: ID of a texture asset
+						// other material data in the future
+				}
+			}...
+		},
+		textures: {
+			"textureID": {
+				some ZTexture data
+			}...
+		},
+		...,
+		scene: Use the ZScene structure
+	}
 
-const indices = new Uint16Array([0, 1, 2]);
+ZScene extend ZTree:
+	node can have custom components
+	override addNode operation: call super, and add Transform component by default
+	An additional addScene function which will combine a different scene into the current one, with proper remapping of IDs. For convenience, you can add an additional addScene tracker, which will allow you to do a simple renaming which added a suffix for convience. For example, if you add a new scene to the existing one, instead of having to go through the node tracker, you just iterate them and add the suffix to the node ID instead.
 
-// ── 2. Create ZBuffers ────────────────────────────────────
+	0: {
+		1: {
+			// The first added scene
+			1_0: {
+				...
+			},
+			// The second added scene
+			1_1: {
+				...
+			}
+		}
+	}
 
-// Vertex buffer — interleaved pos+color, 20 bytes per vertex
-const vbo = new ZBuffer(gl, gl.ARRAY_BUFFER,          gl.STATIC_DRAW)
-  .upload(vertices);
+	contains: GL and the ZAssets of the project it belongs to.
 
-// Index buffer — tells GPU which vertices to connect
-const ibo = new ZBuffer(gl, gl.ELEMENT_ARRAY_BUFFER, gl.STATIC_DRAW)
-  .upload(indices);
+	Automatic rendering, batching, various other methods for components and components management
 
-// ── 3. Link layout to shader attributes ──────────────────
+	If theres any flaw in this logic, speak up immediately
 
-const STRIDE = 20;  // 5 floats × 4 bytes = 20 bytes per vertex
-const posLoc = gl.getAttribLocation(program, 'a_pos');
-const colLoc = gl.getAttribLocation(program, 'a_color');
+Node components (classes)
+	Transform: { local, world }
+	MeshRenderer: { meshID, shaderID, skeletonNode?, morphWeights?}
+	Skeleton: { skeletonID, bone data} -> the active skeleton data, which references the STATIC skeleton in assets
 
-vbo
-  .attrib(posLoc, 2, gl.FLOAT, false, STRIDE, 0)   // vec2 at byte 0
-  .attrib(colLoc, 3, gl.FLOAT, false, STRIDE, 8);  // vec3 at byte 8
 
-// ── 4. Draw ───────────────────────────────────────────────
+ZAssets: a WebGL powered asset storage for 3D objects (basically, it stores 3d data and their GPU memories in the most efficient way), it also contains scenes
 
-function render() {
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  ibo.bind();
-  gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, 0);
-  requestAnimationFrame(render);
-}
+
+ZProject: central 3D render engine contains:
+	ZAssets
+	ZCanvas (GL context)
+
+	A method to from URL automatically load assets and scenes, and store them in ZAssets, returning the scene ID in ZAssets
+
+	Ability to retrieve ZScene which allows you to freely manipulate/render
+
+Example flow:
+
+- Create new ZProject -> Automatically create ZAssets and ZCanvas
+
+- Load a scene from URL -> return the scene ID, and store the assets in ZAssets
+
+- Retrieve the scene using the scene ID -> return a ZScene object, which allows you to manipulate the scene freely
+	scene = project.getScene(sceneID)
+
+- Manipulate the scene
+  - node = scene.node("nodeID")
+  - node.transform.local.position = ZMath.V3(1, 2, 3)
+
+- A update function:
+  - scene.update(deltaTime) -> update every node
+
+- Render the scene -> scene.render() - dont forget, shader belongs to ZAssets, and scene can read from ZAssets

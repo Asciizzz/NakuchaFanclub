@@ -8,12 +8,7 @@ Contains
     ZRender     static, dimension-agnostic GL helpers
     ZBuffer     WebGL-backed structured buffer container
     ZShader     low-level shader compile + render-state base
-    ZCanvas   thin wrapper around <canvas> + WebGL2 context
-
-    -- Highly specialized --
-    ZCamera   view/projection helper
-    ZMesh        paused; old geometry container intentionally removed
-    EzSkeleton3D bone rig + skinning palette builder
+    ZCanvas     thin wrapper around <canvas> + WebGL2 context
 */
 
 (function () {
@@ -60,10 +55,17 @@ Contains
             return fallback;
         }
 
+        /**
+         * Bind a program fast. Tiny helper so callsite stay clean.
+         */
         static bind(gl, program) {
             gl.useProgram(program);
         }
 
+        /**
+         * Apply render state from a plain cfg object.
+         * Pass only thing you wanna change.
+         */
         static setState(gl, cfg) {
             if (!cfg) return;
             const hasProp = (prop) => Object.prototype.hasOwnProperty.call(cfg, prop);
@@ -108,6 +110,9 @@ Contains
             }
         }
 
+        /**
+         * Reset common GL state back to engine default.
+         */
         static restoreDefaultState(gl) {
             gl.depthMask(true);
             gl.enable(gl.DEPTH_TEST);
@@ -117,6 +122,9 @@ Contains
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         }
 
+        /**
+         * Bind VAO, run fn, unbind after.
+         */
         static withVAO(gl, vao, fn) {
             gl.bindVertexArray(vao);
             try { fn(); }
@@ -124,6 +132,10 @@ Contains
         }
 
 
+        /**
+         * Upload growable VBO data.
+         * Reuse old alloc when possible, grow if needed.
+         */
         static uploadVBO(gl, vbo, data, usage) {
             const need = data.byteLength;
             const cap = vbo._ezCapacity | 0;
@@ -139,6 +151,10 @@ Contains
             }
         }
 
+        /**
+         * Generic buffer upload helper.
+         * If byteOffset > 0 we do sub upload, else full upload.
+         */
         static uploadBuffer(gl, target, buffer, data, usage, byteOffset = 0) {
             if (!buffer || !data) return buffer;
             gl.bindBuffer(target, buffer);
@@ -150,11 +166,17 @@ Contains
             return buffer;
         }
 
+        /**
+         * Bind or unbind a buffer on a target.
+         */
         static bindBuffer(gl, target, buffer) {
             gl.bindBuffer(target, buffer ?? null);
             return buffer;
         }
 
+        /**
+         * Push constant attrib value for disabled attrib slot.
+         */
         static setConstAttrs(gl, list) {
             for (const a of list) {
                 const v = a.value ?? a.default ?? [0, 0, 0, 0];
@@ -162,6 +184,10 @@ Contains
             }
         }
 
+        /**
+         * Wire one vertex attrib from buffer.
+         * Works for regular attrib and instanced attrib (divisor).
+         */
         static wireAttr(gl, { buffer, loc, size, type, normalized, stride, offset, divisor, enabled }) {
             if (loc == null || loc === -1) return;
             gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -170,6 +196,9 @@ Contains
             if (divisor) gl.vertexAttribDivisor(loc, divisor);
         }
 
+        /**
+         * Bind tex to unit and set sampler uniform.
+         */
         static bindSampler(gl, loc, unit, tex, target) {
             if (loc == null) return;
             gl.activeTexture(gl.TEXTURE0 + unit);
@@ -177,6 +206,9 @@ Contains
             gl.uniform1i(loc, unit);
         }
 
+        /**
+         * Create + init a 2D texture from pixel data or image source.
+         */
         static createTexture(gl, {
             data, width = 1, height = 1,
             format = gl.RGBA, internalFormat = format, type = gl.UNSIGNED_BYTE,
@@ -209,6 +241,10 @@ Contains
         }
 
         static SCRATCH_TEX_UNIT = 15;
+        /**
+         * Upload raw texel data into a 2D texture.
+         * If tex missing we create one.
+         */
         static uploadTexture2D(gl, existing, internalFmt, fmt, type, w, h, data, unit = null) {
             const tex = existing ?? gl.createTexture();
             const explicit = unit != null;
@@ -226,6 +262,9 @@ Contains
             return tex;
         }
 
+        /**
+         * Create framebuffer render target with optional color/depth tex.
+         */
         static createRenderTarget(gl, {
             width = 256, height = 256,
             hasColor = false,
@@ -308,6 +347,9 @@ Contains
             };
         }
 
+        /**
+         * Resize an existing render target tex storage.
+         */
         static resizeRenderTarget(gl, target, width, height) {
             if (!target || !target.fbo) return target;
             const w = Math.max(1, Math.round(width));
@@ -354,6 +396,9 @@ Contains
             return target;
         }
 
+        /**
+         * Bind render target, run fn, restore prev framebuffer state.
+         */
         static withRenderTarget(gl, target, fn, { clear = true, clearColor = null, clearDepth = 1 } = {}) {
             if (!target || !target.fbo || typeof fn !== "function") return null;
             const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
@@ -397,6 +442,9 @@ Contains
             }
         }
 
+        /**
+         * Delete fbo + attached tex from a render target object.
+         */
         static destroyRenderTarget(gl, target) {
             if (!target) return;
             if (target.colorTex) gl.deleteTexture(target.colorTex);
@@ -407,6 +455,9 @@ Contains
             target.fbo = null;
         }
 
+        /**
+         * Draw helper for indexed/non-indexed instancing.
+         */
         static drawInstanced(gl, drawCfg, instanceCount) {
             const mode = drawCfg.mode ?? gl.TRIANGLES;
             if (drawCfg.indexed) {
@@ -417,6 +468,9 @@ Contains
         }
 
 
+        /**
+         * Pack one instance struct into flat float buffer.
+         */
         static packInstanceRow(arr, offFloats, data, layout) {
             for (const e of layout.entries) {
                 const src = data[e.name];
@@ -424,6 +478,9 @@ Contains
             }
         }
 
+        /**
+         * Pack many instance struct into one Float32Array.
+         */
         static packInstances(dataArray, layout) {
             const stride = layout.strideFloats;
             if (stride === 0) return null;
@@ -593,6 +650,9 @@ Contains
             return stage === 0 ? 'primary' : 'secondary';
         }
 
+        /**
+         * Read current builder spec (cloned plain object).
+         */
         read() {
             return {
                 version: this.#spec.version,
@@ -687,6 +747,10 @@ Contains
             }
         }
 
+        /**
+         * Merge spec into shader builder state.
+         * This is the main entrypoint for declarative shader setup.
+         */
         write(spec = {}) {
             if (!_is.obj(spec)) throw new Error('[ZShader] write() expects an object');
             this.#applyRootWrite(spec);
@@ -696,6 +760,9 @@ Contains
             return this;
         }
 
+        /**
+         * Store free custom data on shader.other.
+         */
         custom(nameOrObj, value = undefined) {
             if (_is.obj(nameOrObj)) {
                 for (const [key, val] of Object.entries(nameOrObj)) {
@@ -707,6 +774,9 @@ Contains
             return this;
         }
 
+        /**
+         * Batch version of custom().
+         */
         customs(obj) {
             if (_is.obj(obj)) { Object.assign(this.other, obj); }
             return this;
@@ -761,6 +831,9 @@ Contains
             return lines.join('\n');
         }
 
+        /**
+         * Build GLSL source from current builder state.
+         */
         build() {
             const source0 = this.#buildStage(0);
             const source1 = this.#buildStage(1);
@@ -796,6 +869,12 @@ Contains
             return this;
         }
 
+        /**
+         * Compile shader.
+         * Usage:
+         * 1 arg -> compile built spec using that gl
+         * 3 arg -> compile raw vert/frag source
+         */
         compile(vertSrc, fragSrc, gl) {
             if (arguments.length === 1) {
                 gl = vertSrc;
@@ -850,10 +929,16 @@ Contains
             this.uniforms = [...this.vertexUniforms, ...this.fragmentUniforms];
         }
 
+        /**
+         * Fast lookup for attrib location by name.
+         */
         getInputLocation(name) {
             return this.attributeLocations.get(name) ?? -1;
         }
 
+        /**
+         * Fast lookup for uniform location by name.
+         */
         getUniformLocation(name) {
             return this.uniformLocations.get(name) ?? null;
         }
@@ -869,6 +954,9 @@ Contains
             bool: (gl, loc, v) => gl.uniform1i(loc, v ? 1 : 0),
         };
 
+        /**
+         * Set one uniform using reflected type info.
+         */
         setUniform(gl, name, value) {
             const loc = this.getUniformLocation(name);
             if (loc == null) return false;
@@ -880,18 +968,30 @@ Contains
             return true;
         }
 
+        /**
+         * Set many uniforms in one call.
+         */
         setUniforms(gl, list) {
             for (const { name, value } of list) {
                 this.setUniform(gl, name, value);
             }
         }
 
+        /**
+         * Bind this program on current GL context.
+         */
         bind(gl) {
             ZRender.bind(gl, this.program);
             return this;
         }
 
+        /**
+         * Apply shader-owned render cfg (if any).
+         */
         applyRenderState(gl) { ZRender.setState(gl, this.other.renderCfg); return this; }
+        /**
+         * Reset render state back to engine default.
+         */
         static restoreRenderState(gl) { ZRender.restoreDefaultState(gl); }
 
         #compileShader(gl, type, src) {
@@ -929,6 +1029,166 @@ Contains
         }
     }
 
+    class ZBuffer {
+        #gl;          // WebGLRenderingContext
+        #handle;      // WebGLBuffer (opaque GPU handle)
+        #target;      // binding point (ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER…)
+        #usage;       // driver hint (STATIC_DRAW, DYNAMIC_DRAW…)
+        #byteLength;  // allocated byte size on GPU (0 = empty)
+        #warnedAttribApi = false;
+
+        /**
+         * Create a GPU buffer wrapper.
+         * Keep this class storage-focused, no mesh semantic here.
+         *
+         * @param {WebGLRenderingContext} gl
+         * @param {GLenum} target
+         * @param {GLenum} usage
+         */
+        constructor(gl, target, usage) {
+            this.#gl = gl;
+            this.#target = target ?? gl.ARRAY_BUFFER;
+            this.#usage = usage ?? gl.STATIC_DRAW;
+            this.#handle = gl.createBuffer();
+            this.#byteLength = 0;
+            if (!this.#handle) throw new Error('ZBuffer: createBuffer() failed');
+        }
+
+        get byteLength() { return this.#byteLength; }
+        get target() { return this.#target; }
+        get usage() { return this.#usage; }
+        get handle() { return this.#handle; } // escape hatch
+        get alive() { return this.#handle !== null; }
+
+        /**
+         * Change default usage hint for next alloc/upload.
+         */
+        setUsage(usage) {
+            if (typeof usage === "number") this.#usage = usage;
+            return this;
+        }
+
+        /**
+         * Bind this buffer on its target.
+         */
+        bind() {
+            this.#gl.bindBuffer(this.#target, this.#handle);
+            return this;
+        }
+
+        /**
+         * Unbind current buffer from its target.
+         */
+        unbind() {
+            this.#gl.bindBuffer(this.#target, null);
+            return this;
+        }
+
+        /**
+         * Delete GPU buffer handle.
+         */
+        delete() {
+            if (!this.#handle) return;
+            this.#gl.deleteBuffer(this.#handle);
+            this.#handle = null;
+            this.#byteLength = 0;
+        }
+
+        /**
+         * Full upload / re-upload.
+         * data can be typed array, arraybuffer, or byte size.
+         *
+         * @param {TypedArray|ArrayBuffer|number} dataOrByteLength
+         * @param {GLenum=} usageOverride
+         */
+        upload(dataOrByteLength, usageOverride = undefined) {
+            this.bind();
+            const usage = usageOverride ?? this.#usage;
+            this.#gl.bufferData(this.#target, dataOrByteLength, usage);
+            this.#byteLength = ZBuffer.#resolveByteLength(dataOrByteLength);
+            return this;
+        }
+
+        /**
+         * Partial upload into existing storage.
+         *
+         * @param {TypedArray|DataView|ArrayBuffer} data
+         * @param {number} byteOffset
+         */
+        uploadSub(data, byteOffset = 0) {
+            this.bind();
+            this.#gl.bufferSubData(this.#target, byteOffset, data);
+            const written = (data?.byteLength ?? 0) + byteOffset;
+            if (written > this.#byteLength) this.#byteLength = written;
+            return this;
+        }
+
+        /**
+         * Allocate empty GPU storage.
+         * Fill later using uploadSub.
+         *
+         * @param {number} byteLength
+         * @param {GLenum=} usageOverride
+         */
+        allocate(byteLength, usageOverride = undefined) {
+            this.bind();
+            const usage = usageOverride ?? this.#usage;
+            this.#gl.bufferData(this.#target, byteLength, usage);
+            this.#byteLength = Math.max(0, Number(byteLength) || 0);
+            return this;
+        }
+
+        /**
+         * Orphan old storage and allocate fresh one.
+         * Handy for streaming to avoid stall.
+         *
+         * @param {number=} byteLength
+         */
+        orphan(byteLength = undefined) {
+            const size = byteLength ?? this.#byteLength;
+            return this.allocate(size);
+        }
+
+        /**
+         * Legacy compat path.
+         * Prefer mesh-driven VAO wiring.
+         */
+        attrib(loc, size, type, normalize = false, stride = 0, offset = 0) {
+            if (!this.#warnedAttribApi) {
+                this.#warnedAttribApi = true;
+                _c.warn("[ZBuffer]", "attrib()/divisor() are legacy. Prefer ZMesh.createVAO() wiring.");
+            }
+            this.bind();
+            this.#gl.vertexAttribPointer(loc, size, type, normalize, stride, offset);
+            this.#gl.enableVertexAttribArray(loc);
+            return this;
+        }
+
+        /**
+         * Legacy compat path for instanced divisor.
+         * Prefer mesh-driven VAO wiring.
+         */
+        divisor(loc, d = 1) {
+            if (!this.#warnedAttribApi) {
+                this.#warnedAttribApi = true;
+                _c.warn("[ZBuffer]", "attrib()/divisor() are legacy. Prefer ZMesh.createVAO() wiring.");
+            }
+            const gl = this.#gl;
+            if (gl.vertexAttribDivisor) gl.vertexAttribDivisor(loc, d);
+            else {
+                const ext = gl.getExtension('ANGLE_instanced_arrays');
+                if (ext) ext.vertexAttribDivisorANGLE(loc, d);
+            }
+            return this;
+        }
+
+        static #resolveByteLength(v) {
+            if (typeof v === "number") return Math.max(0, v | 0);
+            if (v && typeof v.byteLength === "number") return v.byteLength;
+            throw new Error("[ZBuffer] upload() requires byteLength-capable data or explicit byte count");
+        }
+    }
+
     class ZCanvas {
         name = null;
         #canvas = null;
@@ -943,6 +1203,9 @@ Contains
         #maxPixelRatio = 2;
         #msaaEnabled = false;
 
+        /**
+         * Runtime canvas info in both logical px and draw px.
+         */
         get info() {
             return {
                 width: this.#canvas.width,
@@ -954,12 +1217,18 @@ Contains
             };
         }
 
+        /**
+         * Set pixel ratio used for draw buffer sizing.
+         */
         setPixelRatio(ratio) {
             this.#pixelRatio = this.#clampPixelRatio(ratio);
             this.#applyViewportSize();
             return this.#pixelRatio;
         }
 
+        /**
+         * Quick AA mode info snapshot.
+         */
         aaInfo() {
             return {
                 mode: "msaa+ssaa",
@@ -969,6 +1238,9 @@ Contains
             };
         }
 
+        /**
+         * Resize to parent element rect.
+         */
         fitContainer() {
             const parent = this.#canvas.parentElement;
             if (!parent) return this;
@@ -976,6 +1248,9 @@ Contains
             return this.resize(rect.width, rect.height);
         }
 
+        /**
+         * Build a canvas + webgl2 context wrapper.
+         */
         constructor(name, opts = {}) {
             this.name = name || "canvas";
             const c = document.createElement("canvas");
@@ -1025,14 +1300,23 @@ Contains
             this.#gl.viewport(0, 0, drawW, drawH);
         }
 
+        /**
+         * Attach canvas into DOM element.
+         */
         mount(el) {
             if (el instanceof Element) el.appendChild(this.#canvas);
             return this;
         }
+        /**
+         * Detach canvas from current parent if mounted.
+         */
         unmount() {
             this.#canvas.parentElement?.removeChild(this.#canvas);
             return this;
         }
+        /**
+         * Resize logical canvas size (draw size follow pixel ratio).
+         */
         resize(w, h) {
             this.#logicalWidth = Math.max(1, Math.round(w));
             this.#logicalHeight = Math.max(1, Math.round(h));
@@ -1040,18 +1324,14 @@ Contains
             return this;
         }
 
+        /**
+         * Reset viewport to full draw buffer size.
+         */
         resetViewport() {
             this.#gl.viewport(0, 0, this.#canvas.width, this.#canvas.height);
             return this;
         }
     }
-
-    window.ZRender = ZRender;
-    window.ZShader = ZShader;
-    window.ZCanvas = ZCanvas;
-
-    // Every thing below this line is highly specialized for 3D-object-driven rendering
-    // --------------------------------------------------------------------------------
 
     class ZCamera {
         position = ZMath.V3();
@@ -1130,195 +1410,11 @@ Contains
         }
     }
 
-    class ZBuffer {
-        #gl;          // WebGLRenderingContext
-        #handle;      // WebGLBuffer (opaque GPU handle)
-        #target;      // binding point (ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER…)
-        #usage;       // driver hint (STATIC_DRAW, DYNAMIC_DRAW…)
-        #byteLength;  // allocated byte size on GPU (0 = empty)
-
-        /**
-         * @param {WebGLRenderingContext} gl
-         * @param {GLenum} target  - default: ARRAY_BUFFER
-         * @param {GLenum} usage   - default: STATIC_DRAW
-         */
-        constructor(gl, target, usage) {
-            this.#gl = gl;
-            this.#target = target ?? gl.ARRAY_BUFFER;
-            this.#usage = usage ?? gl.STATIC_DRAW;
-            this.#handle = gl.createBuffer();
-            this.#byteLength = 0;
-            if (!this.#handle) throw new Error('ZBuffer: createBuffer() failed');
-        }
-
-        get byteLength() { return this.#byteLength; }
-        get target() { return this.#target; }
-        get handle() { return this.#handle; } // escape hatch
-        get alive() { return this.#handle !== null; }
-
-        bind() {
-            this.#gl.bindBuffer(this.#target, this.#handle);
-            return this;
-        }
-
-        unbind() {
-            this.#gl.bindBuffer(this.#target, null);
-            return this;
-        }
-
-        delete() {
-            this.#gl.deleteBuffer(this.#handle);
-            this.#handle = null;
-            this.#byteLength = 0;
-        }
-
-        /**
-         * Full upload - allocates (or re-allocates) GPU memory.
-         * Orphans the old store if size changed, hinting the driver
-         * to give us fresh memory without a sync stall.
-         * @param {TypedArray|ArrayBuffer} data
-         */
-        upload(data) {
-            this.bind();
-            this.#gl.bufferData(this.#target, data, this.#usage);
-            this.#byteLength = data.byteLength ?? data;
-            return this;
-        }
-
-        /**
-         * Partial upload - writes into an already-allocated buffer.
-         * No reallocation. Use this for streaming / per-frame updates.
-         * @param {TypedArray} data
-         * @param {number}     byteOffset  - byte offset into the GPU buffer
-         */
-        uploadSub(data, byteOffset = 0) {
-            this.bind();
-            this.#gl.bufferSubData(this.#target, byteOffset, data);
-            return this;
-        }
-
-        /**
-         * Allocate empty GPU memory - fill later with uploadSub().
-         * @param {number} byteLength
-         */
-        allocate(byteLength) {
-            this.bind();
-            this.#gl.bufferData(this.#target, byteLength, this.#usage);
-            this.#byteLength = byteLength;
-            return this;
-        }
-
-        /**
-         * Declare a float vertex attribute layout and enable it.
-         * @param {number} loc       - attribute location
-         * @param {number} size      - components per vertex (1–4)
-         * @param {GLenum} type      - gl.FLOAT, gl.BYTE, gl.SHORT…
-         * @param {boolean} normalize
-         * @param {number} stride    - bytes between vertex starts (0 = tight)
-         * @param {number} offset    - bytes to first component
-         */
-        attrib(loc, size, type, normalize = false, stride = 0, offset = 0) {
-            this.bind();
-            this.#gl.vertexAttribPointer(loc, size, type, normalize, stride, offset);
-            this.#gl.enableVertexAttribArray(loc);
-            return this;
-        }
-
-        /**
-         * Set the instanced divisor for an attribute (WebGL2 / ANGLE ext).
-         * 0 = per-vertex (default), 1 = per-instance, N = every N instances.
-         */
-        divisor(loc, d = 1) {
-            const gl = this.#gl;
-            if (gl.vertexAttribDivisor) {
-                gl.vertexAttribDivisor(loc, d);
-            } else {
-                // WebGL1 fallback via ANGLE_instanced_arrays extension
-                const ext = gl.getExtension('ANGLE_instanced_arrays');
-                if (ext) ext.vertexAttribDivisorANGLE(loc, d);
-            }
-            return this;
-        }
-    }
-
-    class ZMesh {
-        constructor() {
-            throw new Error("[ZMesh] paused during buffer/geometry rework. Build on ZBuffer directly for now.");
-        }
-    }
-
-    class EzSkeleton3D {
-        // bones: [{ parent: int, localBind: Mat4, inverseBind: Mat4, name: string }]
-        bones = [];
-
-        // Scratch buffers (allocated lazily in computePalette).
-        #globalCurrent = []; // Mat4[]
-        #localScratch = ZMath.M4();
-        #skinnedScratch = ZMath.M4();
-
-        // bonePoses: Mat4[] (length === bones.length). Returns a Float32Array of
-        // n*16 floats (column-major mat4s) suitable for upload to the bone-palette
-        // texture. The palette is freshly allocated each call (caller can keep it).
-        computePalette(bonePoses) {
-            const n = this.bones.length;
-            const gc = this.#globalCurrent;
-            if (gc.length !== n) {
-                gc.length = 0;
-                for (let i = 0; i < n; i++) gc.push(ZMath.M4());
-            }
-            const palette = new Float32Array(n * 16);
-            const local = this.#localScratch, skinned = this.#skinnedScratch;
-            for (let i = 0; i < n; i++) {
-                const b = this.bones[i];
-                ZMath.M4.mul(b.localBind, bonePoses[i], local);
-                if (b.parent < 0) gc[i].set(local);
-                else ZMath.M4.mul(gc[b.parent], local, gc[i]);
-                ZMath.M4.mul(gc[i], b.inverseBind, skinned);
-                palette.set(skinned, i * 16);
-            }
-            return palette;
-        }
-
-        // skeleton: { bones: [{ parent?, localBind?: Mat4 | { position?, rotation?, euler?, scale? },
-        //                       inverseBind?: Mat4, name? }] }
-        static fromDesc(key, skeleton) {
-            if (!skeleton || !Array.isArray(skeleton.bones) || skeleton.bones.length === 0) return null;
-            const bones = [], globalBind = []; // globalBind: Mat4[]
-            for (let i = 0; i < skeleton.bones.length; i++) {
-                const b = skeleton.bones[i];
-                const parent = b.parent ?? -1;
-                if (parent >= i)
-                    return _c.warn(`[EzSkeleton3D]`, `"${key}": bone ${i} parent must be < self`) || null;
-
-                const localBind = ZMath.M4();
-                resolveTransform(localBind, b.localBind ?? null);
-
-                const gb = ZMath.M4();
-                if (parent < 0) gb.set(localBind);
-                else ZMath.M4.mul(globalBind[parent], localBind, gb);
-                globalBind[i] = gb;
-
-                let inverseBind;
-                if (b.inverseBind && (ArrayBuffer.isView(b.inverseBind) || Array.isArray(b.inverseBind)) && b.inverseBind.length >= 16) {
-                    inverseBind = ZMath.M4();
-                    inverseBind.set(b.inverseBind);
-                } else {
-                    inverseBind = ZMath.M4();
-                    if (!ZMath.M4.invert(gb, inverseBind)) ZMath.M4.identity(inverseBind);
-                }
-
-                bones.push({ parent, localBind, inverseBind, name: typeof b.name === "string" ? b.name : `Bone_${i}` });
-            }
-            const skel = new EzSkeleton3D();
-            skel.bones = bones;
-            return skel;
-        }
-    }
-
+    window.ZRender = ZRender;
+    window.ZShader = ZShader;
     window.ZBuffer = ZBuffer;
-    window.ZMesh = ZMesh;
-    delete window.ZSubmesh;
-    window.EzSkeleton3D = EzSkeleton3D;
+    window.ZCanvas = ZCanvas;
     window.ZCamera = ZCamera;
 
 })();
+
