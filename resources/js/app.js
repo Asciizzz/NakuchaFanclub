@@ -6,6 +6,7 @@ import './WeebGL/EzScene.js';
 import './WeebGL/EzLoader.js';
 import './WeebGL/EzAssets.js';
 import './WeebGL/EzProject.js';
+import './WeebGL/EzNakurin.js';
 
 import './lib/EzCanvas2D.js';
 import './lib/EzFloater.js';

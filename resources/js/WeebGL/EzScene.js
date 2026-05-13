@@ -80,33 +80,22 @@ ZTree extension for ECS-style scene management.
             return out;
         }
 
-        const src = (localTransform && typeof localTransform === "object" && (localTransform.local || localTransform.matrix))
-            ? (localTransform.local || localTransform.matrix)
-            : localTransform;
-
-        if ((ArrayBuffer.isView(src) || Array.isArray(src)) && src.length >= 16) {
+        if ((ArrayBuffer.isView(localTransform) || Array.isArray(localTransform)) && localTransform.length >= 16) {
             const out = new Float32Array(16);
-            out.set(src.subarray ? src.subarray(0, 16) : src.slice(0, 16));
+            out.set(localTransform.subarray ? localTransform.subarray(0, 16) : localTransform.slice(0, 16));
             return out;
         }
 
-        const obj = (src && typeof src === "object") ? src : {};
-        const position = toVec3(obj.position ?? obj.translation ?? obj.pos, [0, 0, 0]);
-        const scale = toVec3(obj.scale, [1, 1, 1]);
-        const euler = obj.euler ?? null;
-        let rotation = toVec4(obj.rotation ?? obj.rotQ ?? obj.quaternion, [0, 0, 0, 1]);
-
-        if (euler != null) {
-            const eu = toVec3(euler, [0, 0, 0]);
-            const qx = ZMath.Q.fromAxisAngle(ZMath.V3.RIGHT, eu[0]);
-            const qy = ZMath.Q.fromAxisAngle(ZMath.V3.UP, eu[1]);
-            const qz = ZMath.Q.fromAxisAngle(ZMath.V3.FORWARD, eu[2]);
-            const qxy = ZMath.Q.mul(qy, qx);
-            const q = ZMath.Q.mul(qz, qxy);
-            rotation = [q[0], q[1], q[2], q[3]];
+        const obj = (localTransform && typeof localTransform === "object") ? localTransform : {};
+        if ((ArrayBuffer.isView(obj.matrix) || Array.isArray(obj.matrix)) && obj.matrix.length >= 16) {
+            const out = new Float32Array(16);
+            out.set(obj.matrix.subarray ? obj.matrix.subarray(0, 16) : obj.matrix.slice(0, 16));
+            return out;
         }
-
-        return ZMath.M4.fromTRS(position, rotation, scale);
+        const translate = toVec3(obj.translate, [0, 0, 0]);
+        const rotate = toVec4(obj.rotate, [0, 0, 0, 1]);
+        const scale = toVec3(obj.scale, [1, 1, 1]);
+        return ZMath.M4.fromTRS(translate, rotate, scale);
     }
 
     function cloneData(value) {
@@ -488,18 +477,11 @@ ZTree extension for ECS-style scene management.
     }
 
     class Custom {
-        $ = {};
         log = null;
 
         #scene = null;
         #assets = null;
         #nodeId = null;
-
-        constructor(opts = {}) {
-            this.$ = (opts && typeof opts.$ === "object")
-                ? cloneData(opts.$)
-                : {};
-        }
 
         __bindSceneContext(ctx = {}) {
             this.#scene = ctx.scene ?? null;
@@ -527,7 +509,18 @@ ZTree extension for ECS-style scene management.
         if (value instanceof Transform) return new Transform(value.local, value.world);
         if (value instanceof MeshRenderer) return new MeshRenderer(value);
         if (value instanceof Skeleton) return new Skeleton(value);
-        if (value instanceof Custom) return new Custom(value);
+        if (value instanceof Custom) {
+            if (typeof value.__clone === "function") {
+                const out = value.__clone();
+                if (out) return out;
+            }
+            const ctor = value.constructor;
+            if (typeof ctor === "function" && ctor !== Custom) {
+                try { return new ctor(value); }
+                catch (_error) {}
+            }
+            return new Custom(value);
+        }
         return cloneData(value);
     }
 
@@ -662,6 +655,21 @@ ZTree extension for ECS-style scene management.
                 if (!(meshRenderer instanceof MeshRenderer) || !meshRenderer.skeletonNode) continue;
                 const remappedSkeleton = idMap.get(String(meshRenderer.skeletonNode));
                 if (remappedSkeleton) meshRenderer.setSkeletonNode(remappedSkeleton);
+            }
+
+            for (const remappedId of idMap.values()) {
+                const node = this.node(remappedId);
+                if (!node) continue;
+                for (const value of Object.values(node.$ ?? {})) {
+                    if (!value || typeof value.__onSceneRemap !== "function") continue;
+                    try { value.__onSceneRemap(idMap, this); }
+                    catch (error) {
+                        this.log.write("component_remap_error", `[EzScene] component remap hook failed on node "${remappedId}"`, {
+                            nodeId: remappedId,
+                            error: String(error?.message ?? error),
+                        });
+                    }
+                }
             }
 
             const tracker = {

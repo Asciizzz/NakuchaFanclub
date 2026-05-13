@@ -9,7 +9,6 @@ if (camera) {
     camera.near = 0.1;
     camera.far = 200;
     camera.position = ZMath.V3.set(0, 4, 4);
-    camera.lookAt(0, 0, 0);
     camera.aspect = container.clientWidth / container.clientHeight;
 }
 
@@ -17,6 +16,53 @@ new ResizeObserver(() => {
     project.fitContainer();
     if (camera) camera.aspect = container.clientWidth / container.clientHeight;
 }).observe(container);
+
+const cameraControl = {
+    keys: Object.create(null),
+    yaw: 0,
+    pitch: 0,
+    moveSpeed: 7.5,
+    lookSensitivity: 0.0022,
+    pitchLimit: 1.52,
+    pointerTarget: container.querySelector("canvas") ?? container,
+};
+
+if (camera) {
+    const f = camera.forward;
+    cameraControl.yaw = Math.atan2(-f[0], -f[2]);
+    cameraControl.pitch = Math.asin(Math.max(-1, Math.min(1, Number(f[1]) || 0)));
+}
+
+function applyCameraLook() {
+    if (!camera) return;
+    const qYaw = ZMath.Q.fromAxisAngle(ZMath.V3.UP, cameraControl.yaw);
+    const qPitch = ZMath.Q.fromAxisAngle(ZMath.V3.RIGHT, cameraControl.pitch);
+    ZMath.Q.mul(qYaw, qPitch, camera.orientation);
+}
+
+applyCameraLook();
+
+window.addEventListener("keydown", (event) => {
+    cameraControl.keys[event.code] = true;
+});
+window.addEventListener("keyup", (event) => {
+    cameraControl.keys[event.code] = false;
+});
+window.addEventListener("blur", () => {
+    cameraControl.keys = Object.create(null);
+});
+
+cameraControl.pointerTarget?.addEventListener("click", () => {
+    cameraControl.pointerTarget.requestPointerLock?.();
+});
+
+document.addEventListener("mousemove", (event) => {
+    if (!camera || document.pointerLockElement !== cameraControl.pointerTarget) return;
+    cameraControl.yaw -= event.movementX * cameraControl.lookSensitivity;
+    cameraControl.pitch -= event.movementY * cameraControl.lookSensitivity;
+    cameraControl.pitch = Math.max(-cameraControl.pitchLimit, Math.min(cameraControl.pitchLimit, cameraControl.pitch));
+    applyCameraLook();
+});
 
 project.registerShader("model-default", {
     renderCfg: {
@@ -81,61 +127,59 @@ async function main() {
         camera: project.camera
     });
 
-    const addedData = {};
+    const merged = compositeScene.addScene(sourceScene, { suffix: "_base" });
+    const nodeIds = Object.values(merged?.map ?? {});
+    const rootNode = compositeScene.node(nodeIds[0] ?? compositeScene.rootId);
 
-    addedData.scene = compositeScene.addScene(sourceScene, {
-        suffix: "_base"
-    });
-    addedData.nodeIds = Object.values(addedData.scene.map);
-
-    addedData.root = compositeScene.node(addedData.nodeIds[0]);
-    addedData.transform = addedData.root.get("Transform");
-
-    addedData.meshRenderers = [];
-    addedData.skeletons = [];
-    for (const nodeId of addedData.nodeIds) {
+    let boundNodeId = null;
+    for (const nodeId of nodeIds) {
         const node = compositeScene.node(nodeId);
-
         const meshRenderer = node?.get("MeshRenderer");
-        if (meshRenderer) {
-            meshRenderer.shaderID = "model-default";
-            meshRenderer.setSlot(0, { x: 1.0, y: 1.0, z: 1.0, w: 1.0 });
+        if (!meshRenderer) continue;
+        meshRenderer.shaderID = "model-default";
+        meshRenderer.setSlot(0, { x: 1.0, y: 1.0, z: 1.0, w: 1.0 });
 
-            addedData.meshRenderers.push(meshRenderer);
-
-            const mesh = meshRenderer.meshAsset;
-            console.log(mesh);
-        }
-
-        const skeleton = node?.get("Skeleton");
-        if (skeleton) {
-            addedData.skeletons.push(skeleton);
-            console.log(skeleton);
-        }
+        const skelNode = compositeScene.node(meshRenderer.skeletonNode ?? "");
+        const skeleton = skelNode?.get("Skeleton");
+        if (!boundNodeId && skeleton instanceof Skeleton) boundNodeId = nodeId;
     }
 
-    console.log("Added data", addedData);
+    const nakurin = compositeScene.addComponent(rootNode?.id ?? compositeScene.rootId, "Custom", new Nakurin());
+    if (nakurin instanceof Nakurin && boundNodeId) nakurin.bind(boundNodeId);
 
-    const start = performance.now();
-    function frame() {
-        const t = (performance.now() - start) * 0.001;
+    let previous = performance.now();
+    function frame(now = performance.now()) {
+        const deltaTime = (now - previous) * 0.001;
+        previous = now;
 
-        if (addedData.transform) {
-            const y = Math.sin(t * 1.4) * 0.35 - 1.4;
-            const tr = ZMath.M4.fromTranslation(ZMath.V3.set(0, y, 0));
-            const scl = ZMath.M4.fromScaling(ZMath.V3.set(1, 1, 1));
-            ZMath.M4.mul(tr, scl, addedData.transform.local);
+        if (camera) {
+            const speed = cameraControl.moveSpeed * deltaTime;
+            const forward = camera.forward;
+            const right = camera.right;
+
+            if (cameraControl.keys.KeyW) {
+                camera.position[0] += forward[0] * speed;
+                camera.position[1] += forward[1] * speed;
+                camera.position[2] += forward[2] * speed;
+            }
+            if (cameraControl.keys.KeyS) {
+                camera.position[0] -= forward[0] * speed;
+                camera.position[1] -= forward[1] * speed;
+                camera.position[2] -= forward[2] * speed;
+            }
+            if (cameraControl.keys.KeyD) {
+                camera.position[0] += right[0] * speed;
+                camera.position[1] += right[1] * speed;
+                camera.position[2] += right[2] * speed;
+            }
+            if (cameraControl.keys.KeyA) {
+                camera.position[0] -= right[0] * speed;
+                camera.position[1] -= right[1] * speed;
+                camera.position[2] -= right[2] * speed;
+            }
         }
 
-        // for (const meshRenderer of addedData.meshRenderers) {
-        //     meshRenderer.setMorphWeight("Mouth_15_0(OdorokiB)[M_Face]", Math.sin(t * 3.7) * 0.5 + 0.5);
-        // }
-
-        const hipRot = Math.sin(t * 2.2) * 0.55;
-        for (const skeleton of addedData.skeletons) {
-            skeleton.set("ShoulderRight", { euler: [hipRot, 0, 0] });
-            skeleton.set("ShoulderLeft", { euler: [-hipRot, 0, 0] });
-        }
+        compositeScene.update(deltaTime);
 
         ZRender.setState(project.gl, {
             clear: ["color", "depth"],
@@ -145,7 +189,7 @@ async function main() {
             blend: true,
         });
 
-        compositeScene.render();
+        compositeScene.render({ skipUpdate: true });
         requestAnimationFrame(frame);
     }
 
