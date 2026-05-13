@@ -48,6 +48,8 @@ WebGL-backed ECS asset storage and scene registry.
             Object.freeze({ name: "a_tangent", type: "vec4" }),
             Object.freeze({ name: "a_boneID", type: "vec4", default: [0, 0, 0, 0] }),
             Object.freeze({ name: "a_boneWeight", type: "vec4", default: [0, 0, 0, 0] }),
+            Object.freeze({ name: "a_morphPos", type: "vec3", default: [0, 0, 0] }),
+            Object.freeze({ name: "a_morphNrml", type: "vec3", default: [0, 0, 0] }),
             Object.freeze({ name: "a_instModel0", type: "vec4", divisor: 1 }),
             Object.freeze({ name: "a_instModel1", type: "vec4", divisor: 1 }),
             Object.freeze({ name: "a_instModel2", type: "vec4", divisor: 1 }),
@@ -62,6 +64,8 @@ WebGL-backed ECS asset storage and scene registry.
             Object.freeze({ name: "u_view", type: "mat4" }),
             Object.freeze({ name: "u_proj", type: "mat4" }),
             Object.freeze({ name: `u_skinPalette[${ZAssets.SKIN_BONE_CAP}]`, type: "mat4" }),
+            Object.freeze({ name: "u_vtxFlags", type: "vec4" }),
+            Object.freeze({ name: "u_morphWeight", type: "float" }),
         ]);
 
         static FIXED_FRAGMENT_UNIFORMS = Object.freeze([
@@ -77,6 +81,14 @@ WebGL-backed ECS asset storage and scene registry.
             "$BONE_IDS$": "a_boneID",
             "$BONE_WEIGHT$": "a_boneWeight",
             "$BONE_WEIGHTS$": "a_boneWeight",
+            "$COLOR$": "vec4(1.0)",
+            "$MORPH_POS$": "a_morphPos",
+            "$MORPH_POSITION$": "a_morphPos",
+            "$MORPH_NRML$": "a_morphNrml",
+            "$MORPH_NORMAL$": "a_morphNrml",
+            "$MORPH_TANGENT$": "vec4(0.0)",
+            "$MORPH_WEIGHT$": "u_morphWeight",
+            "$INST_MORPH_WEIGHT$": "u_morphWeight",
             "$INSTANCE_MODEL0$": "a_instModel0",
             "$INSTANCE_MODEL1$": "a_instModel1",
             "$INSTANCE_MODEL2$": "a_instModel2",
@@ -103,6 +115,10 @@ WebGL-backed ECS asset storage and scene registry.
             "$PROJECTION$": "u_proj",
             "$SKIN_PALETTE$": "u_skinPalette",
             "$SKIN_MAX_INDEX$": String(ZAssets.SKIN_BONE_CAP - 1),
+            "$VTX_FLAGS$": "u_vtxFlags",
+            "$HAS_RIG$": "(u_vtxFlags.x > 0.5)",
+            "$HAS_MORPH$": "(u_vtxFlags.y > 0.5)",
+            "$HAS_COLOR$": "(u_vtxFlags.z > 0.5)",
             "$OUT_COLOR$": "fragColor",
         });
 

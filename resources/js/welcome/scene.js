@@ -8,7 +8,7 @@ if (camera) {
     camera.fov = 45;
     camera.near = 0.1;
     camera.far = 200;
-    camera.position = ZMath.V3.set(0, 1.2, 4.8);
+    camera.position = ZMath.V3.set(0, 1.2, 2.8);
     camera.lookAt(ZMath.V3.set(0, 0.8, 0));
     camera.aspect = container.clientWidth / container.clientHeight;
 }
@@ -25,6 +25,8 @@ project.registerShader("model-default", {
             { name: "v_slot0Color", type: "vec4" },
         ],
         main: `
+            vec3 localPos = $POSITION$;
+            if ($HAS_MORPH$) localPos += $MORPH_POS$ * $MORPH_WEIGHT$;
             vec4 weights = $BONE_WEIGHTS$;
             float wsum = weights.x + weights.y + weights.z + weights.w;
             mat4 skin = mat4(1.0);
@@ -36,7 +38,7 @@ project.registerShader("model-default", {
                     weights.z * $SKIN_PALETTE$[clamp(ids.z, 0, $SKIN_MAX_INDEX$)] +
                     weights.w * $SKIN_PALETTE$[clamp(ids.w, 0, $SKIN_MAX_INDEX$)];
             }
-            vec4 skinnedPos = skin * vec4($POSITION$, 1.0);
+            vec4 skinnedPos = skin * vec4(localPos, 1.0);
             gl_Position = $PROJECTION$ * $VIEW$ * $INST_MODEL$ * skinnedPos;
             v_uv = $UV$;
             v_slot0Color = $INST_SLOT0$;
@@ -67,6 +69,12 @@ project.registerShader("model-outline", {
     vertex: {
         outputs: [{ name: "v_outlineColor", type: "vec4" }],
         main: `
+            vec3 localPos = $POSITION$;
+            vec3 localNormal = $NORMAL$;
+            if ($HAS_MORPH$) {
+                localPos += $MORPH_POS$ * $MORPH_WEIGHT$;
+                localNormal = normalize(localNormal + $MORPH_NORMAL$ * $MORPH_WEIGHT$);
+            }
             vec4 weights = $BONE_WEIGHTS$;
             float wsum = weights.x + weights.y + weights.z + weights.w;
             mat4 skin = mat4(1.0);
@@ -78,8 +86,8 @@ project.registerShader("model-outline", {
                     weights.z * $SKIN_PALETTE$[clamp(ids.z, 0, $SKIN_MAX_INDEX$)] +
                     weights.w * $SKIN_PALETTE$[clamp(ids.w, 0, $SKIN_MAX_INDEX$)];
             }
-            vec4 skinnedPos = skin * vec4($POSITION$, 1.0);
-            vec3 skinnedNormal = normalize((skin * vec4($NORMAL$, 0.0)).xyz);
+            vec4 skinnedPos = skin * vec4(localPos, 1.0);
+            vec3 skinnedNormal = normalize((skin * vec4(localNormal, 0.0)).xyz);
             float outlineWidth = max($INST_SLOT1$.x, 0.001);
             vec3 expanded = skinnedPos.xyz + skinnedNormal * outlineWidth;
             gl_Position = $PROJECTION$ * $VIEW$ * $INST_MODEL$ * vec4(expanded, 1.0);
@@ -95,7 +103,7 @@ project.registerShader("model-outline", {
 });
 
 async function main() {
-    const sourceSceneID = await project.loadFromURL("/Models/Nakurin.glb", {
+    const sourceSceneID = await project.loadFromURL("/Models/Agnes.glb", {
         defaultShaderID: "model-default",
     });
     const sourceScene = project.getScene(sourceSceneID);
@@ -113,10 +121,10 @@ async function main() {
         renameBySuffix: true,
     });
 
-    const secondTracker = compositeScene.addScene(sourceScene, {
-        suffix: "_outline",
-        renameBySuffix: true,
-    });
+    // const secondTracker = compositeScene.addScene(sourceScene, {
+    //     suffix: "_outline",
+    //     renameBySuffix: true,
+    // });
 
     for (const nodeId of Object.values(firstTracker.map)) {
         const node = compositeScene.node(nodeId);
@@ -127,13 +135,22 @@ async function main() {
         }
     }
 
-    for (const nodeId of Object.values(secondTracker.map)) {
-        const node = compositeScene.node(nodeId);
-        const meshRenderer = node?.get("MeshRenderer");
-        if (!meshRenderer) continue;
-        meshRenderer.shaderID = "model-outline";
-        meshRenderer.setSlot(0, { x: 0.04, y: 0.95, z: 0.35, w: 0.22 });
-        meshRenderer.setSlot(1, { x: 0.04, y: 0, z: 0, w: 0 });
+    // for (const nodeId of Object.values(secondTracker.map)) {
+    //     const node = compositeScene.node(nodeId);
+    //     const meshRenderer = node?.get("MeshRenderer");
+    //     if (!meshRenderer) continue;
+    //     meshRenderer.shaderID = "model-outline";
+    //     meshRenderer.setSlot(0, { x: 0.04, y: 0.95, z: 0.35, w: 0.22 });
+    //     meshRenderer.setSlot(1, { x: 0.04, y: 0, z: 0, w: 0 });
+    // }
+
+    const morphControllers = [];
+    for (const [, node] of compositeScene.traverse(compositeScene.rootId, null, false)) {
+        const meshRenderer = node.get("MeshRenderer");
+        if (!meshRenderer?.meshID || !meshRenderer.morphWeights?.length) continue;
+        const meshData = project.assets.getMeshData(meshRenderer.meshID);
+        const morphName = meshData?.morphTargetNames?.[70] ?? "Target_0";
+        morphControllers.push({ meshRenderer, morphName });
     }
 
     const root = compositeScene.root();
@@ -163,9 +180,15 @@ async function main() {
         //     const rot = ZMath.M4.fromRotationY(t * 0.8);
         //     ZMath.M4.mul(tr, rot, transform.local);
         // }
-        const hipRotY = Math.sin(t * 2.2) * 0.55;
-        for (const entry of animatedSkeletons) {
-            entry.skeleton.set(entry.hipRef, { euler: [0, hipRotY, 0] });
+
+        // const hipRotY = Math.sin(t * 2.2) * 0.55;
+        // for (const entry of animatedSkeletons) {
+        //     entry.skeleton.set(entry.hipRef, { euler: [0, hipRotY, 0] });
+        // }
+
+        const morphW = 0.5 + Math.sin(t * 3.4) * 0.5;
+        for (const morph of morphControllers) {
+            morph.meshRenderer.setMorphWeight(morph.morphName, morphW);
         }
 
         ZRender.setState(project.gl, {

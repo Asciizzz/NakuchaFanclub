@@ -184,12 +184,68 @@ ZTree extension for ECS-style scene management.
             return this.instanceSlots[s];
         }
 
+        resolveMorphIndex(indexOrName) {
+            this.#syncMeshShape();
+            const mesh = this.#assets?.getMesh?.(this.meshID);
+            if (mesh?.resolveMorphTargetRef) {
+                const resolved = mesh.resolveMorphTargetRef(indexOrName);
+                if (resolved >= 0) return resolved;
+            }
+            if (typeof indexOrName === "number" && Number.isFinite(indexOrName)) {
+                const idx = indexOrName | 0;
+                if (idx < 0) return -1;
+                if (!this.morphWeights || typeof this.morphWeights.length !== "number") return idx;
+                return idx < this.morphWeights.length ? idx : -1;
+            }
+            return -1;
+        }
+
+        setMorphWeight(indexOrName, weight = 0) {
+            this.#syncMeshShape();
+            if (!this.morphWeights || this.morphWeights.length <= 0) return this;
+            const idx = this.resolveMorphIndex(indexOrName);
+            if (idx < 0 || idx >= this.morphWeights.length) {
+                throw new Error(`[MeshRenderer] unknown morph target "${indexOrName}"`);
+            }
+            this.morphWeights[idx] = Number(weight) || 0;
+            return this;
+        }
+
+        getMorphWeight(indexOrName) {
+            if (!this.morphWeights || this.morphWeights.length <= 0) return 0;
+            const idx = this.resolveMorphIndex(indexOrName);
+            if (idx < 0 || idx >= this.morphWeights.length) return 0;
+            return this.morphWeights[idx];
+        }
+
+        setMorphExclusive(indexOrName, weight = 1) {
+            this.#syncMeshShape();
+            if (!this.morphWeights || this.morphWeights.length <= 0) return this;
+            for (let i = 0; i < this.morphWeights.length; i++) this.morphWeights[i] = 0;
+            return this.setMorphWeight(indexOrName, weight);
+        }
+
+        getPrimaryMorph() {
+            if (!this.morphWeights || this.morphWeights.length <= 0) return { index: 0, weight: 0 };
+            let bestIndex = 0;
+            let bestAbs = Math.abs(this.morphWeights[0] ?? 0);
+            for (let i = 1; i < this.morphWeights.length; i++) {
+                const mag = Math.abs(this.morphWeights[i] ?? 0);
+                if (mag > bestAbs) {
+                    bestAbs = mag;
+                    bestIndex = i;
+                }
+            }
+            return { index: bestIndex, weight: this.morphWeights[bestIndex] ?? 0 };
+        }
+
         #syncMeshShape() {
             if (!this.#assets || !this.meshID) return;
             const meshData = this.#assets.getMeshData?.(this.meshID);
             if (!meshData) return;
 
-            const fallbackCount = Array.isArray(meshData.morphTargetNames) ? meshData.morphTargetNames.length : 0;
+            const mesh = this.#assets.getMesh?.(this.meshID);
+            const fallbackCount = Number(mesh?.morphTargetCount ?? 0) || (Array.isArray(meshData.morphTargetNames) ? meshData.morphTargetNames.length : 0);
             const defaultWeights = meshData.defaultMorphWeights;
             const targetCount = (defaultWeights?.length ?? fallbackCount) | 0;
 
@@ -232,14 +288,6 @@ ZTree extension for ECS-style scene management.
             this.bones = Array.isArray(opts.bones)
                 ? opts.bones.map((m) => toLocalMatrix(m))
                 : [];
-            this.boneNames = Array.isArray(opts.boneNames)
-                ? opts.boneNames.map((n) => String(n))
-                : [];
-            this._boneNameMap = new Map();
-            this._globalScratch = [];
-            this._localScratch = ZMath.M4();
-            this._skinnedScratch = ZMath.M4();
-            this._refreshBoneNameMap();
             if (this.skeleton && Array.isArray(this.skeleton.bones)) this.use(this.skeleton);
         }
 
@@ -252,17 +300,6 @@ ZTree extension for ECS-style scene management.
                 if (resolved) this.use(resolved);
             }
             return this;
-        }
-
-        _refreshBoneNameMap() {
-            this._boneNameMap = new Map();
-            if (!Array.isArray(this.boneNames)) return;
-            for (let i = 0; i < this.boneNames.length; i++) {
-                const name = this.boneNames[i];
-                if (!name) continue;
-                this._boneNameMap.set(name, i);
-                this._boneNameMap.set(name.toLowerCase(), i);
-            }
         }
 
         _ensureBoneCapacity(count) {
@@ -278,8 +315,6 @@ ZTree extension for ECS-style scene management.
             if (!skeleton || !Array.isArray(skeleton.bones)) return this;
             this.skeleton = skeleton;
             if (skeleton.id) this.skeletonID = skeleton.id;
-            this.boneNames = skeleton.bones.map((bone, i) => String(bone?.name ?? `Bone_${i}`));
-            this._refreshBoneNameMap();
             this._ensureBoneCapacity(skeleton.bones.length);
             return this;
         }
@@ -300,10 +335,6 @@ ZTree extension for ECS-style scene management.
                 return idx;
             }
             if (typeof indexOrName === "string") {
-                const exact = this._boneNameMap.get(indexOrName);
-                if (exact != null) return exact;
-                const lower = this._boneNameMap.get(indexOrName.toLowerCase());
-                if (lower != null) return lower;
                 const map = this.skeleton?.map;
                 if (map instanceof Map) {
                     const mapped = map.get(indexOrName) ?? map.get(indexOrName.toLowerCase());
@@ -338,14 +369,9 @@ ZTree extension for ECS-style scene management.
             const out = new Float32Array(cap * 16);
             for (let i = 0; i < cap; i++) out.set(IDENTITY_M4, i * 16);
 
-            const gc = this._globalScratch;
-            if (gc.length !== sourceBones.length) {
-                gc.length = 0;
-                for (let i = 0; i < sourceBones.length; i++) gc.push(ZMath.M4());
-            }
-
-            const local = this._localScratch;
-            const skinned = this._skinnedScratch;
+            const gc = Array.from({ length: sourceBones.length }, () => ZMath.M4());
+            const local = ZMath.M4();
+            const skinned = ZMath.M4();
             const count = Math.min(sourceBones.length, cap);
             for (let i = 0; i < count; i++) {
                 const bone = sourceBones[i] ?? {};
@@ -636,6 +662,10 @@ ZTree extension for ECS-style scene management.
                 if (value == null || !shader?.uniformLocations?.has(name)) return;
                 shader.setUniform(gl, name, value);
             };
+            const rigBit = window.ZMesh?.VertexType?.Rig ?? (1 << 0);
+            const morphBit = window.ZMesh?.VertexType?.Morph ?? (1 << 1);
+            const colorBit = window.ZMesh?.VertexType?.Color ?? (1 << 2);
+            const vtxFlagScratch = new Float32Array(4);
             const getPaletteLocation = (shader) => {
                 if (!shader?.program) return null;
                 if (shader.other.__skinPaletteLoc !== undefined) return shader.other.__skinPaletteLoc;
@@ -706,6 +736,11 @@ ZTree extension for ECS-style scene management.
                         const slotVal = draw.renderComp.getSlot(si) ?? new Float32Array([0, 0, 0, 0]);
                         mesh.updateInstanceChannel(`instData${si}`, slotVal);
                     }
+                    const primaryMorph = typeof draw.renderComp.getPrimaryMorph === "function"
+                        ? draw.renderComp.getPrimaryMorph()
+                        : { index: 0, weight: draw.renderComp.morphWeights?.[0] ?? 0 };
+                    const morphWeightValue = Number(primaryMorph.weight ?? 0) || 0;
+                    setUniform(shader, "u_morphWeight", morphWeightValue);
                     if (skinPaletteLoc != null) {
                         const palette = computePaletteForDraw(draw);
                         if (palette) gl.uniformMatrix4fv(skinPaletteLoc, false, palette);
@@ -718,6 +753,13 @@ ZTree extension for ECS-style scene management.
                     const instCount = 1;
                     for (let submeshIndex = 0; submeshIndex < mesh.submeshes.length; submeshIndex++) {
                         const submesh = mesh.submeshes[submeshIndex];
+                        const vrtxFlags = Number(submesh?.vrtxFlags ?? 0) | 0;
+                        vtxFlagScratch[0] = (vrtxFlags & rigBit) ? 1 : 0;
+                        vtxFlagScratch[1] = (vrtxFlags & morphBit) ? 1 : 0;
+                        vtxFlagScratch[2] = (vrtxFlags & colorBit) ? 1 : 0;
+                        vtxFlagScratch[3] = 0;
+                        setUniform(shader, "u_vtxFlags", vtxFlagScratch);
+
                         const mat = submesh?.material ?? {};
                         const albedoTexID = mat.albedoTex ?? null;
                         const albedoTex = albedoTexID ? assets.getTexture(albedoTexID) : null;
@@ -733,9 +775,7 @@ ZTree extension for ECS-style scene management.
                             }
                         }
 
-                        const morphRef = draw.renderComp.morphWeights?.length
-                            ? draw.renderComp.morphWeights[0]
-                            : 0;
+                        const morphRef = Number(primaryMorph.index ?? 0) | 0;
                         const vao = assets.getOrCreateVAO(meshID, shaderID, submeshIndex, morphRef);
                         const drawCfg = mesh.getDrawCfg(submeshIndex);
                         ZRender.withVAO(gl, vao, () => ZRender.drawInstanced(gl, drawCfg, instCount));

@@ -69,6 +69,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         #id;
         #submeshes = [];
         #morphTargetInfos = [];
+        #morphNameMap = new Map();
         #vaoCache = new Map();
 
         #buffers = {
@@ -129,6 +130,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         get submeshes() { return this.#submeshes.slice(); }
         get morphTargetInfos() { return this.#morphTargetInfos.slice(); }
         get morphTargetCount() { return this.#morphTargetInfos.length; }
+        get morphTargetNames() { return this.#morphTargetInfos.map((it, i) => String(it?.name ?? `Target_${i}`)); }
         get instanceCount() { return this.#instanceCount; }
         get ABmin() { return this.#abMin.slice(); }
         get ABmax() { return this.#abMax.slice(); }
@@ -148,6 +150,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
                     this.#morphTargetInfos.push({ name: `Target_${i}` });
                 }
             }
+            this.#rebuildMorphNameMap();
 
             let totalStatic = 0;
             let totalRig = 0;
@@ -311,7 +314,33 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             const idx = this.#morphTargetInfos.findIndex(it => it.name === name);
             if (idx >= 0) return idx;
             this.#morphTargetInfos.push({ name });
+            this.#morphNameMap.set(name, this.#morphTargetInfos.length - 1);
+            this.#morphNameMap.set(name.toLowerCase(), this.#morphTargetInfos.length - 1);
             return this.#morphTargetInfos.length - 1;
+        }
+
+        #rebuildMorphNameMap() {
+            this.#morphNameMap = new Map();
+            for (let i = 0; i < this.#morphTargetInfos.length; i++) {
+                const name = String(this.#morphTargetInfos[i]?.name ?? `Target_${i}`);
+                this.#morphNameMap.set(name, i);
+                this.#morphNameMap.set(name.toLowerCase(), i);
+            }
+        }
+
+        resolveMorphTargetRef(indexOrName) {
+            if (typeof indexOrName === "number" && Number.isFinite(indexOrName)) {
+                const idx = indexOrName | 0;
+                if (idx < 0 || idx >= this.#morphTargetInfos.length) return -1;
+                return idx;
+            }
+            if (typeof indexOrName === "string") {
+                const exact = this.#morphNameMap.get(indexOrName);
+                if (exact != null) return exact;
+                const lower = this.#morphNameMap.get(indexOrName.toLowerCase());
+                if (lower != null) return lower;
+            }
+            return -1;
         }
 
         #packStaticData(spec) {
@@ -735,6 +764,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             }
             this.#submeshes.length = 0;
             this.#morphTargetInfos.length = 0;
+            this.#morphNameMap.clear();
             this.#instanceCount = 0;
             this.#indexCount = 0;
             this.#indexType = null;
