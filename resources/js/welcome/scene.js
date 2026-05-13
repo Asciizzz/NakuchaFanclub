@@ -118,6 +118,12 @@ async function main() {
             addedData.transform.local = tr;
         }
 
+        for (const meshRenderer of addedData.meshRenderers) {
+            meshRenderer.setMorphWeight(70, Math.sin(t * 3.7));
+        }
+
+
+
         const hipRotY = Math.sin(t * 2.2) * 0.55;
         for (const skeleton of addedData.skeletons) {
             skeleton.set("Hip", { euler: [0, hipRotY, 0] });

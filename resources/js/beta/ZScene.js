@@ -167,9 +167,9 @@ ZTree extension for ECS-style scene management.
             this.#syncSkeletonShape();
         }
 
-        hasMesh() { return this.meshID != null; }
-        hasSkeleton() { return this.skeletonNode != null; }
-        hasMorphs() { return this.morphWeights != null && this.morphWeights.length > 0; }
+        get hasMesh() { return this.meshID != null; }
+        get hasSkeleton() { return this.skeletonNode != null; }
+        get hasMorphs() { return this.morphWeights != null && this.morphWeights.length > 0; }
 
         setMesh(meshID) {
             this.meshID = meshID;
