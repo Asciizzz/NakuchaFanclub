@@ -138,7 +138,7 @@ ZTree extension for ECS-style scene management.
         shaderID = null;
         morphWeights = null;
         instanceSlots = null;
-        log = new Log(256);
+        log = null;
 
         #scene = null;
         #assets = null;
@@ -168,6 +168,7 @@ ZTree extension for ECS-style scene management.
             this.#scene = ctx.scene ?? null;
             this.#assets = ctx.assets ?? null;
             this.#nodeId = ctx.nodeId ?? null;
+            this.log = ctx.log ?? this.#scene?.log ?? null;
             this.#syncMeshShape();
             this.#syncSkeletonShape();
             return this;
@@ -224,7 +225,7 @@ ZTree extension for ECS-style scene management.
         setSlot(slot, value) {
             const s = Number(slot) | 0;
             if (s < 0 || s > 3) {
-                this.log.write("invalid_slot", `[MeshRenderer] slot must be 0..3, got ${slot}`, { slot });
+                this.log?.write("invalid_slot", `[MeshRenderer] slot must be 0..3, got ${slot}`, { slot });
                 return this;
             }
             const src = value ?? {};
@@ -264,7 +265,7 @@ ZTree extension for ECS-style scene management.
         setMorphWeight(indexOrName, weight = 0) {
             this.#syncMeshShape();
             if (!this.morphWeights || this.morphWeights.length <= 0) {
-                this.log.write("missing_morphs", `[MeshRenderer] morph weights are unavailable for "${this.meshID ?? "null"}"`, {
+                this.log?.write("missing_morphs", `[MeshRenderer] morph weights are unavailable for "${this.meshID ?? "null"}"`, {
                     meshID: this.meshID,
                     ref: indexOrName,
                 });
@@ -272,7 +273,7 @@ ZTree extension for ECS-style scene management.
             }
             const idx = this.resolveMorphIndex(indexOrName);
             if (idx < 0 || idx >= this.morphWeights.length) {
-                this.log.write("invalid_morph_target", `[MeshRenderer] unknown morph target "${indexOrName}"`, {
+                this.log?.write("invalid_morph_target", `[MeshRenderer] unknown morph target "${indexOrName}"`, {
                     ref: indexOrName,
                     meshID: this.meshID,
                 });
@@ -347,7 +348,7 @@ ZTree extension for ECS-style scene management.
         skeletonID = null;
         skeleton = null;
         bones = [];
-        log = new Log(256);
+        log = null;
 
         #scene = null;
         #assets = null;
@@ -367,6 +368,7 @@ ZTree extension for ECS-style scene management.
             this.#scene = ctx.scene ?? null;
             this.#assets = ctx.assets ?? null;
             this.#nodeId = ctx.nodeId ?? null;
+            this.log = ctx.log ?? this.#scene?.log ?? null;
             const skel = this.skeletonAsset;
             if (skel) this.use(skel);
             return this;
@@ -418,7 +420,7 @@ ZTree extension for ECS-style scene management.
         set(indexOrName, localTransform, skeletonData = null) {
             const idx = this.resolveBoneIndex(indexOrName, skeletonData);
             if (idx < 0) {
-                this.log.write("invalid_bone", `[Skeleton] unknown bone "${indexOrName}"`, {
+                this.log?.write("invalid_bone", `[Skeleton] unknown bone "${indexOrName}"`, {
                     ref: indexOrName,
                     skeletonID: this.skeletonID,
                 });
@@ -440,7 +442,7 @@ ZTree extension for ECS-style scene management.
         buildPalette(maxBones = 64) {
             const srcBones = this.skeletonAsset?.bones;
             if (!Array.isArray(srcBones) || srcBones.length <= 0) {
-                this.log.write("missing_skeleton", `[Skeleton] buildPalette() called without bound skeleton`, {
+                this.log?.write("missing_skeleton", `[Skeleton] buildPalette() called without bound skeleton`, {
                     skeletonID: this.skeletonID,
                 });
                 return null;
@@ -487,7 +489,7 @@ ZTree extension for ECS-style scene management.
 
     class Custom {
         $ = {};
-        log = new Log(256);
+        log = null;
 
         #scene = null;
         #assets = null;
@@ -503,6 +505,7 @@ ZTree extension for ECS-style scene management.
             this.#scene = ctx.scene ?? null;
             this.#assets = ctx.assets ?? null;
             this.#nodeId = ctx.nodeId ?? null;
+            this.log = ctx.log ?? this.#scene?.log ?? null;
             return this;
         }
 
@@ -890,6 +893,7 @@ ZTree extension for ECS-style scene management.
                     assets: this.#runtime.assets,
                     nodeId: String(nodeId),
                     componentKey: key,
+                    log: this.log,
                 });
             }
         }

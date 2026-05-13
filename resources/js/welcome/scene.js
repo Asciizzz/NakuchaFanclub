@@ -126,14 +126,14 @@ async function main() {
             ZMath.M4.mul(tr, scl, addedData.transform.local);
         }
 
-        for (const meshRenderer of addedData.meshRenderers) {
-            meshRenderer.setMorphWeight("Mouth_15_0(OdorokiB)[M_Face]", Math.sin(t * 3.7) * 0.5 + 0.5);
-            
-        }
+        // for (const meshRenderer of addedData.meshRenderers) {
+        //     meshRenderer.setMorphWeight("Mouth_15_0(OdorokiB)[M_Face]", Math.sin(t * 3.7) * 0.5 + 0.5);
+        // }
 
-        const hipRotY = Math.sin(t * 2.2) * 0.55;
+        const hipRot = Math.sin(t * 2.2) * 0.55;
         for (const skeleton of addedData.skeletons) {
-            skeleton.set("Hip", { euler: [0, hipRotY, 0] });
+            skeleton.set("ShoulderRight", { euler: [hipRot, 0, 0] });
+            skeleton.set("ShoulderLeft", { euler: [-hipRot, 0, 0] });
         }
 
         ZRender.setState(project.gl, {
