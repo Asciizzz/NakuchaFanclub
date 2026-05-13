@@ -1,11 +1,11 @@
-import './beta/ZMath.js';
-import './beta/ZCanvas.js';
-import './beta/EzMesh.js';
-import './beta/ZTree.js';
-import './beta/EzScene.js';
-import './beta/EzLoader.js';
-import './beta/EzAssets.js';
-import './beta/EzProject.js';
+import './WeebGL/ZMath.js';
+import './WeebGL/ZCanvas.js';
+import './WeebGL/EzMesh.js';
+import './WeebGL/ZTree.js';
+import './WeebGL/EzScene.js';
+import './WeebGL/EzLoader.js';
+import './WeebGL/EzAssets.js';
+import './WeebGL/EzProject.js';
 
 import './lib/EzCanvas2D.js';
 import './lib/EzFloater.js';

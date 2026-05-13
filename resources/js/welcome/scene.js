@@ -8,7 +8,8 @@ if (camera) {
     camera.fov = 45;
     camera.near = 0.1;
     camera.far = 200;
-    camera.position = ZMath.V3.set(0, 0, 0);
+    camera.position = ZMath.V3.set(0, 4, 4);
+    camera.lookAt(0, 0, 0);
     camera.aspect = container.clientWidth / container.clientHeight;
 }
 
@@ -121,7 +122,7 @@ async function main() {
 
         if (addedData.transform) {
             const y = Math.sin(t * 1.4) * 0.35 - 1.4;
-            const tr = ZMath.M4.fromTranslation(ZMath.V3.set(0, y, -4.8));
+            const tr = ZMath.M4.fromTranslation(ZMath.V3.set(0, y, 0));
             const scl = ZMath.M4.fromScaling(ZMath.V3.set(1, 1, 1));
             ZMath.M4.mul(tr, scl, addedData.transform.local);
         }
