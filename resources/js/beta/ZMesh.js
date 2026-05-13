@@ -811,7 +811,6 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             for (let i = 0; i < this.bones.length; i++) {
                 const name = this.bones[i].name;
                 this.map.set(name, i);
-                this.map.set(name.toLowerCase(), i);
             }
         }
     }

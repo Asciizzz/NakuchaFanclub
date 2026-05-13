@@ -110,6 +110,7 @@ ZTree extension for ECS-style scene management.
         #nodeId = null;
         #meshID = null;
         #skeletonNode = null;
+        #logs = [];
 
         constructor(opts = {}) {
             this.active = opts.active ?? true;
@@ -128,6 +129,20 @@ ZTree extension for ECS-style scene management.
                 for (let i = 0; i < Math.min(4, baseSlots.length); i++) this.setSlot(i, baseSlots[i]);
             }
         }
+
+        #log(code, message, extra = null) {
+            this.#logs.push({
+                time: Date.now(),
+                code: String(code ?? "mesh_renderer"),
+                message: String(message ?? ""),
+                extra: extra ?? null,
+            });
+            if (this.#logs.length > 256) this.#logs.shift();
+            return null;
+        }
+
+        getLogs() { return this.#logs.slice(); }
+        clearLogs() { this.#logs.length = 0; return this; }
 
         __bindSceneContext(ctx = {}) {
             this.#scene = ctx.scene ?? null;
@@ -152,6 +167,10 @@ ZTree extension for ECS-style scene management.
             this.#syncSkeletonShape();
         }
 
+        hasMesh() { return this.meshID != null; }
+        hasSkeleton() { return this.skeletonNode != null; }
+        hasMorphs() { return this.morphWeights != null && this.morphWeights.length > 0; }
+
         setMesh(meshID) {
             this.meshID = meshID;
             return this;
@@ -164,7 +183,10 @@ ZTree extension for ECS-style scene management.
 
         setSlot(slot, value) {
             const s = Number(slot) | 0;
-            if (s < 0 || s > 3) throw new Error(`[MeshRenderer] slot must be 0..3, got ${slot}`);
+            if (s < 0 || s > 3) {
+                this.#log("invalid_slot", `[MeshRenderer] slot must be 0..3, got ${slot}`, { slot });
+                return this;
+            }
             const src = value ?? {};
             const next = ArrayBuffer.isView(src) || Array.isArray(src)
                 ? src
@@ -202,10 +224,20 @@ ZTree extension for ECS-style scene management.
 
         setMorphWeight(indexOrName, weight = 0) {
             this.#syncMeshShape();
-            if (!this.morphWeights || this.morphWeights.length <= 0) return this;
+            if (!this.morphWeights || this.morphWeights.length <= 0) {
+                this.#log("missing_morphs", `[MeshRenderer] morph weights are unavailable for "${this.meshID ?? "null"}"`, {
+                    meshID: this.meshID,
+                    ref: indexOrName,
+                });
+                return this;
+            }
             const idx = this.resolveMorphIndex(indexOrName);
             if (idx < 0 || idx >= this.morphWeights.length) {
-                throw new Error(`[MeshRenderer] unknown morph target "${indexOrName}"`);
+                this.#log("invalid_morph_target", `[MeshRenderer] unknown morph target "${indexOrName}"`, {
+                    ref: indexOrName,
+                    meshID: this.meshID,
+                });
+                return this;
             }
             this.morphWeights[idx] = Number(weight) || 0;
             return this;
@@ -280,6 +312,7 @@ ZTree extension for ECS-style scene management.
         #scene = null;
         #assets = null;
         #nodeId = null;
+        #logs = [];
 
         constructor(opts = {}) {
             this.skeletonID = opts.skeletonID ?? null;
@@ -290,6 +323,20 @@ ZTree extension for ECS-style scene management.
                 : [];
             if (this.skeleton && Array.isArray(this.skeleton.bones)) this.use(this.skeleton);
         }
+
+        #log(code, message, extra = null) {
+            this.#logs.push({
+                time: Date.now(),
+                code: String(code ?? "skeleton"),
+                message: String(message ?? ""),
+                extra: extra ?? null,
+            });
+            if (this.#logs.length > 256) this.#logs.shift();
+            return null;
+        }
+
+        getLogs() { return this.#logs.slice(); }
+        clearLogs() { this.#logs.length = 0; return this; }
 
         __bindSceneContext(ctx = {}) {
             this.#scene = ctx.scene ?? null;
@@ -337,7 +384,7 @@ ZTree extension for ECS-style scene management.
             if (typeof indexOrName === "string") {
                 const map = this.skeleton?.map;
                 if (map instanceof Map) {
-                    const mapped = map.get(indexOrName) ?? map.get(indexOrName.toLowerCase());
+                    const mapped = map.get(indexOrName);
                     if (mapped != null) return mapped;
                 }
             }
@@ -346,7 +393,13 @@ ZTree extension for ECS-style scene management.
 
         set(indexOrName, localTransform, skeletonData = null) {
             const idx = this.resolveBoneIndex(indexOrName, skeletonData);
-            if (idx < 0) throw new Error(`[Skeleton] unknown bone "${indexOrName}"`);
+            if (idx < 0) {
+                this.#log("invalid_bone", `[Skeleton] unknown bone "${indexOrName}"`, {
+                    ref: indexOrName,
+                    skeletonID: this.skeletonID,
+                });
+                return this;
+            }
             this._ensureBoneCapacity(idx + 1);
             this.bones[idx] = toLocalMatrix(localTransform);
             return this;
@@ -362,7 +415,12 @@ ZTree extension for ECS-style scene management.
 
         buildPalette(maxBones = 64) {
             const sourceBones = Array.isArray(this.skeleton?.bones) ? this.skeleton.bones : [];
-            if (sourceBones.length <= 0) return null;
+            if (sourceBones.length <= 0) {
+                this.#log("missing_skeleton", `[Skeleton] buildPalette() called without bound skeleton`, {
+                    skeletonID: this.skeletonID,
+                });
+                return null;
+            }
             this._ensureBoneCapacity(sourceBones.length);
 
             const cap = Math.max(1, Number(maxBones) | 0);
@@ -417,6 +475,7 @@ ZTree extension for ECS-style scene management.
     class ZScene extends ZTree {
         sceneID = null;
         addedScenes = [];
+        logs = [];
         static COMPONENT = Object.freeze({
             Transform: "Transform",
             MeshRenderer: "MeshRenderer",
@@ -427,6 +486,20 @@ ZTree extension for ECS-style scene management.
             assets: null,
             camera: null,
         };
+
+        #log(code, message, extra = null) {
+            this.logs.push({
+                time: Date.now(),
+                code: String(code ?? "scene"),
+                message: String(message ?? ""),
+                extra: extra ?? null,
+            });
+            if (this.logs.length > 512) this.logs.shift();
+            return null;
+        }
+
+        getLogs() { return this.logs.slice(); }
+        clearLogs() { this.logs.length = 0; return this; }
 
         #canonicalComponentKey(key) {
             const raw = String(key ?? "");
@@ -467,7 +540,13 @@ ZTree extension for ECS-style scene management.
 
         #setComponentInternal(nodeId, key, component) {
             const node = this.node(nodeId);
-            if (!node) return null;
+            if (!node) {
+                this.#log("missing_node", `[ZScene] component set failed, node "${nodeId}" does not exist`, {
+                    nodeId,
+                    key,
+                });
+                return null;
+            }
             const canonical = this.#canonicalComponentKey(key);
             const next = this.#coerceComponent(canonical, component);
             node.set(canonical, next);
@@ -542,7 +621,13 @@ ZTree extension for ECS-style scene management.
 
         removeComponent(nodeId, key) {
             const node = this.node(nodeId);
-            if (!node) return false;
+            if (!node) {
+                this.#log("missing_node", `[ZScene] component remove failed, node "${nodeId}" does not exist`, {
+                    nodeId,
+                    key,
+                });
+                return false;
+            }
             node.remove(key);
             return true;
         }
@@ -562,23 +647,33 @@ ZTree extension for ECS-style scene management.
 
         addScene(otherScene, opts = {}) {
             if (!otherScene || typeof otherScene.node !== "function" || !otherScene.rootId) {
-                throw new Error("[ZScene] addScene() requires another ZScene-like tree");
+                this.#log("invalid_scene", "[ZScene] addScene() requires another ZScene-like tree", { opts });
+                return null;
             }
 
             const parentId = opts.parentId == null ? this.rootId : String(opts.parentId);
-            if (!this.hasNode(parentId)) throw new Error(`[ZScene] parent node "${parentId}" does not exist`);
+            if (!this.hasNode(parentId)) {
+                this.#log("missing_parent", `[ZScene] parent node "${parentId}" does not exist`, { parentId });
+                return null;
+            }
 
-            const suffixBase = opts.suffix ?? `_scene${this.addedScenes.length}`;
-            const renameBySuffix = opts.renameBySuffix !== false;
+            const hasSuffix = Object.prototype.hasOwnProperty.call(opts, "suffix");
+            const suffixBase = hasSuffix ? String(opts.suffix ?? "") : "";
             const idMap = new Map();
 
             for (const [srcId, srcNode] of otherScene.traverse(otherScene.rootId, null, false)) {
                 const srcKey = String(srcId);
                 const srcParent = srcNode.parent == null ? parentId : idMap.get(String(srcNode.parent));
-                if (!srcParent) throw new Error(`[ZScene] missing remapped parent for "${srcKey}"`);
+                if (!srcParent) {
+                    this.#log("missing_remapped_parent", `[ZScene] missing remapped parent for "${srcKey}"`, {
+                        srcKey,
+                        srcParentRaw: srcNode.parent,
+                    });
+                    return null;
+                }
 
                 let desiredId = srcKey;
-                if (renameBySuffix) desiredId = `${srcKey}${suffixBase}`;
+                if (suffixBase.length > 0) desiredId = `${srcKey}${suffixBase}`;
                 if (typeof opts.idRemap === "function") desiredId = String(opts.idRemap(srcKey, desiredId));
 
                 let finalId = desiredId;
@@ -589,7 +684,14 @@ ZTree extension for ECS-style scene management.
                 }
 
                 const added = super.addNode(srcNode.name, srcParent, { id: finalId });
-                if (!added) throw new Error(`[ZScene] failed to add remapped node "${finalId}"`);
+                if (!added) {
+                    this.#log("add_node_failed", `[ZScene] failed to add remapped node "${finalId}"`, {
+                        srcKey,
+                        finalId,
+                        srcParent,
+                    });
+                    return null;
+                }
 
                 for (const [compKey, compValue] of Object.entries(srcNode.$ ?? {})) {
                     this.#setComponentInternal(added.id, compKey, cloneComponent(compValue));
@@ -609,7 +711,7 @@ ZTree extension for ECS-style scene management.
 
             const tracker = {
                 sourceSceneID: otherScene.sceneID ?? null,
-                suffix: String(suffixBase),
+                suffix: suffixBase,
                 map: Object.fromEntries(idMap.entries()),
             };
             this.addedScenes.push(tracker);
