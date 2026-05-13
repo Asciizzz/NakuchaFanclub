@@ -985,15 +985,6 @@ Contains
             return this;
         }
 
-        /**
-         * Apply shader-owned render cfg (if any).
-         */
-        applyRenderState(gl) { ZRender.setState(gl, this.other.renderCfg); return this; }
-        /**
-         * Reset render state back to engine default.
-         */
-        static restoreRenderState(gl) { ZRender.restoreDefaultState(gl); }
-
         #compileShader(gl, type, src) {
             const shader = gl.createShader(type);
 

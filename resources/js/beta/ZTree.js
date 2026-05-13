@@ -48,6 +48,9 @@ Agnostic tree structure with stable string node IDs.
             this.rootId = id;
         }
 
+        root() { return this.nodes.get(this.rootId) ?? null; }
+        rootEntry() { return { id: this.rootId, node: this.root() }; }
+
         node(id) { return this.nodes.get(String(id)); }
         hasNode(id) { return this.nodes.has(String(id)); }
 

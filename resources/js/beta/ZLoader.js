@@ -263,7 +263,6 @@
         for (let mi = 0; mi < (gltf.materials?.length || 0); mi++) {
             const m = gltf.materials[mi];
             const pbr = m.pbrMetallicRoughness || {};
-            const fillColor = pbr.baseColorFactor ? Float32Array.from(pbr.baseColorFactor) : new Float32Array([1, 1, 1, 1]);
 
             const albedoTex = pbr.baseColorTexture?.index != null ? texIndexToId[pbr.baseColorTexture.index] ?? null : null;
             const metalRoughTex = pbr.metallicRoughnessTexture?.index != null ? texIndexToId[pbr.metallicRoughnessTexture.index] ?? null : null;
@@ -273,13 +272,12 @@
 
             const raw = {
                 name,
-                fillColor,
                 albedoTex,
                 metalRoughTex,
                 normalTex,
                 emissiveTex,
             };
-            const baseId = createID("mat", name, fillColor, albedoTex, metalRoughTex, normalTex, emissiveTex);
+            const baseId = createID("mat", name, albedoTex, metalRoughTex, normalTex, emissiveTex);
             const id = upsertById(materials, baseId, { id: baseId, ...raw });
             matIndexToId[mi] = id;
         }
@@ -424,12 +422,11 @@
             }
 
             const materialID = prim.material != null ? (matIndexToId[prim.material] ?? null) : null;
-            const fillColor = materialID && matIndexToId[prim.material] ? null : new Float32Array([1, 1, 1, 1]);
             const name = `${nameOr(mesh.name, "mesh", meshIdx)}_prim_${pi}`;
 
             const material = materialID
                 ? { materialID }
-                : { fillColor, albedoTex: null };
+                : { albedoTex: null };
 
             const submeshRaw = {
                 name,

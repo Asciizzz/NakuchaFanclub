@@ -741,75 +741,53 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         }
     }
 
-    class EzSkeleton3D {
-        // bones: [{ parent: int, localBind: Mat4, inverseBind: Mat4, name: string }]
+    class ZSkeleton {
+        id = null;
+        name = null;
         bones = [];
+        map = new Map();
 
-        // Scratch buffers (allocated lazily in computePalette).
-        #globalCurrent = []; // Mat4[]
-        #localScratch = ZMath.M4();
-        #skinnedScratch = ZMath.M4();
-
-        // bonePoses: Mat4[] (length === bones.length). Returns a Float32Array of
-        // n*16 floats (column-major mat4s) suitable for upload to the bone-palette
-        // texture. The palette is freshly allocated each call (caller can keep it).
-        computePalette(bonePoses) {
-            const n = this.bones.length;
-            const gc = this.#globalCurrent;
-            if (gc.length !== n) {
-                gc.length = 0;
-                for (let i = 0; i < n; i++) gc.push(ZMath.M4());
-            }
-            const palette = new Float32Array(n * 16);
-            const local = this.#localScratch, skinned = this.#skinnedScratch;
-            for (let i = 0; i < n; i++) {
-                const b = this.bones[i];
-                ZMath.M4.mul(b.localBind, bonePoses[i], local);
-                if (b.parent < 0) gc[i].set(local);
-                else ZMath.M4.mul(gc[b.parent], local, gc[i]);
-                ZMath.M4.mul(gc[i], b.inverseBind, skinned);
-                palette.set(skinned, i * 16);
-            }
-            return palette;
-        }
-
-        // skeleton: { bones: [{ parent?, localBind?: Mat4 | { position?, rotation?, euler?, scale? },
-        //                       inverseBind?: Mat4, name? }] }
-        static fromDesc(key, skeleton) {
-            if (!skeleton || !Array.isArray(skeleton.bones) || skeleton.bones.length === 0) return null;
-            const bones = [], globalBind = []; // globalBind: Mat4[]
-            for (let i = 0; i < skeleton.bones.length; i++) {
-                const b = skeleton.bones[i];
-                const parent = b.parent ?? -1;
-                if (parent >= i)
-                    return _c.warn(`[EzSkeleton3D]`, `"${key}": bone ${i} parent must be < self`) || null;
+        constructor(desc = {}) {
+            this.id = desc.id ?? null;
+            this.name = desc.name ?? null;
+            const srcBones = Array.isArray(desc.bones) ? desc.bones : [];
+            const globalBind = [];
+            this.bones = srcBones.map((b, i) => {
+                const parent = Number(b?.parent ?? -1) | 0;
 
                 const localBind = ZMath.M4();
-                resolveTransform(localBind, b.localBind ?? null);
-
+                resolveTransform(localBind, b?.localBind ?? null);
                 const gb = ZMath.M4();
-                if (parent < 0) gb.set(localBind);
+                if (parent < 0 || !globalBind[parent]) gb.set(localBind);
                 else ZMath.M4.mul(globalBind[parent], localBind, gb);
                 globalBind[i] = gb;
 
-                let inverseBind;
-                if (b.inverseBind && (ArrayBuffer.isView(b.inverseBind) || Array.isArray(b.inverseBind)) && b.inverseBind.length >= 16) {
-                    inverseBind = ZMath.M4();
+                let inverseBind = ZMath.M4();
+                if ((ArrayBuffer.isView(b?.inverseBind) || Array.isArray(b?.inverseBind)) && b.inverseBind.length >= 16) {
                     inverseBind.set(b.inverseBind);
                 } else {
-                    inverseBind = ZMath.M4();
                     if (!ZMath.M4.invert(gb, inverseBind)) ZMath.M4.identity(inverseBind);
                 }
 
-                bones.push({ parent, localBind, inverseBind, name: typeof b.name === "string" ? b.name : `Bone_${i}` });
+                return {
+                    parent,
+                    name: typeof b?.name === "string" ? b.name : `Bone_${i}`,
+                    localBind,
+                    inverseBind,
+                };
+            });
+
+            this.map = new Map();
+            for (let i = 0; i < this.bones.length; i++) {
+                const name = this.bones[i].name;
+                this.map.set(name, i);
+                this.map.set(name.toLowerCase(), i);
             }
-            const skel = new EzSkeleton3D();
-            skel.bones = bones;
-            return skel;
         }
     }
 
 
     window.ZMesh = ZMesh;
-    window.EzSkeleton3D = EzSkeleton3D;
+    window.ZSkeleton = ZSkeleton;
+    window.EzSkeleton3D = ZSkeleton;
 })();

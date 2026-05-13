@@ -6,6 +6,7 @@ WebGL-backed ECS asset storage and scene registry.
 
 (function () {
     if (typeof window.ZMesh !== "function") throw new Error("[ZAssets] ZMesh is required");
+    if (typeof window.ZSkeleton !== "function") throw new Error("[ZAssets] ZSkeleton is required");
     if (typeof window.ZScene !== "function") throw new Error("[ZAssets] ZScene is required");
     if (typeof window.ZShader !== "function") throw new Error("[ZAssets] ZShader is required");
 
@@ -38,13 +39,15 @@ WebGL-backed ECS asset storage and scene registry.
     }
 
     class ZAssets {
+        static SKIN_BONE_CAP = 64;
+
         static FIXED_VERTEX_INPUTS = Object.freeze([
             Object.freeze({ name: "a_position", type: "vec3" }),
             Object.freeze({ name: "a_normal", type: "vec3" }),
             Object.freeze({ name: "a_uv", type: "vec2" }),
             Object.freeze({ name: "a_tangent", type: "vec4" }),
-            Object.freeze({ name: "a_boneID", type: "vec4" }),
-            Object.freeze({ name: "a_boneWeight", type: "vec4" }),
+            Object.freeze({ name: "a_boneID", type: "vec4", default: [0, 0, 0, 0] }),
+            Object.freeze({ name: "a_boneWeight", type: "vec4", default: [0, 0, 0, 0] }),
             Object.freeze({ name: "a_instModel0", type: "vec4", divisor: 1 }),
             Object.freeze({ name: "a_instModel1", type: "vec4", divisor: 1 }),
             Object.freeze({ name: "a_instModel2", type: "vec4", divisor: 1 }),
@@ -58,11 +61,10 @@ WebGL-backed ECS asset storage and scene registry.
         static FIXED_VERTEX_UNIFORMS = Object.freeze([
             Object.freeze({ name: "u_view", type: "mat4" }),
             Object.freeze({ name: "u_proj", type: "mat4" }),
-            Object.freeze({ name: "u_model", type: "mat4" }),
+            Object.freeze({ name: `u_skinPalette[${ZAssets.SKIN_BONE_CAP}]`, type: "mat4" }),
         ]);
 
         static FIXED_FRAGMENT_UNIFORMS = Object.freeze([
-            Object.freeze({ name: "u_matFillColor", type: "vec4" }),
             Object.freeze({ name: "u_matAlbedoTex", type: "sampler2D" }),
         ]);
 
@@ -72,17 +74,36 @@ WebGL-backed ECS asset storage and scene registry.
             "$UV$": "a_uv",
             "$TANGENT$": "a_tangent",
             "$BONE_ID$": "a_boneID",
+            "$BONE_IDS$": "a_boneID",
             "$BONE_WEIGHT$": "a_boneWeight",
+            "$BONE_WEIGHTS$": "a_boneWeight",
             "$INSTANCE_MODEL0$": "a_instModel0",
             "$INSTANCE_MODEL1$": "a_instModel1",
             "$INSTANCE_MODEL2$": "a_instModel2",
             "$INSTANCE_MODEL3$": "a_instModel3",
+            "$INST_MODEL0$": "a_instModel0",
+            "$INST_MODEL1$": "a_instModel1",
+            "$INST_MODEL2$": "a_instModel2",
+            "$INST_MODEL3$": "a_instModel3",
+            "$INST_MODEL$": "mat4(a_instModel0, a_instModel1, a_instModel2, a_instModel3)",
             "$INSTANCE_DATA0$": "a_instData0",
             "$INSTANCE_DATA1$": "a_instData1",
             "$INSTANCE_DATA2$": "a_instData2",
             "$INSTANCE_DATA3$": "a_instData3",
-            "$FILL_COLOR$": "u_matFillColor",
+            "$INST_DATA0$": "a_instData0",
+            "$INST_DATA1$": "a_instData1",
+            "$INST_DATA2$": "a_instData2",
+            "$INST_DATA3$": "a_instData3",
+            "$INST_SLOT0$": "a_instData0",
+            "$INST_SLOT1$": "a_instData1",
+            "$INST_SLOT2$": "a_instData2",
+            "$INST_SLOT3$": "a_instData3",
             "$ALBEDO_TEX$": "u_matAlbedoTex",
+            "$VIEW$": "u_view",
+            "$PROJECTION$": "u_proj",
+            "$SKIN_PALETTE$": "u_skinPalette",
+            "$SKIN_MAX_INDEX$": String(ZAssets.SKIN_BONE_CAP - 1),
+            "$OUT_COLOR$": "fragColor",
         });
 
         gl = null;
@@ -96,6 +117,7 @@ WebGL-backed ECS asset storage and scene registry.
         scenes = new Map();     // id -> ZScene
 
         #vaoCache = new Map();
+        #whiteTexture = null;
 
         constructor(gl = null, camera = null) {
             this.gl = gl ?? null;
@@ -103,6 +125,10 @@ WebGL-backed ECS asset storage and scene registry.
         }
 
         setGL(gl) {
+            if (this.#whiteTexture?.handle && this.gl && this.#whiteTexture.gl === this.gl) {
+                this.gl.deleteTexture(this.#whiteTexture.handle);
+            }
+            this.#whiteTexture = null;
             this.gl = gl ?? null;
             for (const scene of this.scenes.values()) scene.bindRuntime({ gl: this.gl });
             return this;
@@ -152,7 +178,11 @@ WebGL-backed ECS asset storage and scene registry.
         addSkeleton(skeleton) {
             if (!skeleton?.id) throw new Error("[ZAssets] skeleton.id is required");
             if (this.skeletons.has(skeleton.id)) return skeleton.id;
-            this.skeletons.set(skeleton.id, { id: skeleton.id, data: cloneData(skeleton) });
+            const data = skeleton instanceof ZSkeleton
+                ? skeleton
+                : new ZSkeleton(cloneData(skeleton));
+            if (!data.id) data.id = skeleton.id;
+            this.skeletons.set(skeleton.id, { id: skeleton.id, data });
             return skeleton.id;
         }
 
@@ -164,7 +194,6 @@ WebGL-backed ECS asset storage and scene registry.
             const linked = this.materials.get(linkedID)?.data;
             if (!linked) return out;
 
-            if (out.fillColor == null && linked.fillColor != null) out.fillColor = cloneData(linked.fillColor);
             if (out.albedoTex == null && linked.albedoTex != null) out.albedoTex = linked.albedoTex;
             return out;
         }
@@ -210,11 +239,10 @@ WebGL-backed ECS asset storage and scene registry.
             if (!this.gl) throw new Error("[ZAssets] WebGL context is required to compile shader");
 
             const vertexMain = this.#replaceSymbols(desc.vertexMain ?? desc.vertex?.main ?? `
-mat4 _instModel = mat4(a_instModel0, a_instModel1, a_instModel2, a_instModel3);
-gl_Position = u_proj * u_view * u_model * _instModel * vec4(a_position, 1.0);
+gl_Position = u_proj * u_view * $INST_MODEL$ * vec4($POSITION$, 1.0);
 `);
             const fragmentMain = this.#replaceSymbols(desc.fragmentMain ?? desc.fragment?.main ?? `
-fragColor = u_matFillColor;
+$OUT_COLOR$ = vec4(1.0);
 `);
 
             const vertexMethods = (desc.vertex?.methods ?? []).map((m) => ({ ...m, body: this.#replaceSymbols(m.body ?? "") }));
@@ -241,6 +269,8 @@ fragColor = u_matFillColor;
                 .compile(this.gl);
 
             if (desc.custom) shader.custom(desc.custom);
+            if (desc.other && typeof desc.other === "object") shader.customs(cloneData(desc.other));
+            if (desc.renderCfg && typeof desc.renderCfg === "object") shader.custom("renderCfg", cloneData(desc.renderCfg));
             return shader;
         }
 
@@ -272,6 +302,31 @@ fragColor = u_matFillColor;
             return this.textures.get(String(textureID)) ?? null;
         }
 
+        getWhiteTexture() {
+            if (!this.gl || !window.ZRender?.createTexture) return null;
+            if (this.#whiteTexture?.handle && this.#whiteTexture.gl === this.gl) return this.#whiteTexture;
+
+            const handle = ZRender.createTexture(this.gl, {
+                data: new Uint8Array([255, 255, 255, 255]),
+                width: 1,
+                height: 1,
+                wrapS: this.gl.CLAMP_TO_EDGE,
+                wrapT: this.gl.CLAMP_TO_EDGE,
+                minFilter: this.gl.NEAREST,
+                magFilter: this.gl.NEAREST,
+                mipmap: false,
+                flipY: false,
+                premultiplyAlpha: false,
+            });
+            this.#whiteTexture = {
+                id: "__zassets_white_fallback__",
+                gl: this.gl,
+                data: { width: 1, height: 1, wrap: "clamp" },
+                handle,
+            };
+            return this.#whiteTexture;
+        }
+
         getMaterial(materialID) {
             return this.materials.get(String(materialID))?.data ?? null;
         }
@@ -280,21 +335,21 @@ fragColor = u_matFillColor;
             return this.skeletons.get(String(skeletonID))?.data ?? null;
         }
 
-        #applyNodeComponents(node, comps = {}) {
+        #applyNodeComponents(scene, nodeId, comps = {}) {
             for (const [key, value] of Object.entries(comps)) {
                 if (key === "Transform" || key === "transform") {
-                    node.set("Transform", new Transform(value.local, value.world));
+                    scene.addComponent(nodeId, "Transform", new Transform(value.local, value.world));
                     continue;
                 }
                 if (key === "MeshRenderer" || key === "meshRenderer") {
-                    node.set("MeshRenderer", new MeshRenderer(value));
+                    scene.addComponent(nodeId, "MeshRenderer", new MeshRenderer(value));
                     continue;
                 }
                 if (key === "Skeleton" || key === "skeleton") {
-                    node.set("Skeleton", new Skeleton(value));
+                    scene.addComponent(nodeId, "Skeleton", new Skeleton(value));
                     continue;
                 }
-                node.set(key, cloneData(value));
+                scene.addComponent(nodeId, key, cloneData(value));
             }
         }
 
@@ -311,7 +366,7 @@ fragColor = u_matFillColor;
                 const rootNode = scene.node(scene.rootId);
                 rootNode.name = rootData.name || rootNode.name;
                 rootNode.children.length = 0;
-                this.#applyNodeComponents(rootNode, rootData.components || {});
+                this.#applyNodeComponents(scene, scene.rootId, rootData.components || {});
             }
 
             const pending = (sceneData.nodes || []).filter((n) => n.id !== scene.rootId);
@@ -325,7 +380,7 @@ fragColor = u_matFillColor;
 
                     const added = scene.addNode(item.name || item.id, parentId, { id: item.id });
                     if (!added) continue;
-                    this.#applyNodeComponents(added.node, item.components || {});
+                    this.#applyNodeComponents(scene, added.id, item.components || {});
                     pending.splice(i, 1);
                     progressed = true;
                 }
