@@ -1,12 +1,12 @@
-/* ZMesh
+/* EzMesh
 By Asciiz
 
 GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
 */
 
 (function () {
-    if (typeof window.ZBuffer !== "function") throw new Error("[ZMesh] ZBuffer is required");
-    if (!window.ZMath?.M4) throw new Error("[ZMesh] ZMath is required");
+    if (typeof window.ZBuffer !== "function") throw new Error("[EzMesh] ZBuffer is required");
+    if (!window.ZMath?.M4) throw new Error("[EzMesh] ZMath is required");
     const ZBuffer = window.ZBuffer;
     const ZMath = window.ZMath;
 
@@ -50,7 +50,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         return out;
     }
 
-    class ZMesh {
+    class EzMesh {
         static #NEXT_ID = 1;
 
         static VertexType = Object.freeze({
@@ -115,13 +115,13 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         #abMax = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
 
         static create(gl, desc = {}) {
-            return new ZMesh(gl, desc);
+            return new EzMesh(gl, desc);
         }
 
         constructor(gl, desc = {}) {
-            if (!gl) throw new Error("[ZMesh] WebGL context is required");
+            if (!gl) throw new Error("[EzMesh] WebGL context is required");
             this.#gl = gl;
-            this.#id = ZMesh.#NEXT_ID++;
+            this.#id = EzMesh.#NEXT_ID++;
             this.#buildFromDesc(desc);
         }
 
@@ -137,7 +137,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
 
         #buildFromDesc(desc) {
             const subInput = Array.isArray(desc.submeshes) ? desc.submeshes : [];
-            if (subInput.length === 0) throw new Error("[ZMesh] submeshes are required");
+            if (subInput.length === 0) throw new Error("[EzMesh] submeshes are required");
 
             this.#morphTargetInfos = this.#normalizeMorphInfos(desc.morphTargets ?? desc.morphTargetInfos ?? []);
 
@@ -171,10 +171,10 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             const idxNeed32 = maxIndexValue > 65535;
             this.#indexType = idxNeed32 ? this.#gl.UNSIGNED_INT : this.#gl.UNSIGNED_SHORT;
 
-            const staticRaw = new Float32Array(totalStatic * ZMesh.STATIC_STRIDE_FLOATS);
-            const rigRaw = totalRig > 0 ? new Float32Array(totalRig * ZMesh.RIGGED_STRIDE_FLOATS) : null;
-            const colorRaw = totalColor > 0 ? new Float32Array(totalColor * ZMesh.COLOR_STRIDE_FLOATS) : null;
-            const morphRaw = totalMorph > 0 ? new Float32Array(totalMorph * ZMesh.MORPH_STRIDE_FLOATS) : null;
+            const staticRaw = new Float32Array(totalStatic * EzMesh.STATIC_STRIDE_FLOATS);
+            const rigRaw = totalRig > 0 ? new Float32Array(totalRig * EzMesh.RIGGED_STRIDE_FLOATS) : null;
+            const colorRaw = totalColor > 0 ? new Float32Array(totalColor * EzMesh.COLOR_STRIDE_FLOATS) : null;
+            const morphRaw = totalMorph > 0 ? new Float32Array(totalMorph * EzMesh.MORPH_STRIDE_FLOATS) : null;
             const indexRaw = idxNeed32 ? new Uint32Array(totalIndex) : new Uint16Array(totalIndex);
 
             this.#submeshes.length = 0;
@@ -182,10 +182,10 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             this.#abMax = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
 
             for (const p of parsed) {
-                staticRaw.set(p.staticData, p.vstaticOffset * ZMesh.STATIC_STRIDE_FLOATS);
-                if (p.hasRig) rigRaw.set(p.rigData, p.vriggedOffset * ZMesh.RIGGED_STRIDE_FLOATS);
-                if (p.hasColor) colorRaw.set(p.colorData, p.vcolorOffset * ZMesh.COLOR_STRIDE_FLOATS);
-                if (p.hasMorph) morphRaw.set(p.morphData, p.vmorphOffset * ZMesh.MORPH_STRIDE_FLOATS);
+                staticRaw.set(p.staticData, p.vstaticOffset * EzMesh.STATIC_STRIDE_FLOATS);
+                if (p.hasRig) rigRaw.set(p.rigData, p.vriggedOffset * EzMesh.RIGGED_STRIDE_FLOATS);
+                if (p.hasColor) colorRaw.set(p.colorData, p.vcolorOffset * EzMesh.COLOR_STRIDE_FLOATS);
+                if (p.hasMorph) morphRaw.set(p.morphData, p.vmorphOffset * EzMesh.MORPH_STRIDE_FLOATS);
                 indexRaw.set(p.indexData, p.indexOffset);
 
                 this.#abMin[0] = Math.min(this.#abMin[0], p.abMin[0]);
@@ -237,19 +237,19 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             const material = _is.obj(s.material) ? { ...s.material } : {};
 
             const staticData = this.#packStaticData(s.static ?? s.vstatic ?? s.staticData);
-            const vertexCount = Math.floor(staticData.length / ZMesh.STATIC_STRIDE_FLOATS);
-            if (vertexCount <= 0) throw new Error(`[ZMesh] ${name}: static vertex data is required`);
+            const vertexCount = Math.floor(staticData.length / EzMesh.STATIC_STRIDE_FLOATS);
+            if (vertexCount <= 0) throw new Error(`[EzMesh] ${name}: static vertex data is required`);
 
             const rigData = this.#packRiggedData(s.rig ?? s.rigged ?? s.vrigged ?? s.riggedData, vertexCount);
             const colorData = this.#packColorData(s.color ?? s.vcolor ?? s.colorData, vertexCount);
             const morph = this.#packMorphData(s.morph ?? s.mrph ?? s.morphData, vertexCount);
             const indexData = this.#packIndexData(s.indices ?? s.indx ?? s.indxData);
             const indexCount = indexData.length;
-            if (indexCount <= 0) throw new Error(`[ZMesh] ${name}: index data is required`);
+            if (indexCount <= 0) throw new Error(`[EzMesh] ${name}: index data is required`);
 
             let maxIndex = 0;
             for (let i = 0; i < indexData.length; i++) if (indexData[i] > maxIndex) maxIndex = indexData[i];
-            if (maxIndex >= vertexCount) throw new Error(`[ZMesh] ${name}: index out of range for vertex count`);
+            if (maxIndex >= vertexCount) throw new Error(`[EzMesh] ${name}: index out of range for vertex count`);
 
             const targetRefs = Array.isArray(s.morphTargets)
                 ? s.morphTargets.slice()
@@ -259,16 +259,16 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             const abMin = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
             const abMax = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
             for (let i = 0; i < vertexCount; i++) {
-                const o = i * ZMesh.STATIC_STRIDE_FLOATS;
+                const o = i * EzMesh.STATIC_STRIDE_FLOATS;
                 const x = staticData[o + 0], y = staticData[o + 1], z = staticData[o + 2];
                 if (x < abMin[0]) abMin[0] = x; if (y < abMin[1]) abMin[1] = y; if (z < abMin[2]) abMin[2] = z;
                 if (x > abMax[0]) abMax[0] = x; if (y > abMax[1]) abMax[1] = y; if (z > abMax[2]) abMax[2] = z;
             }
 
-            let vrtxFlags = ZMesh.VertexType.Static;
-            if (rigData) vrtxFlags |= ZMesh.VertexType.Rig;
-            if (colorData) vrtxFlags |= ZMesh.VertexType.Color;
-            if (morph.targetCount > 0) vrtxFlags |= ZMesh.VertexType.Morph;
+            let vrtxFlags = EzMesh.VertexType.Static;
+            if (rigData) vrtxFlags |= EzMesh.VertexType.Rig;
+            if (colorData) vrtxFlags |= EzMesh.VertexType.Color;
+            if (morph.targetCount > 0) vrtxFlags |= EzMesh.VertexType.Morph;
 
             return {
                 name,
@@ -347,28 +347,28 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             if (spec == null) return new Float32Array(0);
             if (ArrayBuffer.isView(spec) || Array.isArray(spec)) {
                 const out = Float32Array.from(spec);
-                if (out.length % ZMesh.STATIC_STRIDE_FLOATS !== 0) throw new Error("[ZMesh] static packed data must be stride-12");
+                if (out.length % EzMesh.STATIC_STRIDE_FLOATS !== 0) throw new Error("[EzMesh] static packed data must be stride-12");
                 return out;
             }
-            if (!_is.obj(spec)) throw new Error("[ZMesh] static data must be packed array or object");
+            if (!_is.obj(spec)) throw new Error("[EzMesh] static data must be packed array or object");
 
             const pos = spec.positions ?? spec.position ?? spec.pos;
-            if (!(ArrayBuffer.isView(pos) || Array.isArray(pos))) throw new Error("[ZMesh] static.positions is required");
+            if (!(ArrayBuffer.isView(pos) || Array.isArray(pos))) throw new Error("[EzMesh] static.positions is required");
             const p = Float32Array.from(pos);
-            if (p.length % 3 !== 0) throw new Error("[ZMesh] static.positions must be vec3 list");
+            if (p.length % 3 !== 0) throw new Error("[EzMesh] static.positions must be vec3 list");
             const count = p.length / 3;
 
             const n = (ArrayBuffer.isView(spec.normals) || Array.isArray(spec.normals)) ? Float32Array.from(spec.normals) : null;
             const uv = (ArrayBuffer.isView(spec.uvs) || Array.isArray(spec.uvs)) ? Float32Array.from(spec.uvs) : null;
             const t = (ArrayBuffer.isView(spec.tangents) || Array.isArray(spec.tangents)) ? Float32Array.from(spec.tangents) : null;
 
-            if (n && n.length !== count * 3) throw new Error("[ZMesh] static.normals size mismatch");
-            if (uv && uv.length !== count * 2) throw new Error("[ZMesh] static.uvs size mismatch");
-            if (t && t.length !== count * 4) throw new Error("[ZMesh] static.tangents size mismatch");
+            if (n && n.length !== count * 3) throw new Error("[EzMesh] static.normals size mismatch");
+            if (uv && uv.length !== count * 2) throw new Error("[EzMesh] static.uvs size mismatch");
+            if (t && t.length !== count * 4) throw new Error("[EzMesh] static.tangents size mismatch");
 
-            const out = new Float32Array(count * ZMesh.STATIC_STRIDE_FLOATS);
+            const out = new Float32Array(count * EzMesh.STATIC_STRIDE_FLOATS);
             for (let i = 0; i < count; i++) {
-                const o = i * ZMesh.STATIC_STRIDE_FLOATS;
+                const o = i * EzMesh.STATIC_STRIDE_FLOATS;
                 out[o + 0] = p[i * 3 + 0];
                 out[o + 1] = p[i * 3 + 1];
                 out[o + 2] = p[i * 3 + 2];
@@ -392,23 +392,23 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             if (spec == null) return null;
             if (ArrayBuffer.isView(spec) || Array.isArray(spec)) {
                 const out = Float32Array.from(spec);
-                if (out.length !== vertexCount * ZMesh.RIGGED_STRIDE_FLOATS) throw new Error("[ZMesh] rigged packed data size mismatch");
+                if (out.length !== vertexCount * EzMesh.RIGGED_STRIDE_FLOATS) throw new Error("[EzMesh] rigged packed data size mismatch");
                 return out;
             }
-            if (!_is.obj(spec)) throw new Error("[ZMesh] rigged data must be packed array or object");
+            if (!_is.obj(spec)) throw new Error("[EzMesh] rigged data must be packed array or object");
 
             const ids = spec.boneIDs ?? spec.ids ?? spec.bones;
             const ws = spec.boneWeights ?? spec.weights;
-            if (!(ArrayBuffer.isView(ids) || Array.isArray(ids))) throw new Error("[ZMesh] rigged.boneIDs is required");
-            if (!(ArrayBuffer.isView(ws) || Array.isArray(ws))) throw new Error("[ZMesh] rigged.boneWeights is required");
+            if (!(ArrayBuffer.isView(ids) || Array.isArray(ids))) throw new Error("[EzMesh] rigged.boneIDs is required");
+            if (!(ArrayBuffer.isView(ws) || Array.isArray(ws))) throw new Error("[EzMesh] rigged.boneWeights is required");
 
             const id = Float32Array.from(ids);
             const w = Float32Array.from(ws);
-            if (id.length !== vertexCount * 4 || w.length !== vertexCount * 4) throw new Error("[ZMesh] rigged data size mismatch");
+            if (id.length !== vertexCount * 4 || w.length !== vertexCount * 4) throw new Error("[EzMesh] rigged data size mismatch");
 
-            const out = new Float32Array(vertexCount * ZMesh.RIGGED_STRIDE_FLOATS);
+            const out = new Float32Array(vertexCount * EzMesh.RIGGED_STRIDE_FLOATS);
             for (let i = 0; i < vertexCount; i++) {
-                const o = i * ZMesh.RIGGED_STRIDE_FLOATS;
+                const o = i * EzMesh.RIGGED_STRIDE_FLOATS;
                 out[o + 0] = id[i * 4 + 0];
                 out[o + 1] = id[i * 4 + 1];
                 out[o + 2] = id[i * 4 + 2];
@@ -424,21 +424,21 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         #packColorData(spec, vertexCount) {
             if (spec == null) return null;
             const src = Float32Array.from(spec);
-            if (src.length !== vertexCount * 4) throw new Error("[ZMesh] color data must be rgba per vertex");
+            if (src.length !== vertexCount * 4) throw new Error("[EzMesh] color data must be rgba per vertex");
             return src;
         }
 
         #packMorphData(spec, vertexCount) {
             if (spec == null) return { targetCount: 0, data: null };
             if (!_is.obj(spec) && !(ArrayBuffer.isView(spec) || Array.isArray(spec))) {
-                throw new Error("[ZMesh] morph data must be object or packed array");
+                throw new Error("[EzMesh] morph data must be object or packed array");
             }
 
             if (ArrayBuffer.isView(spec) || Array.isArray(spec)) {
                 const packed = Float32Array.from(spec);
-                if (packed.length % (vertexCount * ZMesh.MORPH_STRIDE_FLOATS) !== 0)
-                    throw new Error("[ZMesh] morph packed data size mismatch");
-                return { targetCount: packed.length / (vertexCount * ZMesh.MORPH_STRIDE_FLOATS), data: packed };
+                if (packed.length % (vertexCount * EzMesh.MORPH_STRIDE_FLOATS) !== 0)
+                    throw new Error("[EzMesh] morph packed data size mismatch");
+                return { targetCount: packed.length / (vertexCount * EzMesh.MORPH_STRIDE_FLOATS), data: packed };
             }
 
             const targetCount = Number(spec.targetCount ?? 0) || 0;
@@ -447,27 +447,27 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             const packed = spec.deltas ?? spec.packed ?? null;
             if (packed != null) {
                 const out = Float32Array.from(packed);
-                if (out.length !== targetCount * vertexCount * ZMesh.MORPH_STRIDE_FLOATS)
-                    throw new Error("[ZMesh] morph.deltas size mismatch");
+                if (out.length !== targetCount * vertexCount * EzMesh.MORPH_STRIDE_FLOATS)
+                    throw new Error("[EzMesh] morph.deltas size mismatch");
                 return { targetCount, data: out };
             }
 
             const dPos = spec.dPositions ?? spec.dPos ?? null;
             const dNrml = spec.dNormals ?? spec.dNrml ?? null;
             const dTang = spec.dTangents ?? spec.dTang ?? null;
-            if (!dPos) throw new Error("[ZMesh] morph requires dPositions or packed deltas");
+            if (!dPos) throw new Error("[EzMesh] morph requires dPositions or packed deltas");
 
             const p = Float32Array.from(dPos);
             const n = dNrml ? Float32Array.from(dNrml) : null;
             const t = dTang ? Float32Array.from(dTang) : null;
-            if (p.length !== targetCount * vertexCount * 3) throw new Error("[ZMesh] morph dPositions size mismatch");
-            if (n && n.length !== targetCount * vertexCount * 3) throw new Error("[ZMesh] morph dNormals size mismatch");
-            if (t && t.length !== targetCount * vertexCount * 4) throw new Error("[ZMesh] morph dTangents size mismatch");
+            if (p.length !== targetCount * vertexCount * 3) throw new Error("[EzMesh] morph dPositions size mismatch");
+            if (n && n.length !== targetCount * vertexCount * 3) throw new Error("[EzMesh] morph dNormals size mismatch");
+            if (t && t.length !== targetCount * vertexCount * 4) throw new Error("[EzMesh] morph dTangents size mismatch");
 
-            const out = new Float32Array(targetCount * vertexCount * ZMesh.MORPH_STRIDE_FLOATS);
+            const out = new Float32Array(targetCount * vertexCount * EzMesh.MORPH_STRIDE_FLOATS);
             for (let ti = 0; ti < targetCount; ti++) {
                 for (let vi = 0; vi < vertexCount; vi++) {
-                    const o = (ti * vertexCount + vi) * ZMesh.MORPH_STRIDE_FLOATS;
+                    const o = (ti * vertexCount + vi) * EzMesh.MORPH_STRIDE_FLOATS;
                     const pi = (ti * vertexCount + vi) * 3;
                     const ni = (ti * vertexCount + vi) * 3;
                     const ti4 = (ti * vertexCount + vi) * 4;
@@ -494,7 +494,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             if (spec instanceof Uint16Array) return new Uint16Array(spec);
             if (spec instanceof Uint8Array) return new Uint16Array(spec);
             if (Array.isArray(spec)) return Uint32Array.from(spec);
-            throw new Error("[ZMesh] indices must be an array or typed array");
+            throw new Error("[EzMesh] indices must be an array or typed array");
         }
 
         #createBuffers(staticRaw, rigRaw, colorRaw, morphRaw, indexRaw) {
@@ -597,23 +597,23 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
                 boneBase: "instBoneBase",
             };
             const id = map[k];
-            if (!id) throw new Error(`[ZMesh] unknown instance channel "${key}"`);
+            if (!id) throw new Error(`[EzMesh] unknown instance channel "${key}"`);
             const b = this.#buffers[id];
-            if (!b) throw new Error(`[ZMesh] instance buffer "${id}" not allocated`);
+            if (!b) throw new Error(`[EzMesh] instance buffer "${id}" not allocated`);
             b.uploadSub(data, byteOffset);
             return this;
         }
 
         setSubmeshMaterial(submeshIndex, material) {
             const sub = this.#submeshes[submeshIndex];
-            if (!sub) throw new Error(`[ZMesh] submesh ${submeshIndex} does not exist`);
+            if (!sub) throw new Error(`[EzMesh] submesh ${submeshIndex} does not exist`);
             sub.material = _is.obj(material) ? { ...material } : {};
             return this;
         }
 
         getDrawCfg(submeshIndex = 0) {
             const sub = this.#submeshes[submeshIndex];
-            if (!sub) throw new Error(`[ZMesh] submesh ${submeshIndex} does not exist`);
+            if (!sub) throw new Error(`[EzMesh] submesh ${submeshIndex} does not exist`);
             const ibytes = this.#indexType === this.#gl.UNSIGNED_INT ? 4 : 2;
             return {
                 indexed: true,
@@ -626,10 +626,10 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
 
         createVAO(shader, options = {}) {
             const gl = this.#gl;
-            if (!shader || !Array.isArray(shader.vertexInputs)) throw new Error("[ZMesh] createVAO() requires compiled ZShader");
+            if (!shader || !Array.isArray(shader.vertexInputs)) throw new Error("[EzMesh] createVAO() requires compiled ZShader");
             const submeshIndex = Number(options.submeshIndex ?? 0) | 0;
             const sub = this.#submeshes[submeshIndex];
-            if (!sub) throw new Error(`[ZMesh] submesh ${submeshIndex} does not exist`);
+            if (!sub) throw new Error(`[EzMesh] submesh ${submeshIndex} does not exist`);
 
             const cacheEnabled = options.cache !== false;
             const cacheKey = `${this.#id}|${shader.id ?? "shader"}|sub:${submeshIndex}|m:${options.morphTarget ?? 0}`;
@@ -639,7 +639,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             }
 
             const vao = gl.createVertexArray();
-            if (!vao) throw new Error("[ZMesh] createVertexArray failed");
+            if (!vao) throw new Error("[EzMesh] createVertexArray failed");
             gl.bindVertexArray(vao);
             try {
                 this.#buffers.index.bind();
@@ -660,10 +660,10 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             const gl = this.#gl;
             const name = decl.name;
 
-            const S = ZMesh.STATIC_STRIDE_FLOATS * 4;
-            const R = ZMesh.RIGGED_STRIDE_FLOATS * 4;
-            const C = ZMesh.COLOR_STRIDE_FLOATS * 4;
-            const M = ZMesh.MORPH_STRIDE_FLOATS * 4;
+            const S = EzMesh.STATIC_STRIDE_FLOATS * 4;
+            const R = EzMesh.RIGGED_STRIDE_FLOATS * 4;
+            const C = EzMesh.COLOR_STRIDE_FLOATS * 4;
+            const M = EzMesh.MORPH_STRIDE_FLOATS * 4;
 
             if (name === "a_position") return this.#wireBuffer(this.#buffers.vstatic, decl.loc, 3, gl.FLOAT, S, sub.vstaticOffset * S + 0, 0);
             if (name === "a_normal") return this.#wireBuffer(this.#buffers.vstatic, decl.loc, 3, gl.FLOAT, S, sub.vstaticOffset * S + 12, 0);
@@ -671,20 +671,20 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
             if (name === "a_tangent") return this.#wireBuffer(this.#buffers.vstatic, decl.loc, 4, gl.FLOAT, S, sub.vstaticOffset * S + 32, 0);
 
             if (name === "a_boneID") {
-                if (!this.#buffers.vrigged || !(sub.vrtxFlags & ZMesh.VertexType.Rig)) return false;
+                if (!this.#buffers.vrigged || !(sub.vrtxFlags & EzMesh.VertexType.Rig)) return false;
                 return this.#wireBuffer(this.#buffers.vrigged, decl.loc, 4, gl.FLOAT, R, sub.vriggedOffset * R + 0, 0);
             }
             if (name === "a_boneWeight") {
-                if (!this.#buffers.vrigged || !(sub.vrtxFlags & ZMesh.VertexType.Rig)) return false;
+                if (!this.#buffers.vrigged || !(sub.vrtxFlags & EzMesh.VertexType.Rig)) return false;
                 return this.#wireBuffer(this.#buffers.vrigged, decl.loc, 4, gl.FLOAT, R, sub.vriggedOffset * R + 16, 0);
             }
             if (name === "a_color") {
-                if (!this.#buffers.vcolor || !(sub.vrtxFlags & ZMesh.VertexType.Color)) return false;
+                if (!this.#buffers.vcolor || !(sub.vrtxFlags & EzMesh.VertexType.Color)) return false;
                 return this.#wireBuffer(this.#buffers.vcolor, decl.loc, 4, gl.FLOAT, C, sub.vcolorOffset * C + 0, 0);
             }
 
             if (name === "a_morphPos" || name === "a_morphNrml" || name === "a_morphTang") {
-                if (!this.#buffers.vmorph || !(sub.vrtxFlags & ZMesh.VertexType.Morph) || sub.mrphTargetCount <= 0) return false;
+                if (!this.#buffers.vmorph || !(sub.vrtxFlags & EzMesh.VertexType.Morph) || sub.mrphTargetCount <= 0) return false;
                 const targetSlot = this.#resolveSubmeshMorphSlot(sub, morphRef);
                 const base = (sub.vmorphOffset + targetSlot * sub.vertexCount) * M;
                 if (name === "a_morphPos") return this.#wireBuffer(this.#buffers.vmorph, decl.loc, 3, gl.FLOAT, M, base + 0, 0);
@@ -715,14 +715,14 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
                 if (n >= 0 && n < sub.mrphTargetCount) return n;
                 const slot = sub.morphTargetIndices.indexOf(n);
                 if (slot >= 0) return slot;
-                throw new Error(`[ZMesh] morph target ${ref} not linked on submesh ${sub.name}`);
+                throw new Error(`[EzMesh] morph target ${ref} not linked on submesh ${sub.name}`);
             }
             if (_is.str(ref)) {
                 const global = this.#morphTargetInfos.findIndex(it => it.name === ref);
-                if (global < 0) throw new Error(`[ZMesh] morph target "${ref}" does not exist`);
+                if (global < 0) throw new Error(`[EzMesh] morph target "${ref}" does not exist`);
                 const slot = sub.morphTargetIndices.indexOf(global);
                 if (slot >= 0) return slot;
-                throw new Error(`[ZMesh] morph target "${ref}" not linked on submesh ${sub.name}`);
+                throw new Error(`[EzMesh] morph target "${ref}" not linked on submesh ${sub.name}`);
             }
             return 0;
         }
@@ -752,7 +752,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         }
 
         rebuild(nextDesc) {
-            return new ZMesh(this.#gl, nextDesc);
+            return new EzMesh(this.#gl, nextDesc);
         }
 
         delete() {
@@ -771,7 +771,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
         }
     }
 
-    class ZSkeleton {
+    class EzSkeleton {
         id = null;
         name = null;
         bones = [];
@@ -816,7 +816,7 @@ GPU mesh + skeleton helpers moved out of ZCanvas to keep canvas core agnostic.
     }
 
 
-    window.ZMesh = ZMesh;
-    window.ZSkeleton = ZSkeleton;
-    window.EzSkeleton3D = ZSkeleton;
+    window.EzMesh = EzMesh;
+    window.EzSkeleton = EzSkeleton;
+    window.EzSkeleton3D = EzSkeleton;
 })();

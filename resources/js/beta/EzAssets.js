@@ -1,14 +1,14 @@
-/* ZAssets
+/* EzAssets
 By Asciiz
 
 WebGL-backed ECS asset storage and scene registry.
 */
 
 (function () {
-    if (typeof window.ZMesh !== "function") throw new Error("[ZAssets] ZMesh is required");
-    if (typeof window.ZSkeleton !== "function") throw new Error("[ZAssets] ZSkeleton is required");
-    if (typeof window.ZScene !== "function") throw new Error("[ZAssets] ZScene is required");
-    if (typeof window.ZShader !== "function") throw new Error("[ZAssets] ZShader is required");
+    if (typeof window.EzMesh !== "function") throw new Error("[EzAssets] EzMesh is required");
+    if (typeof window.EzSkeleton !== "function") throw new Error("[EzAssets] EzSkeleton is required");
+    if (typeof window.EzScene !== "function") throw new Error("[EzAssets] EzScene is required");
+    if (typeof window.ZShader !== "function") throw new Error("[EzAssets] ZShader is required");
 
     function cloneData(value) {
         if (value == null) return value;
@@ -38,7 +38,7 @@ WebGL-backed ECS asset storage and scene registry.
         return out;
     }
 
-    class ZAssets {
+    class EzAssets {
         static SKIN_BONE_CAP = 64;
 
         static FIXED_VERTEX_INPUTS = Object.freeze([
@@ -63,7 +63,7 @@ WebGL-backed ECS asset storage and scene registry.
         static FIXED_VERTEX_UNIFORMS = Object.freeze([
             Object.freeze({ name: "u_view", type: "mat4" }),
             Object.freeze({ name: "u_proj", type: "mat4" }),
-            Object.freeze({ name: `u_skinPalette[${ZAssets.SKIN_BONE_CAP}]`, type: "mat4" }),
+            Object.freeze({ name: `u_skinPalette[${EzAssets.SKIN_BONE_CAP}]`, type: "mat4" }),
             Object.freeze({ name: "u_vtxFlags", type: "vec4" }),
             Object.freeze({ name: "u_morphWeight", type: "float" }),
         ]);
@@ -114,7 +114,7 @@ WebGL-backed ECS asset storage and scene registry.
             "$VIEW$": "u_view",
             "$PROJECTION$": "u_proj",
             "$SKIN_PALETTE$": "u_skinPalette",
-            "$SKIN_MAX_INDEX$": String(ZAssets.SKIN_BONE_CAP - 1),
+            "$SKIN_MAX_INDEX$": String(EzAssets.SKIN_BONE_CAP - 1),
             "$VTX_FLAGS$": "u_vtxFlags",
             "$HAS_RIG$": "(u_vtxFlags.x > 0.5)",
             "$HAS_MORPH$": "(u_vtxFlags.y > 0.5)",
@@ -130,7 +130,7 @@ WebGL-backed ECS asset storage and scene registry.
         meshes = new Map();     // id -> { id, data, mesh }
         skeletons = new Map();  // id -> { id, data }
         shaders = new Map();    // id -> shader
-        scenes = new Map();     // id -> ZScene
+        scenes = new Map();     // id -> EzScene
 
         #vaoCache = new Map();
         #whiteTexture = null;
@@ -157,7 +157,7 @@ WebGL-backed ECS asset storage and scene registry.
         }
 
         addTexture(texture) {
-            if (!texture?.id) throw new Error("[ZAssets] texture.id is required");
+            if (!texture?.id) throw new Error("[EzAssets] texture.id is required");
             if (this.textures.has(texture.id)) return texture.id;
 
             let handle = null;
@@ -185,18 +185,18 @@ WebGL-backed ECS asset storage and scene registry.
         }
 
         addMaterial(material) {
-            if (!material?.id) throw new Error("[ZAssets] material.id is required");
+            if (!material?.id) throw new Error("[EzAssets] material.id is required");
             if (this.materials.has(material.id)) return material.id;
             this.materials.set(material.id, { id: material.id, data: cloneData(material) });
             return material.id;
         }
 
         addSkeleton(skeleton) {
-            if (!skeleton?.id) throw new Error("[ZAssets] skeleton.id is required");
+            if (!skeleton?.id) throw new Error("[EzAssets] skeleton.id is required");
             if (this.skeletons.has(skeleton.id)) return skeleton.id;
-            const data = skeleton instanceof ZSkeleton
+            const data = skeleton instanceof EzSkeleton
                 ? skeleton
-                : new ZSkeleton(cloneData(skeleton));
+                : new EzSkeleton(cloneData(skeleton));
             if (!data.id) data.id = skeleton.id;
             this.skeletons.set(skeleton.id, { id: skeleton.id, data });
             return skeleton.id;
@@ -215,9 +215,9 @@ WebGL-backed ECS asset storage and scene registry.
         }
 
         addMesh(meshData) {
-            if (!meshData?.id) throw new Error("[ZAssets] mesh.id is required");
+            if (!meshData?.id) throw new Error("[EzAssets] mesh.id is required");
             if (this.meshes.has(meshData.id)) return meshData.id;
-            if (!this.gl) throw new Error("[ZAssets] WebGL context is required to create mesh GPU resources");
+            if (!this.gl) throw new Error("[EzAssets] WebGL context is required to create mesh GPU resources");
 
             const submeshes = (meshData.submeshes || []).map((sub, i) => ({
                 name: sub.name || `${meshData.name || "mesh"}_sub_${i}`,
@@ -229,7 +229,7 @@ WebGL-backed ECS asset storage and scene registry.
                 material: this.#materialForSubmesh(sub.material),
             }));
 
-            const mesh = ZMesh.create(this.gl, {
+            const mesh = EzMesh.create(this.gl, {
                 morphTargets: (meshData.morphTargetNames || []).map((name) => ({ name })),
                 submeshes,
                 instances: { count: 1 },
@@ -245,14 +245,14 @@ WebGL-backed ECS asset storage and scene registry.
 
         #replaceSymbols(source) {
             let out = String(source ?? "");
-            for (const [symbol, replacement] of Object.entries(ZAssets.#SYMBOLS)) {
+            for (const [symbol, replacement] of Object.entries(EzAssets.#SYMBOLS)) {
                 out = out.split(symbol).join(replacement);
             }
             return out;
         }
 
         createShader(desc = {}) {
-            if (!this.gl) throw new Error("[ZAssets] WebGL context is required to compile shader");
+            if (!this.gl) throw new Error("[EzAssets] WebGL context is required to compile shader");
 
             const vertexMain = this.#replaceSymbols(desc.vertexMain ?? desc.vertex?.main ?? `
 gl_Position = u_proj * u_view * $INST_MODEL$ * vec4($POSITION$, 1.0);
@@ -268,9 +268,9 @@ $OUT_COLOR$ = vec4(1.0);
                 .write({ version: desc.version ?? "300 es" })
                 .write({
                     stage: ZShader.STAGE.VERTEX,
-                    inputs: ZAssets.FIXED_VERTEX_INPUTS.map((d) => ({ ...d })),
+                    inputs: EzAssets.FIXED_VERTEX_INPUTS.map((d) => ({ ...d })),
                     outputs: cloneData(desc.vertex?.outputs ?? []),
-                    uniforms: mergeDecls(ZAssets.FIXED_VERTEX_UNIFORMS.map((d) => ({ ...d })), cloneData(desc.vertex?.uniforms ?? [])),
+                    uniforms: mergeDecls(EzAssets.FIXED_VERTEX_UNIFORMS.map((d) => ({ ...d })), cloneData(desc.vertex?.uniforms ?? [])),
                     methods: vertexMethods,
                     main: vertexMain,
                 })
@@ -278,7 +278,7 @@ $OUT_COLOR$ = vec4(1.0);
                     stage: ZShader.STAGE.FRAGMENT,
                     inputs: cloneData(desc.fragment?.inputs ?? []),
                     outputs: cloneData(desc.fragment?.outputs ?? [{ name: "fragColor", type: "vec4" }]),
-                    uniforms: mergeDecls(ZAssets.FIXED_FRAGMENT_UNIFORMS.map((d) => ({ ...d })), cloneData(desc.fragment?.uniforms ?? [])),
+                    uniforms: mergeDecls(EzAssets.FIXED_FRAGMENT_UNIFORMS.map((d) => ({ ...d })), cloneData(desc.fragment?.uniforms ?? [])),
                     methods: fragmentMethods,
                     main: fragmentMain,
                 })
@@ -291,7 +291,7 @@ $OUT_COLOR$ = vec4(1.0);
         }
 
         registerShader(shaderID, shaderOrDesc) {
-            if (!shaderID) throw new Error("[ZAssets] shaderID is required");
+            if (!shaderID) throw new Error("[EzAssets] shaderID is required");
             const id = String(shaderID);
 
             const shader = shaderOrDesc instanceof ZShader
@@ -335,7 +335,7 @@ $OUT_COLOR$ = vec4(1.0);
                 premultiplyAlpha: false,
             });
             this.#whiteTexture = {
-                id: "__zassets_white_fallback__",
+                id: "__EzAssets_white_fallback__",
                 gl: this.gl,
                 data: { width: 1, height: 1, wrap: "clamp" },
                 handle,
@@ -370,7 +370,7 @@ $OUT_COLOR$ = vec4(1.0);
         }
 
         #buildScene(sceneData) {
-            const scene = new ZScene(sceneData.name || "Scene", {
+            const scene = new EzScene(sceneData.name || "Scene", {
                 rootId: sceneData.rootId,
                 sceneID: sceneData.id,
             });
@@ -403,12 +403,12 @@ $OUT_COLOR$ = vec4(1.0);
                 if (!progressed) break;
             }
 
-            if (pending.length > 0) throw new Error("[ZAssets] scene graph contains unresolved parents");
+            if (pending.length > 0) throw new Error("[EzAssets] scene graph contains unresolved parents");
             return scene;
         }
 
         addScene(sceneData) {
-            if (!sceneData?.id) throw new Error("[ZAssets] scene.id is required");
+            if (!sceneData?.id) throw new Error("[EzAssets] scene.id is required");
             if (this.scenes.has(sceneData.id)) return sceneData.id;
             const scene = this.#buildScene(sceneData);
             this.scenes.set(sceneData.id, scene);
@@ -422,7 +422,7 @@ $OUT_COLOR$ = vec4(1.0);
         }
 
         addFromLoader(payload, opts = {}) {
-            if (!payload) throw new Error("[ZAssets] loader payload is required");
+            if (!payload) throw new Error("[EzAssets] loader payload is required");
 
             for (const texture of Object.values(payload.textures || {})) this.addTexture(texture);
             for (const material of Object.values(payload.materials || {})) this.addMaterial(material);
@@ -430,7 +430,7 @@ $OUT_COLOR$ = vec4(1.0);
             for (const mesh of Object.values(payload.meshes || {})) this.addMesh(mesh);
 
             const sceneData = cloneData(payload.scene);
-            if (!sceneData) throw new Error("[ZAssets] payload.scene is required");
+            if (!sceneData) throw new Error("[EzAssets] payload.scene is required");
 
             if (opts.defaultShaderID) {
                 for (const node of (sceneData.nodes || [])) {
@@ -449,8 +449,8 @@ $OUT_COLOR$ = vec4(1.0);
 
             const mesh = this.getMesh(meshID);
             const shader = this.getShader(shaderID);
-            if (!mesh) throw new Error(`[ZAssets] mesh "${meshID}" not found`);
-            if (!shader) throw new Error(`[ZAssets] shader "${shaderID}" not found`);
+            if (!mesh) throw new Error(`[EzAssets] mesh "${meshID}" not found`);
+            if (!shader) throw new Error(`[EzAssets] shader "${shaderID}" not found`);
 
             const vao = mesh.createVAO(shader, {
                 submeshIndex,
@@ -462,5 +462,5 @@ $OUT_COLOR$ = vec4(1.0);
         }
     }
 
-    window.ZAssets = ZAssets;
+    window.EzAssets = EzAssets;
 })();

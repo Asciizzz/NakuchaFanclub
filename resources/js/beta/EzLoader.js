@@ -129,7 +129,7 @@
     async function parseGLB(url) {
         const buf = await fetch(url).then(r => r.arrayBuffer());
         const dv = new DataView(buf);
-        if (dv.getUint32(0, true) !== 0x46546c67) throw new Error(`[ZLoader] not a GLB: ${url}`);
+        if (dv.getUint32(0, true) !== 0x46546c67) throw new Error(`[EzLoader] not a GLB: ${url}`);
 
         const jsonLen = dv.getUint32(12, true);
         const gltf = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jsonLen)));
@@ -617,6 +617,5 @@
         };
     }
 
-    window.ZLoader = { load };
-    window.EzLoader = window.ZLoader;
+    window.EzLoader = { load };
 })();

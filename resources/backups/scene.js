@@ -1,6 +1,6 @@
 const container = document.getElementById("main-canvas");
 
-const project = new ZProject("main-canvas", { antialias: true, alpha: true });
+const project = new EzProject("main-canvas", { antialias: true, alpha: true });
 project.mount(container).fitContainer();
 
 const camera = project.camera;
@@ -19,6 +19,12 @@ new ResizeObserver(() => {
 }).observe(container);
 
 project.registerShader("model-default", {
+    renderCfg: {
+        cull: "back",
+        blend: true,
+        depthTest: true,
+        depthWrite: true
+    },
     vertex: {
         outputs: [
             { name: "v_uv", type: "vec2" },
@@ -57,51 +63,6 @@ project.registerShader("model-default", {
     },
 });
 
-project.registerShader("model-outline", {
-    renderCfg: {
-        depthTest: true,
-        depthWrite: false,
-        cull: "front",
-        blend: true,
-        blendSrc: "SRC_ALPHA",
-        blendDst: "ONE_MINUS_SRC_ALPHA",
-    },
-    vertex: {
-        outputs: [{ name: "v_outlineColor", type: "vec4" }],
-        main: `
-            vec3 localPos = $POSITION$;
-            vec3 localNormal = $NORMAL$;
-            if ($HAS_MORPH$) {
-                localPos += $MORPH_POS$ * $MORPH_WEIGHT$;
-                localNormal = normalize(localNormal + $MORPH_NORMAL$ * $MORPH_WEIGHT$);
-            }
-            vec4 weights = $BONE_WEIGHTS$;
-            float wsum = weights.x + weights.y + weights.z + weights.w;
-            mat4 skin = mat4(1.0);
-            if (wsum > 0.00001) {
-                ivec4 ids = ivec4($BONE_IDS$);
-                skin =
-                    weights.x * $SKIN_PALETTE$[clamp(ids.x, 0, $SKIN_MAX_INDEX$)] +
-                    weights.y * $SKIN_PALETTE$[clamp(ids.y, 0, $SKIN_MAX_INDEX$)] +
-                    weights.z * $SKIN_PALETTE$[clamp(ids.z, 0, $SKIN_MAX_INDEX$)] +
-                    weights.w * $SKIN_PALETTE$[clamp(ids.w, 0, $SKIN_MAX_INDEX$)];
-            }
-            vec4 skinnedPos = skin * vec4(localPos, 1.0);
-            vec3 skinnedNormal = normalize((skin * vec4(localNormal, 0.0)).xyz);
-            float outlineWidth = max($INST_SLOT1$.x, 0.001);
-            vec3 expanded = skinnedPos.xyz + skinnedNormal * outlineWidth;
-            gl_Position = $PROJECTION$ * $VIEW$ * $INST_MODEL$ * vec4(expanded, 1.0);
-            v_outlineColor = $INST_SLOT0$;
-        `,
-    },
-    fragment: {
-        inputs: [{ name: "v_outlineColor", type: "vec4" }],
-        main: `
-            $OUT_COLOR$ = v_outlineColor;
-        `,
-    },
-});
-
 async function main() {
     const sourceSceneID = await project.loadFromURL("/Models/Agnes.glb", {
         defaultShaderID: "model-default",
@@ -109,84 +70,66 @@ async function main() {
     const sourceScene = project.getScene(sourceSceneID);
     if (!sourceScene) throw new Error("Loaded source scene is missing");
 
-    const compositeScene = new ZScene("FrogComposite", {
+    const compositeScene = new EzScene("FrogComposite", {
         sceneID: "frog-composite",
         gl: project.gl,
         assets: project.assets,
-        camera: project.camera,
+        camera: project.camera
     });
 
-    const firstTracker = compositeScene.addScene(sourceScene, {
-        suffix: "_base",
-    });
+    const addedData = {};
 
-    const secondTracker = compositeScene.addScene(sourceScene, {
-        suffix: "_outline",
+    addedData.scene = compositeScene.addScene(sourceScene, {
+        suffix: "_base"
     });
+    addedData.nodeIds = Object.values(addedData.scene.map);
 
-    for (const nodeId of Object.values(firstTracker.map)) {
+    addedData.root = compositeScene.node(addedData.nodeIds[0]);
+    addedData.transform = addedData.root.get("Transform");
+
+    addedData.meshRenderers = [];
+    addedData.skeletons = [];
+    for (const nodeId of addedData.nodeIds) {
         const node = compositeScene.node(nodeId);
+
         const meshRenderer = node?.get("MeshRenderer");
         if (meshRenderer) {
             meshRenderer.shaderID = "model-default";
             meshRenderer.setSlot(0, { x: 1.0, y: 1.0, z: 1.0, w: 1.0 });
+
+            addedData.meshRenderers.push(meshRenderer);
+
+            const mesh = meshRenderer.meshAsset;
+            console.log(mesh);
+        }
+
+        const skeleton = node?.get("Skeleton");
+        if (skeleton) {
+            addedData.skeletons.push(skeleton);
+            console.log(skeleton);
         }
     }
 
-    for (const nodeId of Object.values(secondTracker.map)) {
-        const node = compositeScene.node(nodeId);
-        const meshRenderer = node?.get("MeshRenderer");
-        if (!meshRenderer) continue;
-        meshRenderer.shaderID = "model-outline";
-        meshRenderer.setSlot(0, { x: 0.00, y: 0.00, z: 0.00, w: 1.0 });
-        meshRenderer.setSlot(1, { x: 0.0001, y: 0, z: 0, w: 0 });
-    }
-
-    const morphControllers = [];
-    for (const [, node] of compositeScene.traverse(compositeScene.rootId, null, false)) {
-        const meshRenderer = node.get("MeshRenderer");
-        if (!meshRenderer?.meshID || !meshRenderer.morphWeights?.length) continue;
-        const meshData = project.assets.getMeshData(meshRenderer.meshID);
-        const morphName = meshData?.morphTargetNames?.[70] ?? "Target_0";
-        morphControllers.push({ meshRenderer, morphName });
-    }
-
-    const root = compositeScene.root();
-    const transform = root ? root.get("Transform") : null;
-    const skeletonEntries = compositeScene.findByComponent("Skeleton");
-    const animatedSkeletons = [];
-    for (const entry of skeletonEntries) {
-        const skelComp = entry.node.get("Skeleton");
-        if (!skelComp?.skeletonID) continue;
-        const skelData = project.assets.getSkeleton(skelComp.skeletonID);
-        skelComp.bindSkeletonData(skelData);
-        const hipByName = skelComp.resolveBoneIndex("Hip", skelData);
-        const hipsByName = skelComp.resolveBoneIndex("Hips", skelData);
-        const hipRef = hipByName >= 0
-            ? "Hip"
-            : (hipsByName >= 0 ? "Hips" : 0);
-        animatedSkeletons.push({ skeleton: skelComp, hipRef });
-    }
+    console.log("Added data", addedData);
 
     const start = performance.now();
     function frame() {
         const t = (performance.now() - start) * 0.001;
 
-        if (transform) {
+        if (addedData.transform) {
             const y = Math.sin(t * 1.4) * 0.35;
             const tr = ZMath.M4.fromTranslation(ZMath.V3.set(0, y, -1.8));
-            const rot = ZMath.M4.fromRotationY(t * 0.8);
-            ZMath.M4.mul(tr, rot, transform.local);
+            addedData.transform.local = tr;
+        }
+
+        for (const meshRenderer of addedData.meshRenderers) {
+            meshRenderer.setMorphWeight("Mouth_15_0(OdorokiB)[M_Face]", Math.sin(t * 3.7) * 0.5 + 0.5);
+            
         }
 
         const hipRotY = Math.sin(t * 2.2) * 0.55;
-        for (const entry of animatedSkeletons) {
-            entry.skeleton.set(entry.hipRef, { euler: [0, hipRotY, 0] });
-        }
-
-        const morphW = Math.sin(t * 3.4);
-        for (const morph of morphControllers) {
-            morph.meshRenderer.setMorphWeight(morph.morphName, morphW);
+        for (const skeleton of addedData.skeletons) {
+            skeleton.set("Hip", { euler: [0, hipRotY, 0] });
         }
 
         ZRender.setState(project.gl, {

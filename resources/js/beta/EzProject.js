@@ -1,14 +1,14 @@
-/* ZProject
+/* EzProject
 By Asciiz
 
 Central 3D project container: canvas + assets + camera.
 */
 
 (function () {
-    if (typeof window.ZCanvas !== "function") throw new Error("[ZProject] ZCanvas is required");
-    if (typeof window.ZAssets !== "function") throw new Error("[ZProject] ZAssets is required");
+    if (typeof window.ZCanvas !== "function") throw new Error("[EzProject] ZCanvas is required");
+    if (typeof window.EzAssets !== "function") throw new Error("[EzProject] EzAssets is required");
 
-    class ZProject {
+    class EzProject {
         canvas = null;
         assets = null;
         camera = null;
@@ -16,7 +16,7 @@ Central 3D project container: canvas + assets + camera.
         constructor(name = "z-project", canvasOpts = {}) {
             this.canvas = new ZCanvas(name, canvasOpts);
             this.camera = typeof window.ZCamera === "function" ? new ZCamera() : null;
-            this.assets = new ZAssets(this.canvas.gl, this.camera);
+            this.assets = new EzAssets(this.canvas.gl, this.camera);
         }
 
         get gl() { return this.canvas.gl; }
@@ -56,8 +56,8 @@ Central 3D project container: canvas + assets + camera.
         }
 
         async loadFromURL(url, opts = {}) {
-            const loader = window.ZLoader ?? window.EzLoader;
-            if (!loader?.load) throw new Error("[ZProject] ZLoader.load() is required");
+            const loader = window.EzLoader ?? window.EzLoader;
+            if (!loader?.load) throw new Error("[EzProject] EzLoader.load() is required");
 
             const payload = await loader.load(url);
             const sceneID = this.assets.addFromLoader(payload, opts);
@@ -77,5 +77,5 @@ Central 3D project container: canvas + assets + camera.
         }
     }
 
-    window.ZProject = ZProject;
+    window.EzProject = EzProject;
 })();

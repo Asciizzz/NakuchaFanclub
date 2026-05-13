@@ -1147,7 +1147,7 @@ Contains
         attrib(loc, size, type, normalize = false, stride = 0, offset = 0) {
             if (!this.#warnedAttribApi) {
                 this.#warnedAttribApi = true;
-                _c.warn("[ZBuffer]", "attrib()/divisor() are legacy. Prefer ZMesh.createVAO() wiring.");
+                _c.warn("[ZBuffer]", "attrib()/divisor() are legacy. Prefer EzMesh.createVAO() wiring.");
             }
             this.bind();
             this.#gl.vertexAttribPointer(loc, size, type, normalize, stride, offset);
@@ -1162,7 +1162,7 @@ Contains
         divisor(loc, d = 1) {
             if (!this.#warnedAttribApi) {
                 this.#warnedAttribApi = true;
-                _c.warn("[ZBuffer]", "attrib()/divisor() are legacy. Prefer ZMesh.createVAO() wiring.");
+                _c.warn("[ZBuffer]", "attrib()/divisor() are legacy. Prefer EzMesh.createVAO() wiring.");
             }
             const gl = this.#gl;
             if (gl.vertexAttribDivisor) gl.vertexAttribDivisor(loc, d);

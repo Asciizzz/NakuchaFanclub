@@ -1,6 +1,6 @@
 const container = document.getElementById("main-canvas");
 
-const project = new ZProject("main-canvas", { antialias: true, alpha: true });
+const project = new EzProject("main-canvas", { antialias: true, alpha: true });
 project.mount(container).fitContainer();
 
 const camera = project.camera;
@@ -70,7 +70,7 @@ async function main() {
     const sourceScene = project.getScene(sourceSceneID);
     if (!sourceScene) throw new Error("Loaded source scene is missing");
 
-    const compositeScene = new ZScene("FrogComposite", {
+    const compositeScene = new EzScene("FrogComposite", {
         sceneID: "frog-composite",
         gl: project.gl,
         assets: project.assets,
@@ -98,11 +98,15 @@ async function main() {
             meshRenderer.setSlot(0, { x: 1.0, y: 1.0, z: 1.0, w: 1.0 });
 
             addedData.meshRenderers.push(meshRenderer);
+
+            const mesh = meshRenderer.meshAsset;
+            console.log(mesh);
         }
 
         const skeleton = node?.get("Skeleton");
         if (skeleton) {
             addedData.skeletons.push(skeleton);
+            console.log(skeleton);
         }
     }
 
@@ -119,10 +123,9 @@ async function main() {
         }
 
         for (const meshRenderer of addedData.meshRenderers) {
-            meshRenderer.setMorphWeight(70, Math.sin(t * 3.7));
+            meshRenderer.setMorphWeight("Mouth_15_0(OdorokiB)[M_Face]", Math.sin(t * 3.7) * 0.5 + 0.5);
+            
         }
-
-
 
         const hipRotY = Math.sin(t * 2.2) * 0.55;
         for (const skeleton of addedData.skeletons) {
