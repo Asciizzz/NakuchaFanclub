@@ -63,9 +63,9 @@
             const hd = 0.40;
             const roofStartY = 0.34;
             const peakHalfWidth = 0.035;
-            const sliceCount = 44;
-            const cornerSeg = 5;
-            const bevel = 0.065;
+            const sliceCount = 22;
+            const cornerSeg = 4;
+            const bevel = 0.00;
 
             const vertices = [];
             const rings = [];
@@ -267,6 +267,118 @@
             return { positions, normals, count: indices.length };
         }
 
+        function buildInnerOutlineGeometry() {
+            const hw = 0.40;
+            const hh = 0.90;
+            const hd = 0.40;
+            const roofY = 0.34;
+            const ridgeHalf = 0.035;
+            const thick = 0.018;
+            const roofEdgeY = hh - 0.055; // lower than apex so line mesh hugs rounded roof better
+
+            const p0 = [-hw, -hh, -hd];
+            const p1 = [ hw, -hh, -hd];
+            const p2 = [ hw, -hh,  hd];
+            const p3 = [-hw, -hh,  hd];
+
+            const p4 = [-hw, roofY, -hd];
+            const p5 = [ hw, roofY, -hd];
+            const p6 = [ hw, roofY,  hd];
+            const p7 = [-hw, roofY,  hd];
+
+            const p8 = [-ridgeHalf, roofEdgeY, -hd];
+            const p9 = [ ridgeHalf, roofEdgeY, -hd];
+            const p10 = [-ridgeHalf, roofEdgeY, hd];
+            const p11 = [ ridgeHalf, roofEdgeY, hd];
+            const apexFront = [0, roofEdgeY, -hd];
+            const apexBack = [0, roofEdgeY, hd];
+
+            const segments = [
+                [p0, p1], [p1, p2], [p2, p3], [p3, p0], // bottom
+                [p0, p4], [p1, p5], [p2, p6], [p3, p7], // vertical
+                [p4, p5], [p5, p6], [p6, p7], [p7, p4], // shoulder
+                [p4, apexFront], [p5, apexFront], [p7, apexBack], [p6, apexBack], // roof slopes
+            ];
+            const alwaysVisibleSegments = [
+                [apexFront, apexBack], // single roof apex ridge line
+            ];
+
+            const positions = [];
+            const center = [0, (roofY - hh) * 0.2, 0];
+
+            function addTri(a, b, c) {
+                positions.push(a[0], a[1], a[2]);
+                positions.push(b[0], b[1], b[2]);
+                positions.push(c[0], c[1], c[2]);
+            }
+
+            function addEdgeRibbon(a, b, r, doubleSided = false) {
+                let dx = b[0] - a[0];
+                let dy = b[1] - a[1];
+                let dz = b[2] - a[2];
+                const dl = Math.hypot(dx, dy, dz) || 1;
+                dx /= dl; dy /= dl; dz /= dl;
+
+                const mx = (a[0] + b[0]) * 0.5;
+                const my = (a[1] + b[1]) * 0.5;
+                const mz = (a[2] + b[2]) * 0.5;
+                let rx = mx - center[0];
+                let ry = my - center[1];
+                let rz = mz - center[2];
+                const rl = Math.hypot(rx, ry, rz) || 1;
+                rx /= rl; ry /= rl; rz /= rl;
+
+                let wx = dy * rz - dz * ry;
+                let wy = dz * rx - dx * rz;
+                let wz = dx * ry - dy * rx;
+                let wl = Math.hypot(wx, wy, wz);
+                if (wl < 1e-6) {
+                    wx = -dz; wy = 0; wz = dx;
+                    wl = Math.hypot(wx, wy, wz) || 1;
+                }
+                wx = (wx / wl) * (r * 0.5);
+                wy = (wy / wl) * (r * 0.5);
+                wz = (wz / wl) * (r * 0.5);
+
+                let a0 = [a[0] - wx, a[1] - wy, a[2] - wz];
+                let a1 = [a[0] + wx, a[1] + wy, a[2] + wz];
+                let b0 = [b[0] - wx, b[1] - wy, b[2] - wz];
+                let b1 = [b[0] + wx, b[1] + wy, b[2] + wz];
+
+                // Ensure quad front faces point roughly outward from object center.
+                const u1x = a1[0] - a0[0], u1y = a1[1] - a0[1], u1z = a1[2] - a0[2];
+                const u2x = b1[0] - a0[0], u2y = b1[1] - a0[1], u2z = b1[2] - a0[2];
+                const fnx = u1y * u2z - u1z * u2y;
+                const fny = u1z * u2x - u1x * u2z;
+                const fnz = u1x * u2y - u1y * u2x;
+                if (fnx * rx + fny * ry + fnz * rz < 0) {
+                    const ta = a0; a0 = a1; a1 = ta;
+                    const tb = b0; b0 = b1; b1 = tb;
+                }
+
+                addTri(a0, a1, b1);
+                addTri(a0, b1, b0);
+                if (doubleSided) {
+                    addTri(a0, b1, a1);
+                    addTri(a0, b0, b1);
+                }
+            }
+
+            for (let i = 0; i < segments.length; i++) {
+                addEdgeRibbon(segments[i][0], segments[i][1], thick);
+            }
+            for (let i = 0; i < alwaysVisibleSegments.length; i++) {
+                addEdgeRibbon(alwaysVisibleSegments[i][0], alwaysVisibleSegments[i][1], thick, true);
+            }
+
+            return {
+                positions: new Float32Array(positions),
+                count: positions.length / 3,
+                minY: -hh,
+                maxY: roofEdgeY,
+            };
+        }
+
         function makeBoxShader() {
             return new ZShader()
                 .write({ version: "300 es" })
@@ -309,18 +421,77 @@
                 .compile(gl);
         }
 
+        function makeInnerLineShader() {
+            return new ZShader()
+                .write({ version: "300 es" })
+                .write({
+                    links: [
+                        { name: "v_worldPos", type: "vec3" },
+                        { name: "v_localPos", type: "vec3" },
+                    ],
+                })
+                .write({
+                    stage: ZShader.STAGE.VERTEX,
+                    inputs: [
+                        { name: "a_position", type: "vec3" },
+                    ],
+                    uniforms: [
+                        { name: "u_proj", type: "mat4" },
+                        { name: "u_view", type: "mat4" },
+                        { name: "u_model", type: "mat4" },
+                        { name: "u_insetScale", type: "float" },
+                    ],
+                    main: `
+                        vec3 p = a_position * u_insetScale;
+                        vec4 wp = u_model * vec4(p, 1.0);
+                        v_worldPos = wp.xyz;
+                        v_localPos = p;
+                        gl_Position = u_proj * u_view * wp;
+                    `,
+                })
+                .write({
+                    stage: ZShader.STAGE.FRAGMENT,
+                    outputs: [
+                        { name: "fragColor", type: "vec4" },
+                    ],
+                    uniforms: [
+                        { name: "u_color", type: "vec3" },
+                        { name: "u_localMinY", type: "float" },
+                        { name: "u_localMaxY", type: "float" },
+                    ],
+                    main: `
+                        float t = clamp((v_localPos.y - u_localMinY) / max(1e-6, u_localMaxY - u_localMinY), 0.0, 1.0);
+                        // Bottom -> transparent, top -> opaque.
+                        float a = smoothstep(0.16, 0.92, t);
+                        if (a <= 0.16) discard;
+                        if (a < 0.92) {
+                            // Object-space alpha hash, stable when moving object in world.
+                            float ah = smoothstep(0.16, 0.92, a);
+                            float freq = mix(13.0, 38.0, ah);
+                            vec3 q = floor((v_localPos + vec3(2.0)) * freq);
+                            float h = fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+                            if (h > ah) discard;
+                        }
+                        fragColor = vec4(u_color, 1.0);
+                    `,
+                })
+                .compile(gl);
+        }
+
         const geom = buildCartonGeometry();
+        const innerGeom = buildInnerOutlineGeometry();
         const posBuf = new ZBuffer(gl, gl.ARRAY_BUFFER, gl.STATIC_DRAW).upload(geom.positions);
         const nrmBuf = new ZBuffer(gl, gl.ARRAY_BUFFER, gl.STATIC_DRAW).upload(geom.normals);
+        const innerPosBuf = new ZBuffer(gl, gl.ARRAY_BUFFER, gl.STATIC_DRAW).upload(innerGeom.positions);
 
-        function makeVAO(shader) {
+        function makeVAO(shader, posBuffer, nrmBuffer = null) {
             const vao = gl.createVertexArray();
             gl.bindVertexArray(vao);
 
             const pLoc = shader.getInputLocation("a_position");
             if (pLoc !== -1) {
                 ZRender.wireAttr(gl, {
-                    buffer: posBuf.handle,
+                    buffer: posBuffer.handle,
                     loc: pLoc,
                     size: 3,
                     type: gl.FLOAT,
@@ -331,9 +502,9 @@
             }
 
             const nLoc = shader.getInputLocation("a_normal");
-            if (nLoc !== -1) {
+            if (nLoc !== -1 && nrmBuffer) {
                 ZRender.wireAttr(gl, {
-                    buffer: nrmBuf.handle,
+                    buffer: nrmBuffer.handle,
                     loc: nLoc,
                     size: 3,
                     type: gl.FLOAT,
@@ -348,7 +519,9 @@
         }
 
         const boxShader = makeBoxShader();
-        const boxVAO = makeVAO(boxShader);
+        const innerLineShader = makeInnerLineShader();
+        const boxVAO = makeVAO(boxShader, posBuf, nrmBuf);
+        const innerLineVAO = makeVAO(innerLineShader, innerPosBuf, null);
 
         const cam = { yaw: -0.72, pitch: 0.23, dist: 3.6, drag: false, lx: 0, ly: 0 };
         const cv = zc.canvas;
@@ -386,6 +559,21 @@
             gl.bindVertexArray(null);
         }
 
+        function drawInnerLinePass(color, insetScale) {
+            innerLineShader.bind(gl);
+            innerLineShader.setUniform(gl, "u_proj", proj);
+            innerLineShader.setUniform(gl, "u_view", view);
+            innerLineShader.setUniform(gl, "u_model", model);
+            innerLineShader.setUniform(gl, "u_insetScale", insetScale);
+            innerLineShader.setUniform(gl, "u_color", color);
+            innerLineShader.setUniform(gl, "u_localMinY", innerGeom.minY + 0.02);
+            innerLineShader.setUniform(gl, "u_localMaxY", innerGeom.maxY);
+
+            gl.bindVertexArray(innerLineVAO);
+            gl.drawArrays(gl.TRIANGLES, 0, innerGeom.count);
+            gl.bindVertexArray(null);
+        }
+
         function frame() {
             const w = Math.max(1, zc.canvas.width);
             const h = Math.max(1, zc.canvas.height);
@@ -411,6 +599,14 @@
 
             drawBoxPass(new Float32Array([0.0, 0.0, 0.0]), 0.055);
             drawBoxPass(new Float32Array([1.0, 1.0, 1.0]), 0.0);
+
+            ZRender.setState(gl, {
+                depthTest: true,
+                depthWrite: true,
+                blend: false,
+                cull: "back",
+            });
+            drawInnerLinePass(new Float32Array([0.60, 0.50, 0.90]), 0.985);
 
             requestAnimationFrame(frame);
         }
