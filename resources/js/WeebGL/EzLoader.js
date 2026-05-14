@@ -545,7 +545,7 @@
                 components.MeshRenderer = {
                     active: true,
                     meshID: meshIndexToId[gn.mesh] ?? null,
-                    shaderID: null,
+                    shaderKeys: [],
                     skeletonNode: gn.skin != null ? (skinToHolderNodeId[gn.skin] ?? null) : null,
                     morphWeights: null,
                 };

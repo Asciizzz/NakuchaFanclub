@@ -272,8 +272,8 @@
             const hh = 0.90;
             const hd = 0.40;
             const roofY = 0.34;
-            const ridgeHalf = 0.035;
             const thick = 0.018;
+            const radialSeg = 10;
             const roofEdgeY = hh - 0.055; // lower than apex so line mesh hugs rounded roof better
 
             const p0 = [-hw, -hh, -hd];
@@ -286,10 +286,6 @@
             const p6 = [ hw, roofY,  hd];
             const p7 = [-hw, roofY,  hd];
 
-            const p8 = [-ridgeHalf, roofEdgeY, -hd];
-            const p9 = [ ridgeHalf, roofEdgeY, -hd];
-            const p10 = [-ridgeHalf, roofEdgeY, hd];
-            const p11 = [ ridgeHalf, roofEdgeY, hd];
             const apexFront = [0, roofEdgeY, -hd];
             const apexBack = [0, roofEdgeY, hd];
 
@@ -298,8 +294,6 @@
                 [p0, p4], [p1, p5], [p2, p6], [p3, p7], // vertical
                 [p4, p5], [p5, p6], [p6, p7], [p7, p4], // shoulder
                 [p4, apexFront], [p5, apexFront], [p7, apexBack], [p6, apexBack], // roof slopes
-            ];
-            const alwaysVisibleSegments = [
                 [apexFront, apexBack], // single roof apex ridge line
             ];
 
@@ -312,7 +306,7 @@
                 positions.push(c[0], c[1], c[2]);
             }
 
-            function addEdgeRibbon(a, b, r, doubleSided = false) {
+            function addEdgePipe(a, b, r) {
                 let dx = b[0] - a[0];
                 let dy = b[1] - a[1];
                 let dz = b[2] - a[2];
@@ -328,47 +322,73 @@
                 const rl = Math.hypot(rx, ry, rz) || 1;
                 rx /= rl; ry /= rl; rz /= rl;
 
-                let wx = dy * rz - dz * ry;
-                let wy = dz * rx - dx * rz;
-                let wz = dx * ry - dy * rx;
-                let wl = Math.hypot(wx, wy, wz);
-                if (wl < 1e-6) {
-                    wx = -dz; wy = 0; wz = dx;
-                    wl = Math.hypot(wx, wy, wz) || 1;
-                }
-                wx = (wx / wl) * (r * 0.5);
-                wy = (wy / wl) * (r * 0.5);
-                wz = (wz / wl) * (r * 0.5);
-
-                let a0 = [a[0] - wx, a[1] - wy, a[2] - wz];
-                let a1 = [a[0] + wx, a[1] + wy, a[2] + wz];
-                let b0 = [b[0] - wx, b[1] - wy, b[2] - wz];
-                let b1 = [b[0] + wx, b[1] + wy, b[2] + wz];
-
-                // Ensure quad front faces point roughly outward from object center.
-                const u1x = a1[0] - a0[0], u1y = a1[1] - a0[1], u1z = a1[2] - a0[2];
-                const u2x = b1[0] - a0[0], u2y = b1[1] - a0[1], u2z = b1[2] - a0[2];
-                const fnx = u1y * u2z - u1z * u2y;
-                const fny = u1z * u2x - u1x * u2z;
-                const fnz = u1x * u2y - u1y * u2x;
-                if (fnx * rx + fny * ry + fnz * rz < 0) {
-                    const ta = a0; a0 = a1; a1 = ta;
-                    const tb = b0; b0 = b1; b1 = tb;
+                // Build a stable orthonormal basis around edge tangent.
+                let ux = dy * rz - dz * ry;
+                let uy = dz * rx - dx * rz;
+                let uz = dx * ry - dy * rx;
+                let ul = Math.hypot(ux, uy, uz);
+                if (ul < 1e-6) {
+                    ux = Math.abs(dx) < 0.8 ? 1 : 0;
+                    uy = Math.abs(dy) < 0.8 ? 1 : 0;
+                    uz = Math.abs(dz) < 0.8 ? 1 : 0;
+                    let cx = dy * uz - dz * uy;
+                    let cy = dz * ux - dx * uz;
+                    let cz = dx * uy - dy * ux;
+                    const cl = Math.hypot(cx, cy, cz) || 1;
+                    ux = cx / cl; uy = cy / cl; uz = cz / cl;
+                } else {
+                    ux /= ul; uy /= ul; uz /= ul;
                 }
 
-                addTri(a0, a1, b1);
-                addTri(a0, b1, b0);
-                if (doubleSided) {
-                    addTri(a0, b1, a1);
-                    addTri(a0, b0, b1);
+                // v = t x u
+                let vx = dy * uz - dz * uy;
+                let vy = dz * ux - dx * uz;
+                let vz = dx * uy - dy * ux;
+                const vl = Math.hypot(vx, vy, vz) || 1;
+                vx /= vl; vy /= vl; vz /= vl;
+
+                const ringA = new Array(radialSeg);
+                const ringB = new Array(radialSeg);
+                for (let i = 0; i < radialSeg; i++) {
+                    const t = (i / radialSeg) * Math.PI * 2;
+                    const ct = Math.cos(t), st = Math.sin(t);
+                    const ox = (ux * ct + vx * st) * (r * 0.5);
+                    const oy = (uy * ct + vy * st) * (r * 0.5);
+                    const oz = (uz * ct + vz * st) * (r * 0.5);
+                    ringA[i] = [a[0] + ox, a[1] + oy, a[2] + oz];
+                    ringB[i] = [b[0] + ox, b[1] + oy, b[2] + oz];
+                }
+
+                for (let i = 0; i < radialSeg; i++) {
+                    const ni = (i + 1) % radialSeg;
+                    let a0 = ringA[i], a1 = ringA[ni];
+                    let b0 = ringB[i], b1 = ringB[ni];
+
+                    // Auto-flip winding per quad so outward side is front-facing.
+                    const qcx = (a0[0] + a1[0] + b1[0] + b0[0]) * 0.25;
+                    const qcy = (a0[1] + a1[1] + b1[1] + b0[1]) * 0.25;
+                    const qcz = (a0[2] + a1[2] + b1[2] + b0[2]) * 0.25;
+                    const qrx = qcx - center[0];
+                    const qry = qcy - center[1];
+                    const qrz = qcz - center[2];
+
+                    const e1x = a1[0] - a0[0], e1y = a1[1] - a0[1], e1z = a1[2] - a0[2];
+                    const e2x = b1[0] - a0[0], e2y = b1[1] - a0[1], e2z = b1[2] - a0[2];
+                    const fnx = e1y * e2z - e1z * e2y;
+                    const fny = e1z * e2x - e1x * e2z;
+                    const fnz = e1x * e2y - e1y * e2x;
+                    if (fnx * qrx + fny * qry + fnz * qrz < 0) {
+                        const ta = a0; a0 = a1; a1 = ta;
+                        const tb = b0; b0 = b1; b1 = tb;
+                    }
+
+                    addTri(a0, a1, b1);
+                    addTri(a0, b1, b0);
                 }
             }
 
             for (let i = 0; i < segments.length; i++) {
-                addEdgeRibbon(segments[i][0], segments[i][1], thick);
-            }
-            for (let i = 0; i < alwaysVisibleSegments.length; i++) {
-                addEdgeRibbon(alwaysVisibleSegments[i][0], alwaysVisibleSegments[i][1], thick, true);
+                addEdgePipe(segments[i][0], segments[i][1], thick);
             }
 
             return {

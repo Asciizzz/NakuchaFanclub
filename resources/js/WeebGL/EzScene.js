@@ -124,7 +124,6 @@ ZTree extension for ECS-style scene management.
 
     class MeshRenderer {
         active = true;
-        shaderID = null;
         morphWeights = null;
         instanceSlots = null;
         log = null;
@@ -134,11 +133,17 @@ ZTree extension for ECS-style scene management.
         #nodeId = null;
         #meshID = null;
         #skeletonNode = null;
+        #shaderKeys = new Set();
 
         constructor(opts = {}) {
             this.active = opts.active ?? true;
             this.meshID = opts.meshID ?? null;
-            this.shaderID = opts.shaderID ?? null;
+            const initShaderKeys = opts.shaderKeys ?? opts.shaderKey ?? null;
+            if (Array.isArray(initShaderKeys) || initShaderKeys instanceof Set) {
+                for (const shaderID of initShaderKeys) this.withShader(shaderID);
+            } else if (initShaderKeys != null) {
+                this.withShader(initShaderKeys);
+            }
             this.skeletonNode = opts.skeletonNode ?? null;
             this.morphWeights = opts.morphWeights ? Float32Array.from(opts.morphWeights) : null;
             this.instanceSlots = [
@@ -168,6 +173,30 @@ ZTree extension for ECS-style scene management.
             this.#meshID = value == null ? null : String(value);
             this.#syncMeshShape();
         }
+
+        #toShaderID(value) {
+            if (value == null) return null;
+            const id = String(value).trim();
+            return id || null;
+        }
+
+        get shaderKeys() { return this.#shaderKeys; }
+        get shaderKeyys() { return this.#shaderKeys; }
+        withShader(shaderID) {
+            const id = this.#toShaderID(shaderID);
+            if (id) this.#shaderKeys.add(id);
+            return this;
+        }
+        hasShader(shaderID) {
+            const id = this.#toShaderID(shaderID);
+            return id ? this.#shaderKeys.has(id) : false;
+        }
+        removeShader(shaderID) {
+            const id = this.#toShaderID(shaderID);
+            if (id) this.#shaderKeys.delete(id);
+            return this;
+        }
+        clearShaders() { this.#shaderKeys.clear(); return this; }
 
         get skeletonNode() { return this.#skeletonNode; }
         set skeletonNode(value) {
@@ -766,15 +795,20 @@ ZTree extension for ECS-style scene management.
             for (const [id, node] of this.traverse(this.rootId, null, false)) {
                 const renderComp = node.get(EzScene.COMPONENT.MeshRenderer) ?? node.get("meshRenderer");
                 if (!(renderComp instanceof MeshRenderer) || !renderComp.active) continue;
-                if (!renderComp.meshID || !renderComp.shaderID) continue;
-                const key = `${renderComp.meshID}|${renderComp.shaderID}`;
-                if (!batches.has(key)) batches.set(key, []);
-                batches.get(key).push({
+                if (!renderComp.meshID) continue;
+                const shaderIDs = Array.from(renderComp.shaderKeys.values());
+                if (!shaderIDs.length) continue;
+                const draw = {
                     id,
                     node,
                     transform: this.#ensureTransform(id),
                     renderComp,
-                });
+                };
+                for (const shaderID of shaderIDs) {
+                    const key = `${renderComp.meshID}|${shaderID}`;
+                    if (!batches.has(key)) batches.set(key, []);
+                    batches.get(key).push(draw);
+                }
             }
 
             for (const [key, drawList] of batches.entries()) {

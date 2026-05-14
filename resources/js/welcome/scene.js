@@ -115,14 +115,13 @@ project.registerShader("model-default", {
 });
 
 async function main() {
-    const sourceSceneID = await project.loadFromURL("/Models/Nakurin.glb", {
-        defaultShaderID: "model-default",
-    });
+    const sourceSceneID = await project.loadModelFromURL("/Models/Nakurin.glb");
     const sourceScene = project.getScene(sourceSceneID);
     if (!sourceScene) throw new Error("Loaded source scene is missing");
 
-    const compositeScene = new EzScene("FrogComposite", {
-        sceneID: "frog-composite",
+    // A standalone scene that utilizes the ZProject's shared resources
+    const compositeScene = new EzScene("WacaoNiMa", {
+        sceneID: "Wacao",
         gl: project.gl,
         assets: project.assets,
         camera: project.camera
@@ -139,7 +138,7 @@ async function main() {
         const node = compositeScene.node(nodeId);
         const meshRenderer = node?.get("MeshRenderer");
         if (!meshRenderer) continue;
-        meshRenderer.shaderID = "model-default";
+        meshRenderer.clearShaders().withShader("model-default");
         meshRenderer.setSlot(0, { x: 1.0, y: 1.0, z: 1.0, w: 1.0 });
 
         const skelNode = compositeScene.node(meshRenderer.skeletonNode ?? "");

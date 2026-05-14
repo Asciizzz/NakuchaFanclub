@@ -55,18 +55,14 @@ Central 3D project container: canvas + assets + camera.
             return this.assets.createShader(desc);
         }
 
-        async loadFromURL(url, opts = {}) {
+        async loadModelFromURL(url) {
             const loader = window.EzLoader ?? window.EzLoader;
             if (!loader?.load) throw new Error("[EzProject] EzLoader.load() is required");
 
             const payload = await loader.load(url);
-            const sceneID = this.assets.addFromLoader(payload, opts);
+            const sceneID = this.assets.addFromLoader(payload);
             this.getScene(sceneID); // ensure runtime binding to latest camera
             return sceneID;
-        }
-
-        async fromURL(url, opts = {}) {
-            return this.loadFromURL(url, opts);
         }
 
         getScene(sceneID) {

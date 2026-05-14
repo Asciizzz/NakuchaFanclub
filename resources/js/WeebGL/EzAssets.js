@@ -424,7 +424,7 @@ $OUT_COLOR$ = vec4(1.0);
             return scene;
         }
 
-        addFromLoader(payload, opts = {}) {
+        addFromLoader(payload) {
             if (!payload) throw new Error("[EzAssets] loader payload is required");
 
             for (const texture of Object.values(payload.textures || {})) this.addTexture(texture);
@@ -434,13 +434,6 @@ $OUT_COLOR$ = vec4(1.0);
 
             const sceneData = cloneData(payload.scene);
             if (!sceneData) throw new Error("[EzAssets] payload.scene is required");
-
-            if (opts.defaultShaderID) {
-                for (const node of (sceneData.nodes || [])) {
-                    const meshRenderer = node.components?.MeshRenderer ?? node.components?.meshRenderer;
-                    if (meshRenderer && !meshRenderer.shaderID) meshRenderer.shaderID = opts.defaultShaderID;
-                }
-            }
 
             return this.addScene(sceneData);
         }
