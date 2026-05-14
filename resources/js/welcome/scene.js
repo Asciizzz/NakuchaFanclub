@@ -9,6 +9,7 @@ if (camera) {
     camera.near = 0.1;
     camera.far = 200;
     camera.position = ZMath.V3.set(0, 4, 4);
+    camera.lookAt(ZMath.V3());
     camera.aspect = container.clientWidth / container.clientHeight;
 }
 
@@ -126,6 +127,8 @@ async function main() {
         assets: project.assets,
         camera: project.camera
     });
+
+    console.log(compositeScene.nodes);
 
     const merged = compositeScene.addScene(sourceScene, { suffix: "_base" });
     const nodeIds = Object.values(merged?.map ?? {});

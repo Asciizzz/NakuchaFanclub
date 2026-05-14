@@ -683,22 +683,17 @@ ZTree extension for ECS-style scene management.
 
         updateTransforms() {
             for (const [id, node] of this.traverse(this.rootId, null, false)) {
-                const transform = this.#ensureTransform(id);
-                if (node.parent == null) {
-                    transform.world.set(transform.local);
-                    continue;
-                }
-                const parent = this.node(node.parent);
-                const parentComp = parent?.get(EzScene.COMPONENT.Transform) ?? parent?.get("transform");
-                const parentTx = parentComp instanceof Transform ? parentComp : this.#ensureTransform(node.parent);
-                ZMath.M4.mul(parentTx.world, transform.local, transform.world);
+                this.#updateNodeTransform(id, node);
             }
             return this;
         }
 
         update(deltaTime = 0) {
-            this.updateTransforms();
-            for (const [, node] of this.traverse(this.rootId, null, false)) {
+            for (const [id, node] of this.traverse(this.rootId, null, false)) {
+                // Transform updates
+                this.#updateNodeTransform(id, node);
+
+                // Custom.run()
                 const custom = node.get(EzScene.COMPONENT.Custom) ?? node.get("custom");
                 if (custom && typeof custom.run === "function") {
                     try {
@@ -930,6 +925,26 @@ ZTree extension for ECS-style scene management.
                     this.#bindComponent(nodeId, key, value);
                 }
             }
+        }
+
+        #updateNodeTransform(nodeId, node) {
+            const transform = this.#ensureTransform(nodeId);
+            if (!transform) return null;
+            if (node.parent == null) {
+                transform.world.set(transform.local);
+                return transform;
+            }
+
+            const parent = this.node(node.parent);
+            const parentComp = parent?.get(EzScene.COMPONENT.Transform) ?? parent?.get("transform");
+            const parentTx = parentComp instanceof Transform ? parentComp : this.#ensureTransform(node.parent);
+            if (!(parentTx instanceof Transform)) {
+                transform.world.set(transform.local);
+                return transform;
+            }
+
+            ZMath.M4.mul(parentTx.world, transform.local, transform.world);
+            return transform;
         }
 
         #ensureTransform(nodeId) {
