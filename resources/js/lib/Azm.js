@@ -1,4 +1,4 @@
-/* Azm (Azm)
+/* Azm (AzMath)
 By Asciiz
 
 # Has

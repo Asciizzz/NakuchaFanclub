@@ -1,15 +1,21 @@
-import './WeebGL/ZMath.js';
-import './WeebGL/ZCanvas.js';
-import './WeebGL/EzMesh.js';
-import './WeebGL/ZTree.js';
-import './WeebGL/EzScene.js';
-import './WeebGL/EzLoader.js';
-import './WeebGL/EzAssets.js';
-import './WeebGL/EzProject.js';
-import './WeebGL/EzNakurin.js';
+// 3D-only bootstrap (WeebGPU)
+// Load order matters because these files publish runtime globals on window.
 
-import './lib/EzCanvas2D.js';
-import './lib/EzFloater.js';
+import './lib/Azm.js';
+import './lib/AzWGPU.js';
 
-import './welcome/particles.js';
+import './WeebGPU/ZCamera.js';
+import './WeebGPU/ZCanvasWGPU.js';
+import './WeebGPU/ZRShader.js';
+import './WeebGPU/ZCShader.js';
+
+import './WeebGPU/ZTree.js';
+import './WeebGPU/EzScene.js';
+import './WeebGPU/EzLoader.js';
+import './WeebGPU/EzMesh.js';
+import './WeebGPU/EzAssets.js';
+import './WeebGPU/ZRenderGraph.js';
+import './WeebGPU/EzProject.js';
+import './WeebGPU/EzNakurin.js';
+
 import './welcome/scene.js';
