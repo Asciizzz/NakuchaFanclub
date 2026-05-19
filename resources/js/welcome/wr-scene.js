@@ -4,6 +4,7 @@ import WrAsset from "../WeebRender/Core/Asset.js";
 import * as Azm from "../AzLib/Azm.js";
 
 const container = document.getElementById("main-canvas");
+const EYE_CLOSE_MORPH = "Eye_2_R(CloseA)[M_Face]";
 
 function createEmptyCompositeScene(asset) {
     return asset.createScene({
@@ -98,6 +99,70 @@ function logMeshMorphTargetNames(scene, asset) {
             morphTargetNames: names,
         });
     }
+    console.groupEnd();
+}
+
+function dumpSceneStructure(scene, label = "scene") {
+    if (!scene) return;
+    const nodes = Array.isArray(scene.nodes) ? scene.nodes : [];
+    const nodeById = new Map(nodes.map((n) => [String(n.id), n]));
+
+    const formatComponent = (key, value) => {
+        if (!value || typeof value !== "object") return value;
+        if (key === "Transform") {
+            return {
+                local: ArrayBuffer.isView(value.local) ? `mat4(${value.local.length})` : null,
+                world: ArrayBuffer.isView(value.world) ? `mat4(${value.world.length})` : null,
+            };
+        }
+        if (key === "MeshRenderer") {
+            return {
+                active: value.active ?? true,
+                meshID: value.meshID ?? null,
+                shaderKeys: Array.isArray(value.shaderKeys) ? value.shaderKeys.slice() : [],
+                skeletonNode: value.skeletonNode ?? null,
+                morphWeights: ArrayBuffer.isView(value.morphWeights) ? `f32[${value.morphWeights.length}]` : null,
+            };
+        }
+        if (key === "Skeleton") {
+            return {
+                skeletonID: value.skeletonID ?? value.skeletonId ?? null,
+                bones: Array.isArray(value.bones) ? `bones[${value.bones.length}]` : null,
+            };
+        }
+        return Object.keys(value);
+    };
+
+    const walk = (nodeId, depth = 0) => {
+        const node = scene.node(nodeId);
+        const raw = nodeById.get(String(nodeId));
+        if (!node || !raw) return;
+        const indent = "  ".repeat(depth);
+        console.group(`${indent}Node ${node.id} (${node.name})`);
+        console.log({
+            id: node.id,
+            name: node.name,
+            parentId: node.parentId,
+            children: Array.isArray(raw.children) ? raw.children.slice() : [],
+        });
+        const comps = node.components ?? {};
+        console.group(`${indent}Components`);
+        for (const [key, value] of Object.entries(comps)) {
+            console.log(`${key}:`, formatComponent(key, value));
+        }
+        console.groupEnd();
+        const children = Array.isArray(raw.children) ? raw.children : [];
+        for (const childId of children) walk(childId, depth + 1);
+        console.groupEnd();
+    };
+
+    console.group(`[WrScene] Tree: ${label}`);
+    console.log({
+        sceneId: scene.id,
+        rootId: scene.rootId,
+        nodeCount: nodes.length,
+    });
+    walk(scene.rootId, 0);
     console.groupEnd();
 }
 
@@ -225,6 +290,7 @@ async function run() {
         scene = await asset.loadModelFromURL("/Models/Agnes.glb");
         console.info("[WrScene] model loaded", scene.id);
         logMeshMorphTargetNames(scene, asset);
+        dumpSceneStructure(scene, "source");
         composite = createEmptyCompositeScene(asset);
 
         bundles = [
@@ -234,11 +300,19 @@ async function run() {
         ];
 
         console.log(composite);
+        dumpSceneStructure(composite, "composite");
 
         for (const [index, bundle] of bundles.entries()) {
-            const morph = bundle.morphs[0] ?? null;
-            if (morph?.setMorphWeight) {
-                morph.setMorphWeight(0, 0.25 + (index * 0.15));
+            for (const morph of bundle.morphs) {
+                if (!morph?.resolveMorphIndex) continue;
+                const targetIndex = morph.resolveMorphIndex(EYE_CLOSE_MORPH);
+                if (targetIndex >= 0) {
+                    console.info("[WrScene] eye morph resolved", {
+                        meshID: morph.meshID,
+                        morphName: EYE_CLOSE_MORPH,
+                        morphIndex: targetIndex,
+                    });
+                }
             }
         }
         console.info("[WrScene] composite instantiated", bundles.length);
@@ -269,6 +343,13 @@ async function run() {
                 if (bundle.hip) {
                     const angle = Math.sin((bundle.time * 2.0) + (i * 0.6)) * 0.35;
                     bundle.hip.skeleton.set(bundle.hip.ref, Azm.Mat4.fromRotationY(angle));
+                }
+
+                const eyeCloseWeight = 0.5 + (0.5 * Math.sin((bundle.time * 5.0) + (i * 0.7)));
+                for (const morph of bundle.morphs) {
+                    if (morph?.setMorphWeight) {
+                        morph.setMorphWeight(EYE_CLOSE_MORPH, eyeCloseWeight);
+                    }
                 }
             }
 
