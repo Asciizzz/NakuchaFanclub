@@ -57,80 +57,80 @@ function hookCameraInput() {
 function registerDefaultShader() {
     project.registerShader("model-default", {
         code: `
-struct SceneUBO {
-    viewProj: mat4x4f,
-    cameraPos: vec4f,
-}
+        struct SceneUBO {
+            viewProj: mat4x4f,
+            cameraPos: vec4f,
+        }
 
-struct ObjectUBO {
-    model: mat4x4f,
-    slot0: vec4f,
-    albedoColor: vec4f,
-    vtxFlags: vec4f,
-    extras: vec4f,
-    skinPalette: array<mat4x4f, 128>,
-}
+        struct ObjectUBO {
+            model: mat4x4f,
+            slot0: vec4f,
+            albedoColor: vec4f,
+            vtxFlags: vec4f,
+            extras: vec4f,
+            skinPalette: array<mat4x4f, 128>,
+        }
 
-@group(0) @binding(0) var<uniform> sceneUBO: SceneUBO;
-@group(1) @binding(0) var<uniform> objectUBO: ObjectUBO;
-@group(1) @binding(1) var texSampler: sampler;
-@group(1) @binding(2) var albedoTex: texture_2d<f32>;
+        @group(0) @binding(0) var<uniform> sceneUBO: SceneUBO;
+        @group(1) @binding(0) var<uniform> objectUBO: ObjectUBO;
+        @group(1) @binding(1) var texSampler: sampler;
+        @group(1) @binding(2) var albedoTex: texture_2d<f32>;
 
-struct VSIn {
-    @location(0) position: vec3f,
-    @location(1) normal: vec3f,
-    @location(2) uv: vec2f,
-    @location(3) boneID: vec4f,
-    @location(4) boneWeight: vec4f,
-    @location(5) morphPos: vec3f,
-}
+        struct VSIn {
+            @location(0) position: vec3f,
+            @location(1) normal: vec3f,
+            @location(2) uv: vec2f,
+            @location(3) boneID: vec4f,
+            @location(4) boneWeight: vec4f,
+            @location(5) morphPos: vec3f,
+        }
 
-struct VSOut {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    @location(1) slot0: vec4f,
-}
+        struct VSOut {
+            @builtin(position) position: vec4f,
+            @location(0) uv: vec2f,
+            @location(1) slot0: vec4f,
+        }
 
-@vertex
-fn vs_main(input: VSIn) -> VSOut {
-    var localPos = input.position;
-    if (objectUBO.vtxFlags.y > 0.5) {
-        localPos += input.morphPos * objectUBO.extras.x;
-    }
+        @vertex
+        fn vs_main(input: VSIn) -> VSOut {
+            var localPos = input.position;
+            if (objectUBO.vtxFlags.y > 0.5) {
+                localPos += input.morphPos * objectUBO.extras.x;
+            }
 
-    var skinned = vec4f(localPos, 1.0);
-    let weights = input.boneWeight;
-    let wsum = weights.x + weights.y + weights.z + weights.w;
-    if (objectUBO.vtxFlags.x > 0.5 && wsum > 0.00001) {
-        let ids = vec4i(input.boneID);
-        let m =
-            weights.x * objectUBO.skinPalette[clamp(ids.x, 0, 127)] +
-            weights.y * objectUBO.skinPalette[clamp(ids.y, 0, 127)] +
-            weights.z * objectUBO.skinPalette[clamp(ids.z, 0, 127)] +
-            weights.w * objectUBO.skinPalette[clamp(ids.w, 0, 127)];
-        skinned = m * vec4f(localPos, 1.0);
-    }
+            var skinned = vec4f(localPos, 1.0);
+            let weights = input.boneWeight;
+            let wsum = weights.x + weights.y + weights.z + weights.w;
+            if (objectUBO.vtxFlags.x > 0.5 && wsum > 0.00001) {
+                let ids = vec4i(input.boneID);
+                let m =
+                    weights.x * objectUBO.skinPalette[clamp(ids.x, 0, 127)] +
+                    weights.y * objectUBO.skinPalette[clamp(ids.y, 0, 127)] +
+                    weights.z * objectUBO.skinPalette[clamp(ids.z, 0, 127)] +
+                    weights.w * objectUBO.skinPalette[clamp(ids.w, 0, 127)];
+                skinned = m * vec4f(localPos, 1.0);
+            }
 
-    let worldPos = objectUBO.model * skinned;
+            let worldPos = objectUBO.model * skinned;
 
-    var out: VSOut;
-    out.position = sceneUBO.viewProj * worldPos;
-    out.uv = input.uv;
-    out.slot0 = objectUBO.slot0;
-    return out;
-}
+            var out: VSOut;
+            out.position = sceneUBO.viewProj * worldPos;
+            out.uv = input.uv;
+            out.slot0 = objectUBO.slot0;
+            return out;
+        }
 
-@fragment
-fn fs_main(input: VSOut) -> @location(0) vec4f {
-    let texel = textureSample(albedoTex, texSampler, input.uv);
-    let alpha = texel.a * input.slot0.a * objectUBO.albedoColor.a;
-    if (alpha < 0.01) {
-        discard;
-    }
-    let rgb = texel.rgb * input.slot0.rgb * objectUBO.albedoColor.rgb;
-    return vec4f(rgb, alpha);
-}
-`,
+        @fragment
+        fn fs_main(input: VSOut) -> @location(0) vec4f {
+            let texel = textureSample(albedoTex, texSampler, input.uv);
+            let alpha = texel.a * input.slot0.a * objectUBO.albedoColor.a;
+            if (alpha < 0.01) {
+                discard;
+            }
+            let rgb = texel.rgb * input.slot0.rgb * objectUBO.albedoColor.rgb;
+            return vec4f(rgb, alpha);
+        }
+        `,
         vertex: {
             buffers: [{
                 arrayStride: 76,

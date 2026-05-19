@@ -258,11 +258,11 @@ WebGL-backed ECS asset storage and scene registry.
             if (!this.gl) throw new Error("[EzAssets] WebGL context is required to compile shader");
 
             const vertexMain = this.#replaceSymbols(desc.vertexMain ?? desc.vertex?.main ?? `
-gl_Position = u_proj * u_view * $INST_MODEL$ * vec4($POSITION$, 1.0);
-`);
+            gl_Position = u_proj * u_view * $INST_MODEL$ * vec4($POSITION$, 1.0);
+            `);
             const fragmentMain = this.#replaceSymbols(desc.fragmentMain ?? desc.fragment?.main ?? `
-$OUT_COLOR$ = vec4(1.0);
-`);
+            $OUT_COLOR$ = vec4(1.0);
+            `);
 
             const vertexMethods = (desc.vertex?.methods ?? []).map((m) => ({ ...m, body: this.#replaceSymbols(m.body ?? "") }));
             const fragmentMethods = (desc.fragment?.methods ?? []).map((m) => ({ ...m, body: this.#replaceSymbols(m.body ?? "") }));

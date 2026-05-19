@@ -1,145 +1,151 @@
-/* Azm (AzMath)
+/* Azm - AzMath
 By Asciiz
 
-# Has
+Lightweight mathlib for Float32Array vectors/matrices/quater-onions(yummers)
 
-Constants
-    EPSILON = 0.0001
-    DEG2RAD = 0.017453292519943295
-    RAD2DEG = 57.29577951308232
+# Components
+    Vec2, Vec3, Vec4, Quat (Today, I want a quaso), Mat4
 
-[V2]
-    V2()
-    set(x, y, out?)       copy(a, out?)
-    add(a, b, out?)       sub(a, b, out?)
-    scale(a, s, out?)     dot(a, b)
-    len(a)                norm(a, out?)
-    lerp(a, b, t, out?)
+# Constants
+    EPSILON
+    DEG2RAD
+    RAD2DEG
 
-[V3]
-    V3() UP RIGHT FORWARD
-    set(x, y, z, out?)    copy(a, out?)
-    add(a, b, out?)       sub(a, b, out?)
-    mul(a, b, out?)       scale(a, s, out?)
-    dot(a, b)             cross(a, b, out?)
-    len(a)                norm(a, out?)
-    distance(a, b)        lerp(a, b, t, out?)
-
-[V4]
-    V4()
-    set(x, y, z, w, out?) copy(a, out?)
-    add(a, b, out?)       sub(a, b, out?)
-    scale(a, s, out?)     dot(a, b)
-    len(a)                norm(a, out?)
-
-[Q] (Quaternion)
-    Q()                   identity(out?)
-    copy(a, out?)         mul(a, b, out?)
-    len(a)                norm(a, out?)
-    invert(a, out?)       from.axisAngle(axis, rad, out?)
-    slerp(a, b, t, out?)  from.euler(x, y, z, out?)
-    transformV3(q, v, out?)
-
-[M4] (4x4 Matrix, column-major)
-    M4()
-    identity(out?)
-    copy(a, out?)
-    mul(a, b, out?)
-    transpose(a, out?)
-    invert(a, out?)
-    fromTranslation(v, out?)
-    fromScaling(v, out?)
-    fromRotationX(rad, out?)
-    fromRotationY(rad, out?)
-    fromRotationZ(rad, out?)
-    fromQuat(q, out?)
-    fromTRS(pos, rotQ, scale, out?)
-    translate(m, v, out?)
-    rotateX(m, rad, out?)
-    rotateY(m, rad, out?)
-    rotateZ(m, rad, out?)
-    rotateQ(m, q, out?)
-    scale(m, v, out?)
-    perspective(fovy, aspect, near, far, out?)
-    ortho(left, right, bottom, top, near, far, out?)
-    lookAt(eye, target, up, out?)
-    transformV2(m, v, out?)
-    transformV3(m, v, out?)
-    transformV4(m, v, out?)
-
-# Example usage:
-
-const mat = Azm.M4.identity(mat);
-Azm.M4.fromTranslation(Azm.V3.set(1, 2, 3), mat);
-
-# Notes:
-
-- Matrices are column-major
-
-- Quaternions are in [x, y, z, w] format
-
-- Euler rotation follow YXZ (yaw-pitch-roll) convention
-
-
+# Notes
+    Matrices are column-major
+    Quaternion format is [x, y, z, w]
 */
-class Azm {
-    static EPSILON = 0.000001;
-    static DEG2RAD = 0.017453292519943295;
-    static RAD2DEG = 57.29577951308232;
-}
+
+export const EPSILON = 0.000001;
+export const DEG2RAD = 0.017453292519943295;
+export const RAD2DEG = 57.29577951308232;
+export const TAU = 6.283185307179586;
+export const PI_HALF = 1.5707963267948966;
+export const PI_QUARTER = 0.7853981633974483;
+export const PI_THIRD = 1.0471975511965976;
+
+export const Vec2 = function(xOrArray = 0, y = 0) {
+    if (ArrayBuffer.isView(xOrArray) || Array.isArray(xOrArray)) {
+        const out = new Float32Array(2);
+        out[0] = xOrArray[0] ?? 0;
+        out[1] = xOrArray[1] ?? 0;
+        return out;
+    }
+    const out = new Float32Array(2);
+    out[0] = xOrArray ?? 0;
+    out[1] = y ?? 0;
+    return out;
+};
+
+export const Vec3 = function(xOrArray = 0, y = 0, z = 0) {
+    if (ArrayBuffer.isView(xOrArray) || Array.isArray(xOrArray)) {
+        const out = new Float32Array(3);
+        out[0] = xOrArray[0] ?? 0;
+        out[1] = xOrArray[1] ?? 0;
+        out[2] = xOrArray[2] ?? 0;
+        return out;
+    }
+    const out = new Float32Array(3);
+    out[0] = xOrArray ?? 0;
+    out[1] = y ?? 0;
+    out[2] = z ?? 0;
+    return out;
+};
+
+export const Vec4 = function(xOrArray = 0, y = 0, z = 0, w = 0) {
+    if (ArrayBuffer.isView(xOrArray) || Array.isArray(xOrArray)) {
+        const out = new Float32Array(4);
+        out[0] = xOrArray[0] ?? 0;
+        out[1] = xOrArray[1] ?? 0;
+        out[2] = xOrArray[2] ?? 0;
+        out[3] = xOrArray[3] ?? 0;
+        return out;
+    }
+    const out = new Float32Array(4);
+    out[0] = xOrArray ?? 0;
+    out[1] = y ?? 0;
+    out[2] = z ?? 0;
+    out[3] = w ?? 0;
+    return out;
+};
+
+export const Quat = function(xOrArray = 0, y = 0, z = 0, w = 0) {
+    if (ArrayBuffer.isView(xOrArray) || Array.isArray(xOrArray)) {
+        const out = new Float32Array(4);
+        out[0] = xOrArray[0] ?? 0;
+        out[1] = xOrArray[1] ?? 0;
+        out[2] = xOrArray[2] ?? 0;
+        out[3] = xOrArray[3] ?? 0;
+        return out;
+    }
+    const out = new Float32Array(4);
+    out[0] = xOrArray ?? 0;
+    out[1] = y ?? 0;
+    out[2] = z ?? 0;
+    out[3] = w ?? 0;
+    return out;
+};
+
+export const Mat4 = function(arrayLike = null) {
+    const out = new Float32Array(16);
+    if (arrayLike && (ArrayBuffer.isView(arrayLike) || Array.isArray(arrayLike))) {
+        out.set(arrayLike.subarray ? arrayLike.subarray(0, 16) : arrayLike.slice(0, 16));
+    }
+    return out;
+};
 
 // V2
 
-Azm.V2 = () => new Float32Array(2);
 
-Azm.V2.set = function(x, y, out = null) {
+
+Vec2.set = function(x, y, out = null) {
     out ??= new Float32Array(2);
     out[0] = x;
     out[1] = y;
     return out;
 };
 
-Azm.V2.copy = function(a, out = null) {
+Vec2.copy = function(a, out = null) {
     out ??= new Float32Array(2);
     out[0] = a[0];
     out[1] = a[1];
     return out;
 };
 
-Azm.V2.add = function(a, b, out = null) {
+Vec2.add = function(a, b, out = null) {
     out ??= new Float32Array(2);
     out[0] = a[0] + b[0];
     out[1] = a[1] + b[1];
     return out;
 };
 
-Azm.V2.sub = function(a, b, out = null) {
+Vec2.sub = function(a, b, out = null) {
     out ??= new Float32Array(2);
     out[0] = a[0] - b[0];
     out[1] = a[1] - b[1];
     return out;
 };
 
-Azm.V2.scale = function(a, s, out = null) {
+Vec2.scale = function(a, s, out = null) {
     out ??= new Float32Array(2);
     out[0] = a[0] * s;
     out[1] = a[1] * s;
     return out;
 };
 
-Azm.V2.dot = function(a, b) {
+Vec2.dot = function(a, b) {
     return a[0] * b[0] + a[1] * b[1];
 };
 
-Azm.V2.len = function(a) {
+Vec2.len = function(a) {
     return Math.sqrt(a[0] * a[0] + a[1] * a[1]);
 };
 
-Azm.V2.norm = function(a, out = null) {
+Vec2.norm = function(a, out = null) {
     out ??= new Float32Array(2);
     const x = a[0], y = a[1];
     const lsq = x * x + y * y;
-    if (lsq > Azm.EPSILON * Azm.EPSILON) {
+    if (lsq > EPSILON * EPSILON) {
         const invLen = 1.0 / Math.sqrt(lsq);
         out[0] = x * invLen;
         out[1] = y * invLen;
@@ -150,7 +156,7 @@ Azm.V2.norm = function(a, out = null) {
     return out;
 };
 
-Azm.V2.lerp = function(a, b, t, out = null) {
+Vec2.lerp = function(a, b, t, out = null) {
     out ??= new Float32Array(2);
     out[0] = a[0] + (b[0] - a[0]) * t;
     out[1] = a[1] + (b[1] - a[1]) * t;
@@ -160,13 +166,13 @@ Azm.V2.lerp = function(a, b, t, out = null) {
 
 // V3
 
-Azm.V3 = () => new Float32Array(3);
 
-Azm.V3.UP      = new Float32Array([0, 1, 0]);
-Azm.V3.RIGHT   = new Float32Array([1, 0, 0]);
-Azm.V3.FORWARD = new Float32Array([0, 0, -1]);
 
-Azm.V3.set = function(x, y, z, out = null) {
+Vec3.UP      = new Float32Array([0, 1, 0]);
+Vec3.RIGHT   = new Float32Array([1, 0, 0]);
+Vec3.FORWARD = new Float32Array([0, 0, -1]);
+
+Vec3.set = function(x, y, z, out = null) {
     out ??= new Float32Array(3);
     out[0] = x;
     out[1] = y;
@@ -174,7 +180,7 @@ Azm.V3.set = function(x, y, z, out = null) {
     return out;
 };
 
-Azm.V3.copy = function(a, out = null) {
+Vec3.copy = function(a, out = null) {
     out ??= new Float32Array(3);
     out[0] = a[0];
     out[1] = a[1];
@@ -182,7 +188,7 @@ Azm.V3.copy = function(a, out = null) {
     return out;
 };
 
-Azm.V3.add = function(a, b, out = null) {
+Vec3.add = function(a, b, out = null) {
     out ??= new Float32Array(3);
     out[0] = a[0] + b[0];
     out[1] = a[1] + b[1];
@@ -190,7 +196,7 @@ Azm.V3.add = function(a, b, out = null) {
     return out;
 };
 
-Azm.V3.sub = function(a, b, out = null) {
+Vec3.sub = function(a, b, out = null) {
     out ??= new Float32Array(3);
     out[0] = a[0] - b[0];
     out[1] = a[1] - b[1];
@@ -198,7 +204,7 @@ Azm.V3.sub = function(a, b, out = null) {
     return out;
 };
 
-Azm.V3.mul = function(a, b, out = null) {
+Vec3.mul = function(a, b, out = null) {
     out ??= new Float32Array(3);
     out[0] = a[0] * b[0];
     out[1] = a[1] * b[1];
@@ -206,7 +212,7 @@ Azm.V3.mul = function(a, b, out = null) {
     return out;
 };
 
-Azm.V3.scale = function(a, s, out = null) {
+Vec3.scale = function(a, s, out = null) {
     out ??= new Float32Array(3);
     out[0] = a[0] * s;
     out[1] = a[1] * s;
@@ -214,11 +220,11 @@ Azm.V3.scale = function(a, s, out = null) {
     return out;
 };
 
-Azm.V3.dot = function(a, b) {
+Vec3.dot = function(a, b) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 };
 
-Azm.V3.cross = function(a, b, out = null) {
+Vec3.cross = function(a, b, out = null) {
     out ??= new Float32Array(3);
     const ax = a[0], ay = a[1], az = a[2];
     const bx = b[0], by = b[1], bz = b[2];
@@ -228,15 +234,15 @@ Azm.V3.cross = function(a, b, out = null) {
     return out;
 };
 
-Azm.V3.len = function(a) {
+Vec3.len = function(a) {
     return Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
 };
 
-Azm.V3.norm = function(a, out = null) {
+Vec3.norm = function(a, out = null) {
     out ??= new Float32Array(3);
     const x = a[0], y = a[1], z = a[2];
     const lsq = x * x + y * y + z * z;
-    if (lsq > Azm.EPSILON * Azm.EPSILON) {
+    if (lsq > EPSILON * EPSILON) {
         const invLen = 1.0 / Math.sqrt(lsq);
         out[0] = x * invLen;
         out[1] = y * invLen;
@@ -249,14 +255,14 @@ Azm.V3.norm = function(a, out = null) {
     return out;
 };
 
-Azm.V3.distance = function(a, b) {
+Vec3.distance = function(a, b) {
     const dx = b[0] - a[0];
     const dy = b[1] - a[1];
     const dz = b[2] - a[2];
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
 };
 
-Azm.V3.lerp = function(a, b, t, out = null) {
+Vec3.lerp = function(a, b, t, out = null) {
     out ??= new Float32Array(3);
     out[0] = a[0] + (b[0] - a[0]) * t;
     out[1] = a[1] + (b[1] - a[1]) * t;
@@ -267,9 +273,9 @@ Azm.V3.lerp = function(a, b, t, out = null) {
 
 // V4
 
-Azm.V4 = () => new Float32Array(4);
 
-Azm.V4.set = function(x, y, z, w, out = null) {
+
+Vec4.set = function(x, y, z, w, out = null) {
     out ??= new Float32Array(4);
     out[0] = x;
     out[1] = y;
@@ -278,7 +284,7 @@ Azm.V4.set = function(x, y, z, w, out = null) {
     return out;
 };
 
-Azm.V4.copy = function(a, out = null) {
+Vec4.copy = function(a, out = null) {
     out ??= new Float32Array(4);
     out[0] = a[0];
     out[1] = a[1];
@@ -287,7 +293,7 @@ Azm.V4.copy = function(a, out = null) {
     return out;
 };
 
-Azm.V4.add = function(a, b, out = null) {
+Vec4.add = function(a, b, out = null) {
     out ??= new Float32Array(4);
     out[0] = a[0] + b[0];
     out[1] = a[1] + b[1];
@@ -296,7 +302,7 @@ Azm.V4.add = function(a, b, out = null) {
     return out;
 };
 
-Azm.V4.sub = function(a, b, out = null) {
+Vec4.sub = function(a, b, out = null) {
     out ??= new Float32Array(4);
     out[0] = a[0] - b[0];
     out[1] = a[1] - b[1];
@@ -305,7 +311,7 @@ Azm.V4.sub = function(a, b, out = null) {
     return out;
 };
 
-Azm.V4.scale = function(a, s, out = null) {
+Vec4.scale = function(a, s, out = null) {
     out ??= new Float32Array(4);
     out[0] = a[0] * s;
     out[1] = a[1] * s;
@@ -314,19 +320,19 @@ Azm.V4.scale = function(a, s, out = null) {
     return out;
 };
 
-Azm.V4.dot = function(a, b) {
+Vec4.dot = function(a, b) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
 };
 
-Azm.V4.len = function(a) {
+Vec4.len = function(a) {
     return Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2] + a[3] * a[3]);
 };
 
-Azm.V4.norm = function(a, out = null) {
+Vec4.norm = function(a, out = null) {
     out ??= new Float32Array(4);
     const x = a[0], y = a[1], z = a[2], w = a[3];
     const lsq = x * x + y * y + z * z + w * w;
-    if (lsq > Azm.EPSILON * Azm.EPSILON) {
+    if (lsq > EPSILON * EPSILON) {
         const invLen = 1.0 / Math.sqrt(lsq);
         out[0] = x * invLen;
         out[1] = y * invLen;
@@ -344,9 +350,9 @@ Azm.V4.norm = function(a, out = null) {
 
 // Q (Quaternion) - stored as [x, y, z, w]
 
-Azm.Q = () => new Float32Array(4);
 
-Azm.Q.identity = function(out = null) {
+
+Quat.identity = function(out = null) {
     out ??= new Float32Array(4);
     out[0] = 0;
     out[1] = 0;
@@ -355,7 +361,7 @@ Azm.Q.identity = function(out = null) {
     return out;
 };
 
-Azm.Q.copy = function(a, out = null) {
+Quat.copy = function(a, out = null) {
     out ??= new Float32Array(4);
     out[0] = a[0];
     out[1] = a[1];
@@ -364,7 +370,7 @@ Azm.Q.copy = function(a, out = null) {
     return out;
 };
 
-Azm.Q.mul = function(a, b, out = null) {
+Quat.mul = function(a, b, out = null) {
     out ??= new Float32Array(4);
     const ax = a[0], ay = a[1], az = a[2], aw = a[3];
     const bx = b[0], by = b[1], bz = b[2], bw = b[3];
@@ -375,15 +381,15 @@ Azm.Q.mul = function(a, b, out = null) {
     return out;
 };
 
-Azm.Q.len = function(a) {
+Quat.len = function(a) {
     return Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2] + a[3] * a[3]);
 };
 
-Azm.Q.norm = function(a, out = null) {
+Quat.norm = function(a, out = null) {
     out ??= new Float32Array(4);
     const x = a[0], y = a[1], z = a[2], w = a[3];
     const lsq = x * x + y * y + z * z + w * w;
-    if (lsq > Azm.EPSILON * Azm.EPSILON) {
+    if (lsq > EPSILON * EPSILON) {
         const invLen = 1.0 / Math.sqrt(lsq);
         out[0] = x * invLen;
         out[1] = y * invLen;
@@ -398,10 +404,10 @@ Azm.Q.norm = function(a, out = null) {
     return out;
 };
 
-Azm.Q.invert = function(a, out = null) {
+Quat.invert = function(a, out = null) {
     out ??= new Float32Array(4);
     const dot = a[0] * a[0] + a[1] * a[1] + a[2] * a[2] + a[3] * a[3];
-    const inv = dot > Azm.EPSILON ? 1 / dot : 0;
+    const inv = dot > EPSILON ? 1 / dot : 0;
     out[0] = -a[0] * inv;
     out[1] = -a[1] * inv;
     out[2] = -a[2] * inv;
@@ -409,7 +415,7 @@ Azm.Q.invert = function(a, out = null) {
     return out;
 };
 
-Azm.Q.fromAxisAngle = function(axis, rad, out = null) {
+Quat.fromAxisAngle = function(axis, rad, out = null) {
     out ??= new Float32Array(4);
     const half = rad * 0.5;
     const s = Math.sin(half);
@@ -420,21 +426,7 @@ Azm.Q.fromAxisAngle = function(axis, rad, out = null) {
     return out;
 };
 
-// Euler convention: YXZ (yaw-pitch-roll), common in 3D engines
-Azm.Q.fromEuler = function(x, y, z, out = null) {
-    out ??= new Float32Array(4);
-    const hx = x * 0.5, hy = y * 0.5, hz = z * 0.5;
-    const sx = Math.sin(hx), cx = Math.cos(hx);
-    const sy = Math.sin(hy), cy = Math.cos(hy);
-    const sz = Math.sin(hz), cz = Math.cos(hz);
-    out[0] = sx * cy * cz + cx * sy * sz;
-    out[1] = cx * sy * cz - sx * cy * sz;
-    out[2] = cx * cy * sz + sx * sy * cz;
-    out[3] = cx * cy * cz - sx * sy * sz;
-    return out;
-};
-
-Azm.Q.fromM4 = function(m, out = null) {
+Quat.fromM4 = function(m, out = null) {
     out ??= new Float32Array(4);
     const m00 = m[0], m01 = m[1], m02 = m[2];
     const m10 = m[4], m11 = m[5], m12 = m[6];
@@ -470,7 +462,7 @@ Azm.Q.fromM4 = function(m, out = null) {
     return out;
 };
 
-Azm.Q.toEulerYPR = function(q, out = null) {
+Quat.toEulerYPR = function(q, out = null) {
     out ??= new Float32Array(3);
     const x = q[0], y = q[1], z = q[2], w = q[3];
     const sx = 2 * (w * x - y * z);
@@ -478,13 +470,13 @@ Azm.Q.toEulerYPR = function(q, out = null) {
     const pitch = Math.asin(clamped);
     const yaw = Math.atan2(2 * (w * y + x * z), 1 - 2 * (x * x + y * y));
     const roll = Math.atan2(2 * (w * z + x * y), 1 - 2 * (x * x + z * z));
-    out[0] = yaw * Azm.RAD2DEG;
-    out[1] = pitch * Azm.RAD2DEG;
-    out[2] = roll * Azm.RAD2DEG;
+    out[0] = yaw * RAD2DEG;
+    out[1] = pitch * RAD2DEG;
+    out[2] = roll * RAD2DEG;
     return out;
 };
 
-Azm.Q.transformV3 = function(q, v, out = null) {
+Quat.transformV3 = function(q, v, out = null) {
     out ??= new Float32Array(3);
     const vx = v[0], vy = v[1], vz = v[2];
     const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
@@ -498,7 +490,7 @@ Azm.Q.transformV3 = function(q, v, out = null) {
     return out;
 };
 
-Azm.Q.slerp = function(a, b, t, out = null) {
+Quat.slerp = function(a, b, t, out = null) {
     out ??= new Float32Array(4);
     let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
 
@@ -510,7 +502,7 @@ Azm.Q.slerp = function(a, b, t, out = null) {
     }
 
     let scale0, scale1;
-    if (dot > 1 - Azm.EPSILON) {
+    if (dot > 1 - EPSILON) {
         // Quaternions are very close - use linear interpolation
         scale0 = 1 - t;
         scale1 = t;
@@ -537,9 +529,9 @@ Azm.Q.slerp = function(a, b, t, out = null) {
 //   2  6  10 14
 //   3  7  11 15
 
-Azm.M4 = () => new Float32Array(16);
 
-Azm.M4.identity = function(out = null) {
+
+Mat4.identity = function(out = null) {
     out ??= new Float32Array(16);
     out[0]  = 1; out[1]  = 0; out[2]  = 0; out[3]  = 0;
     out[4]  = 0; out[5]  = 1; out[6]  = 0; out[7]  = 0;
@@ -548,13 +540,13 @@ Azm.M4.identity = function(out = null) {
     return out;
 };
 
-Azm.M4.copy = function(a, out = null) {
+Mat4.copy = function(a, out = null) {
     out ??= new Float32Array(16);
     out.set(a);
     return out;
 };
 
-Azm.M4.mul = function(a, b, out = null) {
+Mat4.mul = function(a, b, out = null) {
     out ??= new Float32Array(16);
     const a00 = a[0],  a01 = a[1],  a02 = a[2],  a03 = a[3];
     const a10 = a[4],  a11 = a[5],  a12 = a[6],  a13 = a[7];
@@ -590,7 +582,7 @@ Azm.M4.mul = function(a, b, out = null) {
     return out;
 };
 
-Azm.M4.transpose = function(a, out = null) {
+Mat4.transpose = function(a, out = null) {
     out ??= new Float32Array(16);
     if (out === a) {
         let t;
@@ -609,7 +601,7 @@ Azm.M4.transpose = function(a, out = null) {
     return out;
 };
 
-Azm.M4.invert = function(a, out = null) {
+Mat4.invert = function(a, out = null) {
     out ??= new Float32Array(16);
     const a00 = a[0],  a01 = a[1],  a02 = a[2],  a03 = a[3];
     const a10 = a[4],  a11 = a[5],  a12 = a[6],  a13 = a[7];
@@ -624,7 +616,7 @@ Azm.M4.invert = function(a, out = null) {
     const b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
 
     let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
-    if (Math.abs(det) <= Azm.EPSILON) return null;
+    if (Math.abs(det) <= EPSILON) return null;
     det = 1 / det;
 
     out[0]  = (a11 * b11 - a12 * b10 + a13 * b09) * det;
@@ -649,47 +641,47 @@ Azm.M4.invert = function(a, out = null) {
     return out;
 };
 
-Azm.M4.fromTranslation = function(v, out = null) {
-    out = Azm.M4.identity(out);
+Mat4.fromTranslation = function(v, out = null) {
+    out = Mat4.identity(out);
     out[12] = v[0];
     out[13] = v[1];
     out[14] = v[2];
     return out;
 };
 
-Azm.M4.fromScaling = function(v, out = null) {
-    out = Azm.M4.identity(out);
+Mat4.fromScaling = function(v, out = null) {
+    out = Mat4.identity(out);
     out[0]  = v[0];
     out[5]  = v[1];
     out[10] = v[2];
     return out;
 };
 
-Azm.M4.fromRotationX = function(rad, out = null) {
-    out = Azm.M4.identity(out);
+Mat4.fromRotationX = function(rad, out = null) {
+    out = Mat4.identity(out);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[5]  =  c; out[6]  = s;
     out[9]  = -s; out[10] = c;
     return out;
 };
 
-Azm.M4.fromRotationY = function(rad, out = null) {
-    out = Azm.M4.identity(out);
+Mat4.fromRotationY = function(rad, out = null) {
+    out = Mat4.identity(out);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[0]  =  c; out[2]  = -s;
     out[8]  =  s; out[10] =  c;
     return out;
 };
 
-Azm.M4.fromRotationZ = function(rad, out = null) {
-    out = Azm.M4.identity(out);
+Mat4.fromRotationZ = function(rad, out = null) {
+    out = Mat4.identity(out);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[0] =  c; out[1] = s;
     out[4] = -s; out[5] = c;
     return out;
 };
 
-Azm.M4.fromQuat = function(q, out = null) {
+Mat4.fromQuat = function(q, out = null) {
     out ??= new Float32Array(16);
     const x = q[0], y = q[1], z = q[2], w = q[3];
     const x2 = x + x, y2 = y + y, z2 = z + z;
@@ -704,7 +696,7 @@ Azm.M4.fromQuat = function(q, out = null) {
     return out;
 };
 
-Azm.M4.fromTRS = function(pos, rotQ, scale, out = null) {
+Mat4.fromTRS = function(pos, rotQ, scale, out = null) {
     out ??= new Float32Array(16);
     const x = rotQ[0], y = rotQ[1], z = rotQ[2], w = rotQ[3];
     const x2 = x + x, y2 = y + y, z2 = z + z;
@@ -732,7 +724,7 @@ Azm.M4.fromTRS = function(pos, rotQ, scale, out = null) {
     return out;
 };
 
-Azm.M4.translate = function(m, v, out = null) {
+Mat4.translate = function(m, v, out = null) {
     out ??= new Float32Array(16);
     const x = v[0], y = v[1], z = v[2];
     if (out !== m) {
@@ -747,27 +739,27 @@ Azm.M4.translate = function(m, v, out = null) {
     return out;
 };
 
-Azm.M4.rotateX = function(m, rad, out = null) {
-    const r = Azm.M4.fromRotationX(rad);
-    return Azm.M4.mul(m, r, out);
+Mat4.rotateX = function(m, rad, out = null) {
+    const r = Mat4.fromRotationX(rad);
+    return Mat4.mul(m, r, out);
 };
 
-Azm.M4.rotateY = function(m, rad, out = null) {
-    const r = Azm.M4.fromRotationY(rad);
-    return Azm.M4.mul(m, r, out);
+Mat4.rotateY = function(m, rad, out = null) {
+    const r = Mat4.fromRotationY(rad);
+    return Mat4.mul(m, r, out);
 };
 
-Azm.M4.rotateZ = function(m, rad, out = null) {
-    const r = Azm.M4.fromRotationZ(rad);
-    return Azm.M4.mul(m, r, out);
+Mat4.rotateZ = function(m, rad, out = null) {
+    const r = Mat4.fromRotationZ(rad);
+    return Mat4.mul(m, r, out);
 };
 
-Azm.M4.rotateQ = function(m, q, out = null) {
-    const r = Azm.M4.fromQuat(q);
-    return Azm.M4.mul(m, r, out);
+Mat4.rotateQ = function(m, q, out = null) {
+    const r = Mat4.fromQuat(q);
+    return Mat4.mul(m, r, out);
 };
 
-Azm.M4.scale = function(m, v, out = null) {
+Mat4.scale = function(m, v, out = null) {
     out ??= new Float32Array(16);
     const x = v[0], y = v[1], z = v[2];
     out[0] = m[0] * x; out[1] = m[1] * x; out[2] = m[2] * x; out[3] = m[3] * x;
@@ -777,7 +769,7 @@ Azm.M4.scale = function(m, v, out = null) {
     return out;
 };
 
-Azm.M4.perspective = function(fovy, aspect, near, far, out = null) {
+Mat4.perspective = function(fovy, aspect, near, far, out = null) {
     out ??= new Float32Array(16);
     const f = 1 / Math.tan(fovy * 0.5);
     const nf = 1 / (near - far);
@@ -796,7 +788,7 @@ Azm.M4.perspective = function(fovy, aspect, near, far, out = null) {
     return out;
 };
 
-Azm.M4.ortho = function(left, right, bottom, top, near, far, out = null) {
+Mat4.ortho = function(left, right, bottom, top, near, far, out = null) {
     out ??= new Float32Array(16);
     const lr = 1 / (left - right);
     const bt = 1 / (bottom - top);
@@ -817,15 +809,15 @@ Azm.M4.ortho = function(left, right, bottom, top, near, far, out = null) {
     return out;
 };
 
-Azm.M4.lookAt = function(eye, target, up, out = null) {
+Mat4.lookAt = function(eye, target, up, out = null) {
     out ??= new Float32Array(16);
 
     let fx = eye[0] - target[0];
     let fy = eye[1] - target[1];
     let fz = eye[2] - target[2];
     let len = Math.sqrt(fx * fx + fy * fy + fz * fz);
-    if (len < Azm.EPSILON) {
-        Azm.M4.identity(out);
+    if (len < EPSILON) {
+        Mat4.identity(out);
         return out;
     }
     const invLenF = 1 / len;
@@ -836,7 +828,7 @@ Azm.M4.lookAt = function(eye, target, up, out = null) {
     let ry = up[2] * fx - up[0] * fz;
     let rz = up[0] * fy - up[1] * fx;
     len = Math.sqrt(rx * rx + ry * ry + rz * rz);
-    if (len < Azm.EPSILON) { rx = 0; ry = 0; rz = 0; }
+    if (len < EPSILON) { rx = 0; ry = 0; rz = 0; }
     else {
         const invLenR = 1 / len;
         rx *= invLenR; ry *= invLenR; rz *= invLenR;
@@ -857,7 +849,7 @@ Azm.M4.lookAt = function(eye, target, up, out = null) {
     return out;
 };
 
-Azm.M4.transformV2 = function(m, v, out = null) {
+Mat4.transformV2 = function(m, v, out = null) {
     out ??= new Float32Array(2);
     const x = v[0], y = v[1];
     out[0] = m[0] * x + m[4] * y + m[12];
@@ -865,7 +857,7 @@ Azm.M4.transformV2 = function(m, v, out = null) {
     return out;
 };
 
-Azm.M4.transformV3 = function(m, v, out = null) {
+Mat4.transformV3 = function(m, v, out = null) {
     out ??= new Float32Array(3);
     const x = v[0], y = v[1], z = v[2];
     const w = 1 / (m[3] * x + m[7] * y + m[11] * z + m[15]);
@@ -875,7 +867,7 @@ Azm.M4.transformV3 = function(m, v, out = null) {
     return out;
 };
 
-Azm.M4.transformV4 = function(m, v, out = null) {
+Mat4.transformV4 = function(m, v, out = null) {
     out ??= new Float32Array(4);
     const x = v[0], y = v[1], z = v[2], w = v[3];
     out[0] = m[0] * x + m[4] * y + m[8]  * z + m[12] * w;
@@ -885,4 +877,21 @@ Azm.M4.transformV4 = function(m, v, out = null) {
     return out;
 };
 
-window.Azm = Azm;
+export const Azm = {
+    // Constants
+    EPSILON,
+    DEG2RAD,
+    RAD2DEG,
+    // Types
+    Vec2,
+    Vec3,
+    Vec4,
+    Quat,
+    Mat4
+};
+
+if (typeof window !== "undefined") {
+    window.Azm = Azm;
+}
+
+export default Azm;
