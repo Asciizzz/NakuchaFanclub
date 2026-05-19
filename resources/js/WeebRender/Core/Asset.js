@@ -12,6 +12,7 @@ import {
 import { wrBuildTemplateShaderDefinition, wrIsTemplateShaderDefinition } from "./ShaderBuilder.js";
 import { WR_DEFAULT_RENDER_CFG, wrNormalizeRenderCfg } from "./RenderConfig.js";
 import WrScene from "./Scene.js";
+import { load as wrLoadGLB } from "../Loaders/GLBLoader.js";
 
 /**
  * Check whether value is a canvas element.
@@ -266,7 +267,7 @@ export class WrAsset {
     }
 
     /**
-     * Load model via EzLoader, ingest assets, and return standalone WrScene.
+     * Load model via internal GLB loader, ingest assets, and return standalone WrScene.
      * @param {string} url model URL
      * @param {object} [options={}] scene creation options
      * @returns {Promise<WrScene>}
@@ -275,13 +276,7 @@ export class WrAsset {
         const targetUrl = String(url ?? "").trim();
         if (!targetUrl) throw new Error("[WrAsset] model URL is required");
 
-        if (!globalThis.window?.EzLoader?.load) {
-            await import("../../WeebGL/EzLoader.js");
-        }
-        const loader = globalThis.window?.EzLoader;
-        if (!loader?.load) throw new Error("[WrAsset] EzLoader.load() is unavailable");
-
-        const payload = await loader.load(targetUrl);
+        const payload = await wrLoadGLB(targetUrl);
         const sceneData = this.assets.addFromLoader(payload);
         return new WrScene(this, sceneData, {
             camera: options.camera ?? this.camera,

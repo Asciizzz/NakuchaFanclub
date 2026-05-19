@@ -7,6 +7,20 @@ const WR_IDENTITY_M4 = Object.freeze([
     0, 0, 0, 1,
 ]);
 
+const WR_COMPONENT_CTX = Symbol("wr_component_ctx");
+const WR_SKIN_BONE_CAP_DEFAULT = 128;
+
+/**
+ * Convert input to finite number with fallback.
+ * @param {any} value source value
+ * @param {number} [fallback=0] fallback value
+ * @returns {number}
+ */
+function wrNumberOr(value, fallback = 0) {
+    const next = Number(value);
+    return Number.isFinite(next) ? next : fallback;
+}
+
 /**
  * Convert input matrix data to Float32Array[16], fallback identity.
  * @param {ArrayLike<number>|null|undefined} value matrix input
@@ -23,6 +37,475 @@ function wrReadMat4(value) {
 }
 
 /**
+ * Multiply two column-major mat4 values.
+ * @param {ArrayLike<number>} a left matrix
+ * @param {ArrayLike<number>} b right matrix
+ * @returns {Float32Array}
+ */
+function wrMulM4(a, b) {
+    const out = new Float32Array(16);
+    const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+    const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+    const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+    const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+    let b0; let b1; let b2; let b3;
+
+    b0 = b[0]; b1 = b[1]; b2 = b[2]; b3 = b[3];
+    out[0] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[3] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+
+    b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
+    out[4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[5] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[6] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[7] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+
+    b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
+    out[8] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[9] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[10] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[11] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+
+    b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
+    out[12] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+    return out;
+}
+
+/**
+ * Resolve integer-like index from number or numeric string.
+ * @param {any} value source value
+ * @returns {number}
+ */
+function wrReadIndex(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return value | 0;
+    if (typeof value === "string" && /^\s*-?\d+\s*$/.test(value)) return Number(value) | 0;
+    return -1;
+}
+
+/**
+ * Ensure method exists on component object without overriding user impl.
+ * @param {object} target component object
+ * @param {string} key method name
+ * @param {Function} impl method implementation
+ * @returns {void}
+ */
+function wrDefineMethod(target, key, impl) {
+    if (typeof target?.[key] === "function") return;
+    Object.defineProperty(target, key, {
+        value: impl,
+        writable: true,
+        configurable: true,
+        enumerable: false,
+    });
+}
+
+/**
+ * Resolve asset store from scene context.
+ * @param {object|null|undefined} scene scene instance
+ * @returns {import("../Assets/AssetStore.js").WrAssetStore|null}
+ */
+function wrSceneAssets(scene) {
+    return scene?.asset?.assets ?? null;
+}
+
+/**
+ * Resolve mesh morph target count from mesh asset shape.
+ * @param {object|null|undefined} meshAsset mesh asset
+ * @returns {number}
+ */
+function wrResolveMorphTargetCount(meshAsset) {
+    if (!meshAsset || typeof meshAsset !== "object") return 0;
+    let count = Math.max(0, Number(meshAsset.morphTargetCount ?? 0) | 0);
+    if (Array.isArray(meshAsset.morphTargetNames)) count = Math.max(count, meshAsset.morphTargetNames.length);
+    if (ArrayBuffer.isView(meshAsset.defaultMorphWeights) || Array.isArray(meshAsset.defaultMorphWeights)) {
+        count = Math.max(count, meshAsset.defaultMorphWeights.length);
+    }
+    for (const submesh of Array.isArray(meshAsset.submeshes) ? meshAsset.submeshes : []) {
+        count = Math.max(count, Math.max(0, Number(submesh?.morph?.targetCount ?? 0) | 0));
+    }
+    return count;
+}
+
+/**
+ * Resolve mesh asset for one mesh renderer from scene context.
+ * @param {object|null|undefined} scene scene instance
+ * @param {object} meshRenderer mesh renderer component
+ * @returns {object|null}
+ */
+function wrResolveMeshAsset(scene, meshRenderer) {
+    const assets = wrSceneAssets(scene);
+    const meshID = String(meshRenderer?.meshID ?? "").trim();
+    if (!assets || !meshID) return null;
+    return assets.getMesh?.(meshID) ?? null;
+}
+
+/**
+ * Ensure mesh renderer has morph weight array sized for referenced mesh.
+ * @param {object} meshRenderer mesh renderer component
+ * @param {object|null|undefined} meshAsset mesh asset
+ * @returns {Float32Array|null}
+ */
+function wrEnsureMeshRendererMorphWeights(meshRenderer, meshAsset) {
+    if (!meshRenderer || typeof meshRenderer !== "object") return null;
+    const targetCount = wrResolveMorphTargetCount(meshAsset);
+    if (targetCount <= 0) {
+        meshRenderer.morphWeights = null;
+        return null;
+    }
+
+    const current = meshRenderer.morphWeights;
+    if (current instanceof Float32Array && current.length === targetCount) {
+        return current;
+    }
+    if ((ArrayBuffer.isView(current) || Array.isArray(current)) && current.length === targetCount) {
+        meshRenderer.morphWeights = Float32Array.from(current);
+        return meshRenderer.morphWeights;
+    }
+
+    const prev = (ArrayBuffer.isView(current) || Array.isArray(current))
+        ? Float32Array.from(current)
+        : null;
+    const next = new Float32Array(targetCount);
+    if (prev && prev.length > 0) {
+        next.set(prev.subarray ? prev.subarray(0, targetCount) : prev.slice(0, targetCount));
+    } else if (ArrayBuffer.isView(meshAsset?.defaultMorphWeights) || Array.isArray(meshAsset?.defaultMorphWeights)) {
+        const defaults = meshAsset.defaultMorphWeights;
+        next.set(defaults.subarray ? defaults.subarray(0, targetCount) : defaults.slice(0, targetCount));
+    }
+    meshRenderer.morphWeights = next;
+    return next;
+}
+
+/**
+ * Resolve morph target index by index or name with asset cache fallback.
+ * @param {object|null|undefined} scene scene instance
+ * @param {object} meshRenderer mesh renderer component
+ * @param {string|number} indexOrName morph target reference
+ * @returns {number}
+ */
+function wrResolveMeshMorphIndex(scene, meshRenderer, indexOrName) {
+    const assets = wrSceneAssets(scene);
+    const meshID = String(meshRenderer?.meshID ?? "").trim();
+    if (!meshID) return -1;
+
+    const idx = wrReadIndex(indexOrName);
+    if (idx >= 0) {
+        const meshAsset = wrResolveMeshAsset(scene, meshRenderer);
+        const count = wrResolveMorphTargetCount(meshAsset);
+        return idx < count ? idx : -1;
+    }
+
+    if (assets?.resolveMeshMorphIndex) {
+        return assets.resolveMeshMorphIndex(meshID, indexOrName);
+    }
+
+    const name = String(indexOrName ?? "").trim();
+    if (!name) return -1;
+    const meshAsset = wrResolveMeshAsset(scene, meshRenderer);
+    const map = meshAsset?.morphTargetMap;
+    if (!(map instanceof Map)) return -1;
+    const exact = map.get(name);
+    if (exact != null) return Number(exact) | 0;
+    const lower = map.get(name.toLowerCase());
+    return lower == null ? -1 : (Number(lower) | 0);
+}
+
+/**
+ * Resolve skeleton asset for skeleton component.
+ * @param {object|null|undefined} scene scene instance
+ * @param {object} skeletonComp skeleton component
+ * @returns {object|null}
+ */
+function wrResolveSkeletonAsset(scene, skeletonComp) {
+    if (skeletonComp?.skeleton && Array.isArray(skeletonComp.skeleton.bones)) {
+        return skeletonComp.skeleton;
+    }
+    const skeletonID = String(skeletonComp?.skeletonID ?? skeletonComp?.skeletonId ?? "").trim();
+    if (!skeletonID) return null;
+    return wrSceneAssets(scene)?.getSkeleton?.(skeletonID) ?? null;
+}
+
+/**
+ * Ensure skeleton local pose array is at least `count` long.
+ * @param {object} skeletonComp skeleton component
+ * @param {number} count minimum length
+ * @returns {void}
+ */
+function wrEnsureSkeletonPoseCapacity(skeletonComp, count) {
+    if (!Array.isArray(skeletonComp.bones)) skeletonComp.bones = [];
+    while (skeletonComp.bones.length < count) {
+        skeletonComp.bones.push(Float32Array.from(WR_IDENTITY_M4));
+    }
+}
+
+/**
+ * Resolve skeleton bone index by index or name.
+ * @param {object|null|undefined} scene scene instance
+ * @param {object} skeletonComp skeleton component
+ * @param {string|number} indexOrName bone reference
+ * @returns {number}
+ */
+function wrResolveSkeletonBoneIndex(scene, skeletonComp, indexOrName) {
+    const idx = wrReadIndex(indexOrName);
+    if (idx >= 0) return idx;
+
+    const name = String(indexOrName ?? "").trim();
+    if (!name) return -1;
+
+    const skeletonID = String(skeletonComp?.skeletonID ?? skeletonComp?.skeletonId ?? "").trim();
+    const assets = wrSceneAssets(scene);
+    if (assets?.resolveSkeletonBoneIndex && skeletonID) {
+        const fromAssets = assets.resolveSkeletonBoneIndex(skeletonID, name);
+        if (fromAssets >= 0) return fromAssets;
+    }
+
+    const skeletonAsset = wrResolveSkeletonAsset(scene, skeletonComp);
+    const map = skeletonAsset?.map;
+    if (!(map instanceof Map)) return -1;
+    const exact = map.get(name);
+    if (exact != null) return Number(exact) | 0;
+    const lower = map.get(name.toLowerCase());
+    return lower == null ? -1 : (Number(lower) | 0);
+}
+
+/**
+ * Build skeleton skinning palette from local pose overrides and skeleton asset.
+ * @param {object|null|undefined} scene scene instance
+ * @param {object} skeletonComp skeleton component
+ * @param {number} [maxBones=WR_SKIN_BONE_CAP_DEFAULT] palette cap
+ * @returns {Float32Array|null}
+ */
+function wrBuildSkeletonPalette(scene, skeletonComp, maxBones = WR_SKIN_BONE_CAP_DEFAULT) {
+    const skeletonAsset = wrResolveSkeletonAsset(scene, skeletonComp);
+    const sourceBones = Array.isArray(skeletonAsset?.bones) ? skeletonAsset.bones : [];
+    if (sourceBones.length <= 0) return null;
+
+    wrEnsureSkeletonPoseCapacity(skeletonComp, sourceBones.length);
+
+    const cap = Math.max(1, Number(maxBones) | 0);
+    const out = new Float32Array(cap * 16);
+    for (let i = 0; i < cap; i++) out.set(WR_IDENTITY_M4, i * 16);
+
+    const global = new Array(sourceBones.length);
+    const count = Math.min(sourceBones.length, cap);
+    for (let i = 0; i < count; i++) {
+        const bone = sourceBones[i] ?? {};
+        const localBind = wrReadMat4(bone.localBind);
+        const pose = wrReadMat4(skeletonComp.bones?.[i]);
+        const local = wrMulM4(localBind, pose);
+
+        const parent = Number(bone.parent ?? -1) | 0;
+        if (parent < 0 || !global[parent]) global[i] = local;
+        else global[i] = wrMulM4(global[parent], local);
+
+        const inverseBind = wrReadMat4(bone.inverseBind);
+        const skinned = wrMulM4(global[i], inverseBind);
+        out.set(skinned, i * 16);
+    }
+
+    return out;
+}
+
+/**
+ * Bind runtime helpers to MeshRenderer component.
+ * @param {object} scene scene instance
+ * @param {string} nodeId owner node id
+ * @param {object} meshRenderer mesh renderer component
+ * @returns {object}
+ */
+function wrBindMeshRenderer(scene, nodeId, meshRenderer) {
+    if (!meshRenderer || typeof meshRenderer !== "object") return meshRenderer;
+    meshRenderer[WR_COMPONENT_CTX] = { scene, nodeId };
+    if (meshRenderer.active == null) meshRenderer.active = true;
+    meshRenderer.meshID = meshRenderer.meshID == null ? null : String(meshRenderer.meshID);
+    if (meshRenderer.skeletonNode != null) {
+        if (typeof meshRenderer.skeletonNode === "object" && meshRenderer.skeletonNode.id != null) {
+            meshRenderer.skeletonNode = String(meshRenderer.skeletonNode.id);
+        } else {
+            meshRenderer.skeletonNode = String(meshRenderer.skeletonNode);
+        }
+    } else if (meshRenderer.skeletonNode === undefined) {
+        meshRenderer.skeletonNode = null;
+    }
+
+    const keys = Array.isArray(meshRenderer.shaderKeys)
+        ? meshRenderer.shaderKeys
+        : meshRenderer.shaderKeys instanceof Set
+            ? Array.from(meshRenderer.shaderKeys.values())
+            : (meshRenderer.shaderKey != null ? [meshRenderer.shaderKey] : []);
+    meshRenderer.shaderKeys = keys
+        .map((it) => String(it ?? "").trim())
+        .filter((it, index, arr) => !!it && arr.indexOf(it) === index);
+
+    if (ArrayBuffer.isView(meshRenderer.morphWeights) || Array.isArray(meshRenderer.morphWeights)) {
+        if (!(meshRenderer.morphWeights instanceof Float32Array)) {
+            meshRenderer.morphWeights = Float32Array.from(meshRenderer.morphWeights);
+        }
+    }
+    wrEnsureMeshRendererMorphWeights(meshRenderer, wrResolveMeshAsset(scene, meshRenderer));
+
+    wrDefineMethod(meshRenderer, "withShader", function withShader(shaderID) {
+        const id = String(shaderID ?? "").trim();
+        if (!id) return this;
+        if (!Array.isArray(this.shaderKeys)) this.shaderKeys = [];
+        if (!this.shaderKeys.includes(id)) this.shaderKeys.push(id);
+        return this;
+    });
+
+    wrDefineMethod(meshRenderer, "hasShader", function hasShader(shaderID) {
+        const id = String(shaderID ?? "").trim();
+        if (!id) return false;
+        return Array.isArray(this.shaderKeys) ? this.shaderKeys.includes(id) : false;
+    });
+
+    wrDefineMethod(meshRenderer, "removeShader", function removeShader(shaderID) {
+        const id = String(shaderID ?? "").trim();
+        if (!id || !Array.isArray(this.shaderKeys)) return this;
+        this.shaderKeys = this.shaderKeys.filter((next) => next !== id);
+        return this;
+    });
+
+    wrDefineMethod(meshRenderer, "clearShaders", function clearShaders() {
+        this.shaderKeys = [];
+        return this;
+    });
+
+    wrDefineMethod(meshRenderer, "resolveMorphIndex", function resolveMorphIndex(indexOrName) {
+        const ctx = this[WR_COMPONENT_CTX] ?? {};
+        return wrResolveMeshMorphIndex(ctx.scene, this, indexOrName);
+    });
+
+    wrDefineMethod(meshRenderer, "setMorphWeight", function setMorphWeight(indexOrName, weight = 0) {
+        const ctx = this[WR_COMPONENT_CTX] ?? {};
+        const meshAsset = wrResolveMeshAsset(ctx.scene, this);
+        const morphWeights = wrEnsureMeshRendererMorphWeights(this, meshAsset);
+        if (!morphWeights || morphWeights.length <= 0) return this;
+        const index = wrResolveMeshMorphIndex(ctx.scene, this, indexOrName);
+        if (index < 0 || index >= morphWeights.length) return this;
+        morphWeights[index] = wrNumberOr(weight, 0);
+        return this;
+    });
+
+    wrDefineMethod(meshRenderer, "getMorphWeight", function getMorphWeight(indexOrName) {
+        const ctx = this[WR_COMPONENT_CTX] ?? {};
+        const meshAsset = wrResolveMeshAsset(ctx.scene, this);
+        const morphWeights = wrEnsureMeshRendererMorphWeights(this, meshAsset);
+        if (!morphWeights || morphWeights.length <= 0) return 0;
+        const index = wrResolveMeshMorphIndex(ctx.scene, this, indexOrName);
+        return index >= 0 && index < morphWeights.length ? wrNumberOr(morphWeights[index], 0) : 0;
+    });
+
+    wrDefineMethod(meshRenderer, "setMorphExclusive", function setMorphExclusive(indexOrName, weight = 1) {
+        const ctx = this[WR_COMPONENT_CTX] ?? {};
+        const meshAsset = wrResolveMeshAsset(ctx.scene, this);
+        const morphWeights = wrEnsureMeshRendererMorphWeights(this, meshAsset);
+        if (!morphWeights || morphWeights.length <= 0) return this;
+        morphWeights.fill(0);
+        return this.setMorphWeight(indexOrName, weight);
+    });
+
+    wrDefineMethod(meshRenderer, "getPrimaryMorph", function getPrimaryMorph() {
+        const ctx = this[WR_COMPONENT_CTX] ?? {};
+        const meshAsset = wrResolveMeshAsset(ctx.scene, this);
+        const morphWeights = wrEnsureMeshRendererMorphWeights(this, meshAsset);
+        if (!morphWeights || morphWeights.length <= 0) return { index: 0, weight: 0 };
+
+        let bestIndex = 0;
+        let bestAbs = Math.abs(morphWeights[0] ?? 0);
+        for (let i = 1; i < morphWeights.length; i++) {
+            const magnitude = Math.abs(morphWeights[i] ?? 0);
+            if (magnitude > bestAbs) {
+                bestAbs = magnitude;
+                bestIndex = i;
+            }
+        }
+        return { index: bestIndex, weight: wrNumberOr(morphWeights[bestIndex], 0) };
+    });
+
+    return meshRenderer;
+}
+
+/**
+ * Bind runtime helpers to Skeleton component.
+ * @param {object} scene scene instance
+ * @param {string} nodeId owner node id
+ * @param {object} skeletonComp skeleton component
+ * @returns {object}
+ */
+function wrBindSkeleton(scene, nodeId, skeletonComp) {
+    if (!skeletonComp || typeof skeletonComp !== "object") return skeletonComp;
+    skeletonComp[WR_COMPONENT_CTX] = { scene, nodeId };
+    const rawSkeletonID = skeletonComp.skeletonID ?? skeletonComp.skeletonId ?? null;
+    skeletonComp.skeletonID = rawSkeletonID == null ? null : String(rawSkeletonID);
+    skeletonComp.skeletonId = skeletonComp.skeletonID;
+    if (!Array.isArray(skeletonComp.bones)) skeletonComp.bones = [];
+    else {
+        skeletonComp.bones = skeletonComp.bones.map((pose) => {
+            if (pose instanceof Float32Array && pose.length >= 16) return pose;
+            return wrReadMat4(pose);
+        });
+    }
+
+    const linkedSkeleton = wrResolveSkeletonAsset(scene, skeletonComp);
+    if (linkedSkeleton?.id && !skeletonComp.skeletonID) {
+        skeletonComp.skeletonID = String(linkedSkeleton.id);
+        skeletonComp.skeletonId = skeletonComp.skeletonID;
+    }
+    if (Array.isArray(linkedSkeleton?.bones)) {
+        wrEnsureSkeletonPoseCapacity(skeletonComp, linkedSkeleton.bones.length);
+    }
+
+    wrDefineMethod(skeletonComp, "use", function use(skeleton) {
+        if (!skeleton || !Array.isArray(skeleton.bones)) return this;
+        this.skeleton = skeleton;
+        if (skeleton.id != null) {
+            this.skeletonID = String(skeleton.id);
+            this.skeletonId = this.skeletonID;
+        }
+        wrEnsureSkeletonPoseCapacity(this, skeleton.bones.length);
+        return this;
+    });
+
+    wrDefineMethod(skeletonComp, "bindSkeletonData", function bindSkeletonData(skeletonData) {
+        return this.use(skeletonData);
+    });
+
+    wrDefineMethod(skeletonComp, "resolveBoneIndex", function resolveBoneIndex(indexOrName, skeletonData = null) {
+        if (skeletonData) this.bindSkeletonData(skeletonData);
+        const ctx = this[WR_COMPONENT_CTX] ?? {};
+        return wrResolveSkeletonBoneIndex(ctx.scene, this, indexOrName);
+    });
+
+    wrDefineMethod(skeletonComp, "set", function set(indexOrName, localTransform, skeletonData = null) {
+        const index = this.resolveBoneIndex(indexOrName, skeletonData);
+        if (index < 0) return this;
+        wrEnsureSkeletonPoseCapacity(this, index + 1);
+        this.bones[index] = wrReadMat4(localTransform);
+        return this;
+    });
+
+    wrDefineMethod(skeletonComp, "get", function get(indexOrName, skeletonData = null) {
+        const index = this.resolveBoneIndex(indexOrName, skeletonData);
+        if (index < 0 || !Array.isArray(this.bones)) return null;
+        const pose = this.bones[index];
+        if (!(ArrayBuffer.isView(pose) || Array.isArray(pose)) || pose.length < 16) return null;
+        return pose;
+    });
+
+    wrDefineMethod(skeletonComp, "buildPalette", function buildPalette(maxBones = WR_SKIN_BONE_CAP_DEFAULT) {
+        const ctx = this[WR_COMPONENT_CTX] ?? {};
+        return wrBuildSkeletonPalette(ctx.scene, this, maxBones);
+    });
+
+    return skeletonComp;
+}
+
+/**
  * Runtime helpers for scene graph traversal and transform updates.
  */
 export class WrSceneRuntime {
@@ -36,6 +519,55 @@ export class WrSceneRuntime {
         if (node.components && typeof node.components === "object") return node.components;
         if (node.$ && typeof node.$ === "object") return node.$;
         return {};
+    }
+
+    /**
+     * Bind runtime component methods for one scene node.
+     * @param {object} scene owner scene
+     * @param {object} node scene node
+     * @returns {void}
+     */
+    static bindNodeComponents(scene, node) {
+        if (!node || typeof node !== "object") return;
+        const nodeId = String(node.id ?? "");
+        const comps = WrSceneRuntime.getNodeComponents(node);
+        for (const [key, value] of Object.entries(comps)) {
+            if (!value || typeof value !== "object") continue;
+            WrSceneRuntime.bindComponent(scene, nodeId, key, value);
+        }
+    }
+
+    /**
+     * Bind runtime component methods for all scene nodes.
+     * @param {object} scene owner scene
+     * @returns {void}
+     */
+    static bindSceneComponents(scene) {
+        if (!scene || !Array.isArray(scene.nodes)) return;
+        for (const node of scene.nodes) {
+            WrSceneRuntime.bindNodeComponents(scene, node);
+        }
+    }
+
+    /**
+     * Bind runtime helper methods for one component instance.
+     * @param {object} scene owner scene
+     * @param {string} nodeId owner node id
+     * @param {string} key component key
+     * @param {object} value component payload
+     * @returns {object}
+     */
+    static bindComponent(scene, nodeId, key, value) {
+        const rawKey = String(key ?? "").trim();
+        if (!value || typeof value !== "object" || !rawKey) return value;
+        if (rawKey === "MeshRenderer" || rawKey === "meshRenderer") {
+            return wrBindMeshRenderer(scene, nodeId, value);
+        }
+        if (rawKey === "Skeleton" || rawKey === "skeleton") {
+            return wrBindSkeleton(scene, nodeId, value);
+        }
+        value[WR_COMPONENT_CTX] = { scene, nodeId };
+        return value;
     }
 
     /**
@@ -165,6 +697,7 @@ export class WrSceneRuntime {
         if (!scene || !Array.isArray(scene.nodes)) return [];
         const out = [];
         for (const node of scene.nodes) {
+            WrSceneRuntime.bindNodeComponents(scene, node);
             const meshRenderer = WrSceneRuntime.getMeshRenderer(node);
             if (!meshRenderer) continue;
             if (meshRenderer.active === false) continue;

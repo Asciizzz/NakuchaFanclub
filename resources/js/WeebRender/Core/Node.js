@@ -82,6 +82,7 @@ export class WrNode {
      */
     get components() {
         const node = this.data;
+        if (node) WrSceneRuntime.bindNodeComponents(this.scene, node);
         return WrSceneRuntime.getNodeComponents(node);
     }
 
@@ -94,7 +95,9 @@ export class WrNode {
         const key = String(componentKey ?? "").trim();
         if (!key) return null;
         const comps = this.components;
-        return comps[key] ?? null;
+        const value = comps[key] ?? null;
+        if (!value || typeof value !== "object") return value;
+        return WrSceneRuntime.bindComponent(this.scene, this.id, key, value);
     }
 
     /**
@@ -110,7 +113,7 @@ export class WrNode {
         if (!node.components || typeof node.components !== "object") {
             node.components = {};
         }
-        node.components[key] = value;
+        node.components[key] = WrSceneRuntime.bindComponent(this.scene, this.id, key, value);
         return this;
     }
 

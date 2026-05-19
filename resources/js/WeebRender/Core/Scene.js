@@ -193,6 +193,7 @@ export class WrScene {
         this.instancedScenes = [];
 
         this.#rebuildIndex();
+        WrSceneRuntime.bindSceneComponents(this);
     }
 
     /**
@@ -204,6 +205,8 @@ export class WrScene {
         const id = String(nodeId ?? "").trim();
         if (!id) return null;
         if (!this.#nodeById.has(id)) return null;
+        const rawNode = this.#nodeById.get(id);
+        WrSceneRuntime.bindNodeComponents(this, rawNode);
         if (this.#nodeCache.has(id)) return this.#nodeCache.get(id);
         const wrapped = new WrNode(this, id);
         this.#nodeCache.set(id, wrapped);
@@ -253,6 +256,7 @@ export class WrScene {
      */
     update(deltaTime = 0) {
         this.deltaTime = Number(deltaTime) || 0;
+        WrSceneRuntime.bindSceneComponents(this);
         WrSceneRuntime.updateTransforms(this);
 
         for (const node of this.nodes) {
@@ -295,6 +299,7 @@ export class WrScene {
         const backend = this.asset?.backend ?? null;
         if (!backend || !backend.ready) return this;
 
+        WrSceneRuntime.bindSceneComponents(this);
         WrSceneRuntime.updateTransforms(this);
 
         const camera = options.camera ?? this.camera ?? this.asset.camera ?? null;
@@ -410,6 +415,7 @@ export class WrScene {
             this.nodes.push(nextNode);
             this.#nodeById.set(nextNode.id, nextNode);
             this.#appendChild(nextNode.parent, nextNode.id);
+            WrSceneRuntime.bindNodeComponents(this, nextNode);
         }
 
         for (const nextNode of nextNodes) {

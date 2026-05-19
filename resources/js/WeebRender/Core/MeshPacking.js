@@ -67,9 +67,11 @@ export function wrResolveNodeModelMatrix(node) {
 /**
  * Pack one submesh into interleaved vertex and index buffers.
  * @param {object} submesh submesh payload
+ * @param {object} [options={}] packing options
+ * @param {number} [options.morphTargetIndex=0] selected morph target index
  * @returns {object}
  */
-export function wrPackSubmesh(submesh) {
+export function wrPackSubmesh(submesh, options = {}) {
     const staticPart = submesh?.static ?? {};
     const rigPart = submesh?.rigged ?? submesh?.rig ?? {};
     const morphPart = submesh?.morph ?? {};
@@ -87,9 +89,14 @@ export function wrPackSubmesh(submesh) {
 
     let morphPos = null;
     if (Number(morphPart.targetCount ?? 0) > 0) {
+        const morphTargetIndex = Math.max(0, Number(options.morphTargetIndex ?? 0) | 0);
         const all = wrArrayLikeToF32(morphPart.dPositions ?? morphPart.dPos);
-        if (all && all.length >= (vertexCount * 3)) {
-            morphPos = all.subarray(0, vertexCount * 3);
+        const targetStride = vertexCount * 3;
+        const targetOffset = morphTargetIndex * targetStride;
+        if (all && all.length >= (targetOffset + targetStride)) {
+            morphPos = all.subarray(targetOffset, targetOffset + targetStride);
+        } else if (all && all.length >= targetStride) {
+            morphPos = all.subarray(0, targetStride);
         }
     }
 
@@ -149,11 +156,13 @@ export function wrPackSubmesh(submesh) {
 /**
  * Pack all submeshes in a mesh payload.
  * @param {object} mesh mesh payload
+ * @param {object} [options={}] packing options
+ * @param {number} [options.morphTargetIndex=0] selected morph target index
  * @returns {object[]}
  */
-export function wrPackMesh(mesh) {
+export function wrPackMesh(mesh, options = {}) {
     const submeshes = Array.isArray(mesh?.submeshes) ? mesh.submeshes : [];
-    return submeshes.map((submesh) => wrPackSubmesh(submesh));
+    return submeshes.map((submesh) => wrPackSubmesh(submesh, options));
 }
 
 export default wrPackMesh;

@@ -76,6 +76,16 @@ function wrColor4(value, fallback = [1, 1, 1, 1]) {
 }
 
 /**
+ * Align byte size to WebGPU's 4-byte createBuffer requirement.
+ * @param {number} size source size in bytes
+ * @returns {number}
+ */
+function wrAlign4(size) {
+    const n = Math.max(0, Number(size) | 0);
+    return (n + 3) & ~3;
+}
+
+/**
  * Resolve effective material state for one mesh submesh.
  * @param {object} meshAsset mesh asset
  * @param {number} submeshIndex submesh index
@@ -253,7 +263,7 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#pipelineCache = new Map();
         this.#warned = new Set();
         this.#sceneUniformBuffer = null;
-        this.#objectUniformBuffer = null;
+        this.#objectUniformBuffers = new Map();
         this.#sceneScratch = new Float32Array(WR_SCENE_UBO_BYTES / 4);
         this.#objectScratch = new Float32Array(WR_OBJECT_UBO_BYTES / 4);
         this.#sceneBindGroupCache = new Map();
@@ -376,7 +386,8 @@ export class WrBackendWGPU extends WrBackendBase {
 
                 const meshAsset = assets.getMesh(draw.meshID);
                 if (!meshAsset) continue;
-                const meshGpu = this.#ensureMesh(draw.meshID, meshAsset);
+                const morphTargetIndex = Math.max(0, Number(draw?.primaryMorphIndex ?? 0) | 0);
+                const meshGpu = this.#ensureMesh(draw.meshID, meshAsset, morphTargetIndex);
                 if (!meshGpu || meshGpu.submeshes.length <= 0) continue;
 
                 const renderCfg = wrNormalizeRenderCfg(draw.renderCfg ?? shaderAsset.renderCfg ?? frameRenderCfg);
@@ -395,14 +406,17 @@ export class WrBackendWGPU extends WrBackendBase {
                 for (let submeshIndex = 0; submeshIndex < meshGpu.submeshes.length; submeshIndex++) {
                     const submesh = meshGpu.submeshes[submeshIndex];
                     const materialState = wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets);
-                    this.#updateObjectUniform(draw, materialState);
+                    const objectKey = `${draw.nodeId}|${draw.meshID}|sub:${submeshIndex}`;
+                    const objectBuffer = this.#ensureObjectUniformBuffer(objectKey);
+                    this.#updateObjectUniform(objectBuffer, draw, materialState);
                     if (requiresObjectGroup) {
                         const objectBindGroup = this.#ensureObjectBindGroup(
                             shaderId,
                             pipeline,
                             shaderState,
                             materialState.albedoTex,
-                            assets
+                            assets,
+                            objectKey
                         );
                         if (!objectBindGroup) continue;
                         pass.setBindGroup(1, objectBindGroup);
@@ -454,10 +468,12 @@ export class WrBackendWGPU extends WrBackendBase {
         }
         this.#textureCache.clear();
         if (this.#sceneUniformBuffer) this.#sceneUniformBuffer.destroy();
-        if (this.#objectUniformBuffer) this.#objectUniformBuffer.destroy();
+        for (const objectBuffer of this.#objectUniformBuffers.values()) {
+            objectBuffer?.destroy?.();
+        }
+        this.#objectUniformBuffers.clear();
         if (this.#fallbackTexture) this.#fallbackTexture.destroy();
         this.#sceneUniformBuffer = null;
-        this.#objectUniformBuffer = null;
         this.#fallbackTexture = null;
         this.#fallbackTextureView = null;
         this.#fallbackSampler = null;
@@ -574,25 +590,27 @@ export class WrBackendWGPU extends WrBackendBase {
      * Get or upload mesh buffers to GPU cache.
      * @param {string} meshId mesh id
      * @param {object} meshAsset mesh asset
+     * @param {number} [morphTargetIndex=0] selected morph target index
      * @returns {{submeshes: object[]}}
      */
-    #ensureMesh(meshId, meshAsset) {
-        const cached = this.#meshCache.get(meshId);
+    #ensureMesh(meshId, meshAsset, morphTargetIndex = 0) {
+        const cacheKey = `${meshId}|morph:${Math.max(0, Number(morphTargetIndex) | 0)}`;
+        const cached = this.#meshCache.get(cacheKey);
         if (cached) return cached;
 
-        const packedSubmeshes = wrPackMesh(meshAsset);
+        const packedSubmeshes = wrPackMesh(meshAsset, { morphTargetIndex });
         const out = { submeshes: [] };
 
         for (const packed of packedSubmeshes) {
             const vertexBuffer = AzWGPU.Buffer.createMapped(this.device, {
                 label: `Wr:${meshId}:vb`,
-                size: packed.vertexData.byteLength,
+                size: wrAlign4(packed.vertexData.byteLength),
                 usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
             }, packed.vertexData);
 
             const indexBuffer = AzWGPU.Buffer.createMapped(this.device, {
                 label: `Wr:${meshId}:ib`,
-                size: packed.indexData.byteLength,
+                size: wrAlign4(packed.indexData.byteLength),
                 usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
             }, packed.indexData);
 
@@ -604,7 +622,7 @@ export class WrBackendWGPU extends WrBackendBase {
             });
         }
 
-        this.#meshCache.set(meshId, out);
+        this.#meshCache.set(cacheKey, out);
         return out;
     }
 
@@ -623,17 +641,21 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or create object uniform buffer.
+     * Get or create one object uniform buffer by draw key.
+     * @param {string} objectKey draw object key
      * @returns {GPUBuffer}
      */
-    #ensureObjectUniformBuffer() {
-        if (this.#objectUniformBuffer) return this.#objectUniformBuffer;
-        this.#objectUniformBuffer = AzWGPU.Buffer.create(this.device, {
-            label: "WrObjectUBO",
+    #ensureObjectUniformBuffer(objectKey) {
+        const key = String(objectKey ?? "").trim() || "__default__";
+        const cached = this.#objectUniformBuffers.get(key);
+        if (cached) return cached;
+        const next = AzWGPU.Buffer.create(this.device, {
+            label: `WrObjectUBO:${key}`,
             size: WR_OBJECT_UBO_BYTES,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
-        return this.#objectUniformBuffer;
+        this.#objectUniformBuffers.set(key, next);
+        return next;
     }
 
     /**
@@ -661,12 +683,12 @@ export class WrBackendWGPU extends WrBackendBase {
 
     /**
      * Write object uniform block from draw and material state.
+     * @param {GPUBuffer} objectBuffer target object uniform buffer
      * @param {object} draw draw packet
      * @param {object|null} [materialState=null] material state
      * @returns {void}
      */
-    #updateObjectUniform(draw, materialState = null) {
-        const objectBuffer = this.#ensureObjectUniformBuffer();
+    #updateObjectUniform(objectBuffer, draw, materialState = null) {
         this.#objectScratch.fill(0);
 
         const model = draw?.modelMatrix;
@@ -794,16 +816,17 @@ export class WrBackendWGPU extends WrBackendBase {
      * @param {object} shaderState shader state
      * @param {string|null} albedoTexID texture id
      * @param {object} assets asset store
+     * @param {string} objectKey draw object key
      * @returns {GPUBindGroup|null}
      */
-    #ensureObjectBindGroup(shaderId, pipeline, shaderState, albedoTexID, assets) {
+    #ensureObjectBindGroup(shaderId, pipeline, shaderState, albedoTexID, assets, objectKey) {
         const texKey = albedoTexID ? String(albedoTexID) : "__fallback__";
-        const key = `${shaderId}|object|${texKey}`;
+        const key = `${shaderId}|object|${String(objectKey ?? "__default__")}|${texKey}`;
         const cached = this.#objectBindGroupCache.get(key);
         if (cached) return cached;
         if (!this.#shaderUsesGroup(shaderState, 1)) return null;
 
-        const objectBuffer = this.#ensureObjectUniformBuffer();
+        const objectBuffer = this.#ensureObjectUniformBuffer(objectKey);
         let layout = null;
         try {
             layout = pipeline.getBindGroupLayout(1);
@@ -1000,7 +1023,7 @@ export class WrBackendWGPU extends WrBackendBase {
     #pipelineCache;
     #warned;
     #sceneUniformBuffer;
-    #objectUniformBuffer;
+    #objectUniformBuffers;
     #sceneScratch;
     #objectScratch;
     #sceneBindGroupCache;

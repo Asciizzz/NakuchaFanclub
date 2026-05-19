@@ -268,7 +268,8 @@ export class WrBackendWGL extends WrBackendBase {
 
             const meshAsset = assets.getMesh(draw.meshID);
             if (!meshAsset) continue;
-            const meshGpu = this.#ensureMesh(draw.meshID, shaderId, meshAsset, shader.program);
+            const morphTargetIndex = Math.max(0, Number(draw?.primaryMorphIndex ?? 0) | 0);
+            const meshGpu = this.#ensureMesh(draw.meshID, shaderId, meshAsset, shader.program, morphTargetIndex);
             if (!meshGpu || meshGpu.submeshes.length <= 0) continue;
 
             const renderCfg = wrNormalizeRenderCfg(draw.renderCfg ?? shaderAsset.renderCfg ?? frameRenderCfg);
@@ -389,15 +390,16 @@ export class WrBackendWGL extends WrBackendBase {
      * @param {string} shaderId shader id
      * @param {object} meshAsset mesh asset
      * @param {WebGLProgram} program shader program
+     * @param {number} [morphTargetIndex=0] selected morph target index
      * @returns {{submeshes: object[]}}
      */
-    #ensureMesh(meshId, shaderId, meshAsset, program) {
-        const cacheKey = `${meshId}|${shaderId}`;
+    #ensureMesh(meshId, shaderId, meshAsset, program, morphTargetIndex = 0) {
+        const cacheKey = `${meshId}|${shaderId}|morph:${Math.max(0, Number(morphTargetIndex) | 0)}`;
         const cached = this.#meshCache.get(cacheKey);
         if (cached) return cached;
 
         const gl = this.gl;
-        const packedSubmeshes = wrPackMesh(meshAsset);
+        const packedSubmeshes = wrPackMesh(meshAsset, { morphTargetIndex });
         const out = { submeshes: [] };
 
         const attrLoc = {
