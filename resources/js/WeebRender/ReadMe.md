@@ -198,6 +198,55 @@ console.log(tracker.nodeIds); // created node ids in host
 ### toData()
 Returns detached scene data clone.
 
+## Skeleton And Morph Runtime Support
+
+Current runtime support status:
+
+- Skeleton:
+  - loader imports skeleton assets, inverse bind matrices, and mesh bone weights
+  - render path builds a skin palette per draw from `Skeleton` component + skeleton asset
+  - both WebGPU and WebGL backends upload skin palette uniform data
+- Morph:
+  - loader imports morph target position deltas
+  - render path resolves first morph weight from `MeshRenderer.morphWeights[0]`, then falls back to mesh default weight
+  - both backends write morph weight to `extras.x`
+
+Notes:
+
+- This runtime currently packs one morph target position stream into vertex data (`morphPos`), so runtime morph weight usage is `first target`.
+- Skeleton pose overrides are optional; no override means bind/default pose.
+
+### Morph Example
+
+```js
+const meshNode = scene.findByComponent("MeshRenderer")[0];
+const mr = meshNode.get("MeshRenderer");
+
+// first morph target weight
+mr.morphWeights = new Float32Array([0.75]);
+```
+
+### Skeleton Pose Example
+
+```js
+const meshNode = scene.findByComponent("MeshRenderer")[0];
+const mr = meshNode.get("MeshRenderer");
+const skeletonNode = scene.node(mr.skeletonNode);
+const skeleton = skeletonNode.get("Skeleton");
+
+// local pose overrides, one mat4 per bone
+// leave missing entries undefined to use identity pose
+skeleton.bones = skeleton.bones || [];
+skeleton.bones[0] = new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0.2, 0, 1,
+]);
+```
+
+`scene.update(dt)` then `scene.render()` will rebuild and upload palette values on draw.
+
 ## WrNode API
 
 ### data

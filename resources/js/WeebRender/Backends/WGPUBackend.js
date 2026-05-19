@@ -12,6 +12,8 @@ const WR_GPU_VERTEX_FORMAT = Object.freeze({
 
 const WR_SCENE_UBO_BYTES = 80;
 const WR_OBJECT_UBO_BYTES = 8320;
+const WR_SKIN_BONE_CAP = 128;
+const WR_SKIN_BASE_F32 = 32; // byte offset 128
 const WR_DEPTH_FORMAT = "depth24plus";
 const WR_ALPHA_BLEND = Object.freeze({
     color: Object.freeze({
@@ -196,6 +198,33 @@ function wrMulM4(a, b) {
     out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
     out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
     return out;
+}
+
+/**
+ * Write identity matrices to object skin palette range.
+ * @param {Float32Array} out target object uniform scratch
+ * @returns {void}
+ */
+function wrWriteIdentitySkinPalette(out) {
+    for (let i = 0; i < WR_SKIN_BONE_CAP; i++) {
+        const base = WR_SKIN_BASE_F32 + (i * 16);
+        out[base + 0] = 1;
+        out[base + 1] = 0;
+        out[base + 2] = 0;
+        out[base + 3] = 0;
+        out[base + 4] = 0;
+        out[base + 5] = 1;
+        out[base + 6] = 0;
+        out[base + 7] = 0;
+        out[base + 8] = 0;
+        out[base + 9] = 0;
+        out[base + 10] = 1;
+        out[base + 11] = 0;
+        out[base + 12] = 0;
+        out[base + 13] = 0;
+        out[base + 14] = 0;
+        out[base + 15] = 1;
+    }
 }
 
 /**
@@ -663,10 +692,19 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#objectScratch[25] = materialState?.hasMorph ? 1 : 0;
         this.#objectScratch[26] = 0;
         this.#objectScratch[27] = 0;
-        this.#objectScratch[28] = 0;
+        this.#objectScratch[28] = wrNumberOr(draw?.morphWeight, 0);
         this.#objectScratch[29] = 0;
         this.#objectScratch[30] = 0;
         this.#objectScratch[31] = 0;
+        wrWriteIdentitySkinPalette(this.#objectScratch);
+        const palette = draw?.skinPalette;
+        if (palette && (ArrayBuffer.isView(palette) || Array.isArray(palette))) {
+            const maxCopy = WR_SKIN_BONE_CAP * 16;
+            const count = Math.min(maxCopy, palette.length | 0);
+            for (let i = 0; i < count; i++) {
+                this.#objectScratch[WR_SKIN_BASE_F32 + i] = wrNumberOr(palette[i], this.#objectScratch[WR_SKIN_BASE_F32 + i]);
+            }
+        }
 
         AzWGPU.Buffer.write(this.device, objectBuffer, this.#objectScratch, 0);
     }

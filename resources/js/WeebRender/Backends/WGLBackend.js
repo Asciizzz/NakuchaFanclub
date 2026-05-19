@@ -3,6 +3,31 @@ import WrBackendBase from "./BackendBase.js";
 import { wrPackMesh } from "../Core/MeshPacking.js";
 import { wrNormalizeRenderCfg, wrRenderCfgKey } from "../Core/RenderConfig.js";
 
+const WR_SKIN_BONE_CAP = 128;
+const WR_IDENTITY_SKIN_PALETTE = (() => {
+    const out = new Float32Array(WR_SKIN_BONE_CAP * 16);
+    for (let i = 0; i < WR_SKIN_BONE_CAP; i++) {
+        const base = i * 16;
+        out[base + 0] = 1;
+        out[base + 1] = 0;
+        out[base + 2] = 0;
+        out[base + 3] = 0;
+        out[base + 4] = 0;
+        out[base + 5] = 1;
+        out[base + 6] = 0;
+        out[base + 7] = 0;
+        out[base + 8] = 0;
+        out[base + 9] = 0;
+        out[base + 10] = 1;
+        out[base + 11] = 0;
+        out[base + 12] = 0;
+        out[base + 13] = 0;
+        out[base + 14] = 0;
+        out[base + 15] = 1;
+    }
+    return out;
+})();
+
 /**
  * Convert numeric input with fallback.
  * @param {any} value input value
@@ -262,6 +287,14 @@ export class WrBackendWGL extends WrBackendBase {
             const flagsLoc = this.gl.getUniformLocation(shader.program, "u_vtxFlags");
             const extrasLoc = this.gl.getUniformLocation(shader.program, "u_extras");
             const texLoc = this.gl.getUniformLocation(shader.program, "u_albedoTex");
+            const skinPaletteLoc = this.gl.getUniformLocation(shader.program, "u_skinPalette[0]");
+            if (skinPaletteLoc !== null) {
+                const drawPalette = draw?.skinPalette;
+                const palette = (drawPalette && (ArrayBuffer.isView(drawPalette) || Array.isArray(drawPalette)) && drawPalette.length >= 16)
+                    ? drawPalette
+                    : WR_IDENTITY_SKIN_PALETTE;
+                this.gl.uniformMatrix4fv(skinPaletteLoc, false, palette);
+            }
 
             for (let submeshIndex = 0; submeshIndex < meshGpu.submeshes.length; submeshIndex++) {
                 const submesh = meshGpu.submeshes[submeshIndex];
@@ -279,7 +312,7 @@ export class WrBackendWGL extends WrBackendBase {
                 if (flagsLoc !== null) {
                     this.gl.uniform4f(flagsLoc, materialState.hasRig ? 1 : 0, materialState.hasMorph ? 1 : 0, 0, 0);
                 }
-                if (extrasLoc !== null) this.gl.uniform4f(extrasLoc, 0, 0, 0, 0);
+                if (extrasLoc !== null) this.gl.uniform4f(extrasLoc, wrNumberOr(draw?.morphWeight, 0), 0, 0, 0);
                 if (texLoc !== null) {
                     const texture = this.#ensureTexture(materialState.albedoTex, assets);
                     this.gl.activeTexture(this.gl.TEXTURE0);
