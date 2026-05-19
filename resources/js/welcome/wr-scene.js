@@ -1,6 +1,8 @@
 import { AzCamera } from "../AzLib/AzCamera.js";
 import WrProject from "../WeebRender/Core/Project.js";
 
+import * as Azm from "../AzLib/Azm.js";
+
 const container = document.getElementById("main-canvas");
 
 if (!container) {
@@ -93,6 +95,12 @@ async function run() {
     function frame(now) {
         const dt = (now - lastTime) * 0.001;
         lastTime = now;
+
+        const scene = project.getActiveScene();
+        const ltr = scene.nodes[0].components.Transform.local;
+        const dir = Azm.Vec3([0, dt, 0]);
+        Azm.Mat4.translate(ltr, dir, ltr);
+
         project.update(dt);
         project.render();
 
