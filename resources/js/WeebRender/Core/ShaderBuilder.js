@@ -14,6 +14,11 @@ const WR_LINK_RESERVED = new Set([
     "fragColor",
 ]);
 
+/**
+ * Parse legacy numeric link slot from number or name suffix.
+ * @param {number|string} value slot input
+ * @returns {number}
+ */
 function wrLegacyLinkSlot(value) {
     if (typeof value === "number" && Number.isInteger(value)) return value;
     if (typeof value === "string") {
@@ -24,6 +29,11 @@ function wrLegacyLinkSlot(value) {
     return -1;
 }
 
+/**
+ * Infer WGSL type from GLSL type.
+ * @param {string} glslType GLSL type
+ * @returns {string}
+ */
 function wrDefaultWgslTypeFromGlsl(glslType) {
     const t = String(glslType ?? "").trim();
     if (t === "float") return "f32";
@@ -37,6 +47,11 @@ function wrDefaultWgslTypeFromGlsl(glslType) {
     return "vec4f";
 }
 
+/**
+ * Infer GLSL type from WGSL type.
+ * @param {string} wgslType WGSL type
+ * @returns {string}
+ */
 function wrDefaultGlslTypeFromWgsl(wgslType) {
     const t = String(wgslType ?? "").trim();
     if (t === "f32") return "float";
@@ -50,6 +65,11 @@ function wrDefaultGlslTypeFromWgsl(wgslType) {
     return "vec4";
 }
 
+/**
+ * Build WGSL default literal for type.
+ * @param {string} type WGSL type
+ * @returns {string}
+ */
 function wrDefaultLiteralWgsl(type) {
     const t = String(type ?? "").trim();
     if (t === "f32") return "0.0";
@@ -63,6 +83,11 @@ function wrDefaultLiteralWgsl(type) {
     return "vec4f(0.0, 0.0, 0.0, 0.0)";
 }
 
+/**
+ * Build GLSL default literal for type.
+ * @param {string} type GLSL type
+ * @returns {string}
+ */
 function wrDefaultLiteralGlsl(type) {
     const t = String(type ?? "").trim();
     if (t === "float") return "0.0";
@@ -76,6 +101,11 @@ function wrDefaultLiteralGlsl(type) {
     return "vec4(0.0, 0.0, 0.0, 0.0)";
 }
 
+/**
+ * Resolve link type pair from mixed schema input.
+ * @param {object} raw link raw value
+ * @returns {{wgslType:string,glslType:string}}
+ */
 function wrResolveLinkTypes(raw) {
     const typeSource = raw?.type;
     if (typeof typeSource === "string" && typeSource.trim().length > 0) {
@@ -114,6 +144,11 @@ function wrResolveLinkTypes(raw) {
     };
 }
 
+/**
+ * Validate and normalize link variable name.
+ * @param {string} name link name
+ * @returns {string}
+ */
 function wrAssertLinkName(name) {
     const clean = String(name ?? "").trim();
     if (!clean) throw new Error("[WrShaderBuilder] link.name is required");
@@ -126,6 +161,11 @@ function wrAssertLinkName(name) {
     return clean;
 }
 
+/**
+ * Collect and normalize link definitions from shader description.
+ * @param {object} [shaderDesc={}] shader description
+ * @returns {object[]}
+ */
 function wrCollectLinks(shaderDesc = {}) {
     const rawList = [];
     if (shaderDesc.link != null) rawList.push(shaderDesc.link);
@@ -182,6 +222,11 @@ function wrCollectLinks(shaderDesc = {}) {
     return links;
 }
 
+/**
+ * Build compatibility key map for $LINK0$..$LINK7$.
+ * @param {object[]} links link list
+ * @returns {{wgsl: object, glsl: object}}
+ */
 function wrBuildLinkKeyMap(links) {
     const wgsl = {};
     const glsl = {};
@@ -194,6 +239,14 @@ function wrBuildLinkKeyMap(links) {
     return { wgsl, glsl };
 }
 
+/**
+ * Resolve stage main source from template inputs and defaults.
+ * @param {"vertex"|"fragment"} stage stage name
+ * @param {"wgsl"|"glsl"} language language key
+ * @param {object} shaderDesc shader description
+ * @param {string} defaultSource fallback source
+ * @returns {string}
+ */
 function wrStageMain(stage, language, shaderDesc, defaultSource) {
     const byStage = shaderDesc?.[stage] ?? {};
     const camel = `${language}Main`;
@@ -210,6 +263,11 @@ function wrStageMain(stage, language, shaderDesc, defaultSource) {
     return defaultSource;
 }
 
+/**
+ * Check if description uses template shader mode inputs.
+ * @param {object} shaderDesc shader description
+ * @returns {boolean}
+ */
 export function wrIsTemplateShaderDefinition(shaderDesc) {
     const mode = String(shaderDesc?.mode ?? "").toLowerCase();
     if (mode === "template") return true;
@@ -223,6 +281,11 @@ export function wrIsTemplateShaderDefinition(shaderDesc) {
     return false;
 }
 
+/**
+ * Build full dual-language shader definition from template settings.
+ * @param {object} [shaderDesc={}] template input
+ * @returns {object}
+ */
 export function wrBuildTemplateShaderDefinition(shaderDesc = {}) {
     const vertexMainWgsl = wrStageMain(
         "vertex",

@@ -29,34 +29,71 @@ const WR_FORMAT_SIZE = Object.freeze({
     sint32x4: 16,
 });
 
+/**
+ * Assert non-empty string value.
+ * @param {any} value input value
+ * @param {string} name parameter name
+ * @returns {void}
+ */
 function wrAssertString(value, name) {
     if (typeof value !== "string" || value.trim().length === 0) {
         throw new TypeError(`[WrShaderAbi] ${name} must be a non-empty string`);
     }
 }
 
+/**
+ * Check WGSL function entrypoint presence.
+ * @param {string} source WGSL source
+ * @param {string} entryName function name
+ * @returns {boolean}
+ */
 function wrHasWgslEntry(source, entryName) {
     return new RegExp(`\\bfn\\s+${entryName}\\s*\\(`).test(source);
 }
 
+/**
+ * Check GLSL main() entry presence.
+ * @param {string} source GLSL source
+ * @returns {boolean}
+ */
 function wrHasGlslMain(source) {
     return /\bvoid\s+main\s*\(/.test(source);
 }
 
+/**
+ * Check WGSL vertex output has builtin(position).
+ * @param {string} source WGSL source
+ * @returns {boolean}
+ */
 function wrHasWgslVertexPositionBuiltin(source) {
     return /@builtin\s*\(\s*position\s*\)/.test(source);
 }
 
+/**
+ * Check WGSL fragment output has @location(0).
+ * @param {string} source WGSL source
+ * @returns {boolean}
+ */
 function wrHasWgslFragmentColorLocation(source) {
     return /@location\s*\(\s*0\s*\)/.test(source);
 }
 
+/**
+ * Resolve byte size for one vertex attribute format.
+ * @param {string} format format key
+ * @returns {number}
+ */
 export function wrSizeOfFormat(format) {
     const size = WR_FORMAT_SIZE[String(format)];
     if (!size) throw new Error(`[WrShaderAbi] unsupported vertex format "${format}"`);
     return size;
 }
 
+/**
+ * Normalize and validate vertex layout object.
+ * @param {object|null|undefined} layout layout input
+ * @returns {{stride:number,attributes:object[]}}
+ */
 export function wrNormalizeVertexLayout(layout) {
     const src = layout ?? WR_VERTEX_LAYOUT_V1;
     const stride = Number(src.stride);
@@ -108,6 +145,12 @@ export function wrNormalizeVertexLayout(layout) {
     };
 }
 
+/**
+ * Compare expected and provided vertex signatures.
+ * @param {object} expectedLayout expected layout
+ * @param {object} providedLayout provided layout
+ * @returns {object}
+ */
 export function wrCompareVertexSignatures(expectedLayout, providedLayout) {
     const expected = wrNormalizeVertexLayout(expectedLayout);
     const provided = wrNormalizeVertexLayout(providedLayout);
@@ -141,6 +184,11 @@ export function wrCompareVertexSignatures(expectedLayout, providedLayout) {
     return { ok: true, reason: "ok", expected, provided };
 }
 
+/**
+ * Validate dual-language shader definition and normalize ABI shape.
+ * @param {object} shaderDesc shader definition
+ * @returns {object}
+ */
 export function wrValidateShaderDefinition(shaderDesc) {
     if (!shaderDesc || typeof shaderDesc !== "object") {
         throw new TypeError("[WrShaderAbi] shader definition object is required");

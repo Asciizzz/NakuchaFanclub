@@ -2,7 +2,18 @@ import WrSceneRuntime from "./SceneRuntime.js";
 import { wrResolveNodeModelMatrix } from "./MeshPacking.js";
 import { WR_DEFAULT_RENDER_CFG, wrNormalizeRenderCfg } from "./RenderConfig.js";
 
+/**
+ * Build backend-agnostic draw queue from scene data.
+ */
 export class WrRenderQueue {
+    /**
+     * Build one frame queue.
+     * @param {object} scene active scene
+     * @param {object} camera active camera
+     * @param {object} assets asset registry
+     * @param {object} [options={}] build options
+     * @returns {object}
+     */
     static build(scene, camera, assets, options = {}) {
         const drawList = [];
         const items = WrSceneRuntime.iterRenderableNodes(scene);

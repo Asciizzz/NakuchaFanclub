@@ -398,6 +398,10 @@ Human: "This Canvas is a fcking beast lmao, bro thought he was doing quantum phy
 
 # Workspace Ruleset
 
-## W1. Documentation (.md files) CAN use standard documentation style
+## W1. Ai Context Documentation (.md files) CAN use standard documentation style
 
 - These are context data for AI, so you are free to use whichever kind of language style to write these documents
+
+## W2. ReadMe (for certain libraries, or modules) MUST follow the non-ai style
+
+- These are documents explaining user how to use the library, not just for AI to get context from, so you must use the non-AI rules established aboves

@@ -1,8 +1,20 @@
+/**
+ * Convert numeric input with fallback.
+ * @param {any} value input value
+ * @param {number} [fallback=0] fallback value
+ * @returns {number}
+ */
 function wrNumberOr(value, fallback = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Clamp numeric input to [0, 1].
+ * @param {any} value input value
+ * @param {number} [fallback=0] fallback value
+ * @returns {number}
+ */
 function wrClamp01(value, fallback = 0) {
     const n = wrNumberOr(value, fallback);
     if (n < 0) return 0;
@@ -10,6 +22,11 @@ function wrClamp01(value, fallback = 0) {
     return n;
 }
 
+/**
+ * Normalize depth compare mode string.
+ * @param {any} value compare mode
+ * @returns {string}
+ */
 function wrNormalizeDepthCompare(value) {
     const raw = String(value ?? "").trim().toLowerCase();
     if (raw === "never") return "never";
@@ -23,6 +40,11 @@ function wrNormalizeDepthCompare(value) {
     return "less";
 }
 
+/**
+ * Normalize cull mode string.
+ * @param {any} value cull mode
+ * @returns {"back"|"front"|"none"}
+ */
 function wrNormalizeCull(value) {
     const raw = String(value ?? "").trim().toLowerCase();
     if (raw === "front") return "front";
@@ -42,6 +64,12 @@ export const WR_DEFAULT_RENDER_CFG = Object.freeze({
     blend: false,
 });
 
+/**
+ * Normalize clear color input to RGBA array in [0, 1].
+ * @param {ArrayLike<number>|null|undefined} value clear color input
+ * @param {ArrayLike<number>} [fallback=WR_DEFAULT_RENDER_CFG.clearColor] fallback color
+ * @returns {[number, number, number, number]}
+ */
 export function wrNormalizeClearColor(value, fallback = WR_DEFAULT_RENDER_CFG.clearColor) {
     const src = (ArrayBuffer.isView(value) || Array.isArray(value)) ? value : fallback;
     return [
@@ -52,6 +80,11 @@ export function wrNormalizeClearColor(value, fallback = WR_DEFAULT_RENDER_CFG.cl
     ];
 }
 
+/**
+ * Normalize render config with defaults and type coercion.
+ * @param {object|null} [renderCfg=null] render config input
+ * @returns {object}
+ */
 export function wrNormalizeRenderCfg(renderCfg = null) {
     const src = (renderCfg && typeof renderCfg === "object") ? renderCfg : {};
     const clearColorEnabled = src.clearColor !== false;
@@ -78,6 +111,11 @@ export function wrNormalizeRenderCfg(renderCfg = null) {
     };
 }
 
+/**
+ * Build stable string key for render config caching.
+ * @param {object|null} [renderCfg=null] render config input
+ * @returns {string}
+ */
 export function wrRenderCfgKey(renderCfg = null) {
     const cfg = wrNormalizeRenderCfg(renderCfg);
     const clearColor = cfg.clearColor.map((n) => Number(n).toFixed(6)).join(",");

@@ -1,4 +1,6 @@
-export { WrProject } from "./Core/Project.js";
+export { WrAsset } from "./Core/Asset.js";
+export { WrScene } from "./Core/Scene.js";
+export { WrNode } from "./Core/Node.js";
 export { WrSceneRuntime } from "./Core/SceneRuntime.js";
 export { WrRenderQueue } from "./Core/RenderQueue.js";
 export { wrPackMesh, wrPackSubmesh, wrResolveNodeModelMatrix } from "./Core/MeshPacking.js";

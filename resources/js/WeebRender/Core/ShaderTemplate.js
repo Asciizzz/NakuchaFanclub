@@ -86,12 +86,23 @@ const WR_STAGE_KEYS = Object.freeze({
     ]),
 });
 
+/**
+ * Extract distinct template keys from source text.
+ * @param {string} source shader source
+ * @returns {string[]}
+ */
 export function wrExtractTemplateKeys(source) {
     const text = String(source ?? "");
     const found = text.match(/\$[A-Z0-9_]+\$/g) ?? [];
     return Array.from(new Set(found));
 }
 
+/**
+ * Validate template keys against stage key allowlist.
+ * @param {string} source shader source
+ * @param {"vertex"|"fragment"} stage stage name
+ * @returns {string[]}
+ */
 export function wrValidateTemplateKeys(source, stage) {
     const stageName = String(stage ?? "").toLowerCase();
     const allowed = WR_STAGE_KEYS[stageName];
@@ -109,6 +120,13 @@ export function wrValidateTemplateKeys(source, stage) {
     return found;
 }
 
+/**
+ * Replace template keys with stage-specific replacements.
+ * @param {string} source shader source
+ * @param {"vertex"|"fragment"} stage stage name
+ * @param {object} keyMap replacement map
+ * @returns {string}
+ */
 export function wrReplaceTemplateKeys(source, stage, keyMap) {
     const text = String(source ?? "");
     const stageName = String(stage ?? "").toLowerCase();
@@ -133,6 +151,10 @@ export function wrReplaceTemplateKeys(source, stage, keyMap) {
     return out;
 }
 
+/**
+ * Default WGSL replacement map for non-template mode.
+ * @returns {object}
+ */
 export function wrDefaultKeyMapWgsl() {
     return {
         "$POSITION$": "input.position",
@@ -160,6 +182,10 @@ export function wrDefaultKeyMapWgsl() {
     };
 }
 
+/**
+ * Default GLSL replacement map for non-template mode.
+ * @returns {object}
+ */
 export function wrDefaultKeyMapGlsl() {
     return {
         "$POSITION$": "a_position",
@@ -187,6 +213,10 @@ export function wrDefaultKeyMapGlsl() {
     };
 }
 
+/**
+ * Template-mode WGSL replacement map.
+ * @returns {object}
+ */
 export function wrTemplateKeyMapWgsl() {
     return {
         "$POSITION$": "wr_position",
@@ -214,6 +244,10 @@ export function wrTemplateKeyMapWgsl() {
     };
 }
 
+/**
+ * Template-mode GLSL replacement map.
+ * @returns {object}
+ */
 export function wrTemplateKeyMapGlsl() {
     return {
         "$POSITION$": "wr_position",

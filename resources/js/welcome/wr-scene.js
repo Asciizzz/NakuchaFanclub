@@ -1,5 +1,5 @@
 import { AzCamera } from "../AzLib/AzCamera.js";
-import WrProject from "../WeebRender/Core/Project.js";
+import WrAsset from "../WeebRender/Core/Asset.js";
 
 import * as Azm from "../AzLib/Azm.js";
 
@@ -14,7 +14,7 @@ if (!container) {
 }
 
 async function run() {
-    const project = new WrProject({
+    const asset = new WrAsset({
         canvas: { id: "wr-canvas", alpha: true, maxPixelRatio: 2 },
         backend: {
             prefer: "webgpu",
@@ -26,8 +26,8 @@ async function run() {
         },
     });
 
-    await project.init();
-    project.mount(container).fitContainer();
+    await asset.init();
+    asset.mount(container).fitContainer();
 
     const camera = new AzCamera({
         position: [0, 1, 5],
@@ -36,9 +36,9 @@ async function run() {
         fov: 45,
     });
     camera.lookAt([0, 1, 0]);
-    project.setCamera(camera);
+    asset.setCamera(camera);
 
-    project.registerShader("wr-default", {
+    asset.registerShader("wr-default", {
         vertexAbiVersion: 1,
         mode: "template",
         links: [
@@ -80,15 +80,16 @@ async function run() {
         },
     });
 
+    let scene = null;
     try {
-        const sceneId = await project.loadModelFromURL("/Models/Nakurin.glb", { useNow: true });
-        console.info("[WrScene] model loaded", sceneId);
+        scene = await asset.loadModelFromURL("/Models/Nakurin.glb");
+        console.info("[WrScene] model loaded", scene.id);
     } catch (error) {
         console.warn("[WrScene] model load skipped", String(error?.message ?? error));
     }
 
     new ResizeObserver(() => {
-        project.fitContainer();
+        asset.fitContainer();
     }).observe(container);
 
     let lastTime = performance.now();
@@ -96,13 +97,18 @@ async function run() {
         const dt = (now - lastTime) * 0.001;
         lastTime = now;
 
-        const scene = project.getActiveScene();
-        const ltr = scene.nodes[0].components.Transform.local;
-        const dir = Azm.Vec3([0, dt, 0]);
-        Azm.Mat4.translate(ltr, dir, ltr);
+        if (scene) {
+            const root = scene.node(scene.rootId);
+            const tx = root?.get("Transform");
+            const ltr = tx?.local ?? null;
+            if (ltr) {
+                const dir = Azm.Vec3([0, dt, 0]);
+                Azm.Mat4.translate(ltr, dir, ltr);
+            }
 
-        project.update(dt);
-        project.render();
+            scene.update(dt);
+            scene.render();
+        }
 
         requestAnimationFrame(frame);
     }

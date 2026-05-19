@@ -8,6 +8,11 @@ const WR_IDENTITY_M4 = Object.freeze([
     0, 0, 0, 1,
 ]);
 
+/**
+ * Convert numeric source to Float32Array when possible.
+ * @param {any} value source value
+ * @returns {Float32Array|null}
+ */
 function wrArrayLikeToF32(value) {
     if (value == null) return null;
     if (value instanceof Float32Array) return value;
@@ -15,6 +20,11 @@ function wrArrayLikeToF32(value) {
     return null;
 }
 
+/**
+ * Convert index source to Uint16Array or Uint32Array.
+ * @param {any} value source value
+ * @returns {Uint16Array|Uint32Array|null}
+ */
 function wrArrayLikeToIndex(value) {
     if (value == null) return null;
     if (value instanceof Uint16Array || value instanceof Uint32Array) return value;
@@ -28,6 +38,11 @@ function wrArrayLikeToIndex(value) {
     return null;
 }
 
+/**
+ * Convert matrix input to Float32Array[16], fallback identity.
+ * @param {ArrayLike<number>|null|undefined} value matrix input
+ * @returns {Float32Array}
+ */
 function wrReadMat4(value) {
     if (ArrayBuffer.isView(value) || Array.isArray(value)) {
         if (value.length >= 16) {
@@ -37,6 +52,11 @@ function wrReadMat4(value) {
     return Float32Array.from(WR_IDENTITY_M4);
 }
 
+/**
+ * Resolve node model matrix from Transform.world or Transform.local.
+ * @param {object} node scene node
+ * @returns {Float32Array}
+ */
 export function wrResolveNodeModelMatrix(node) {
     if (!node || typeof node !== "object") return Float32Array.from(WR_IDENTITY_M4);
     const comps = node.components ?? node.$ ?? {};
@@ -44,6 +64,11 @@ export function wrResolveNodeModelMatrix(node) {
     return wrReadMat4(tx.world ?? tx.local ?? null);
 }
 
+/**
+ * Pack one submesh into interleaved vertex and index buffers.
+ * @param {object} submesh submesh payload
+ * @returns {object}
+ */
 export function wrPackSubmesh(submesh) {
     const staticPart = submesh?.static ?? {};
     const rigPart = submesh?.rigged ?? submesh?.rig ?? {};
@@ -121,6 +146,11 @@ export function wrPackSubmesh(submesh) {
     };
 }
 
+/**
+ * Pack all submeshes in a mesh payload.
+ * @param {object} mesh mesh payload
+ * @returns {object[]}
+ */
 export function wrPackMesh(mesh) {
     const submeshes = Array.isArray(mesh?.submeshes) ? mesh.submeshes : [];
     return submeshes.map((submesh) => wrPackSubmesh(submesh));

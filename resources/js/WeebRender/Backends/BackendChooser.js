@@ -1,6 +1,12 @@
 import WrBackendWGPU from "./WGPUBackend.js";
 import WrBackendWGL from "./WGLBackend.js";
 
+/**
+ * Choose and initialize a backend with automatic fallback.
+ * @param {HTMLCanvasElement} canvas target canvas
+ * @param {object} [options={}] backend selection options
+ * @returns {Promise<{backend: object, report: object}>}
+ */
 export async function wrChooseBackend(canvas, options = {}) {
     const preferred = (options.prefer ?? "webgpu") === "webgl2" ? "webgl2" : "webgpu";
     const report = {

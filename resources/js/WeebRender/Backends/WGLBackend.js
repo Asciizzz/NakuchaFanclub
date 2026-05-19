@@ -3,11 +3,23 @@ import WrBackendBase from "./BackendBase.js";
 import { wrPackMesh } from "../Core/MeshPacking.js";
 import { wrNormalizeRenderCfg, wrRenderCfgKey } from "../Core/RenderConfig.js";
 
+/**
+ * Convert numeric input with fallback.
+ * @param {any} value input value
+ * @param {number} [fallback=0] fallback value
+ * @returns {number}
+ */
 function wrNumberOr(value, fallback = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Normalize RGBA array-like value.
+ * @param {ArrayLike<number>|null|undefined} value source color
+ * @param {number[]} [fallback=[1,1,1,1]] fallback color
+ * @returns {number[]}
+ */
 function wrColor4(value, fallback = [1, 1, 1, 1]) {
     const src = (ArrayBuffer.isView(value) || Array.isArray(value)) ? value : fallback;
     return [
@@ -18,6 +30,13 @@ function wrColor4(value, fallback = [1, 1, 1, 1]) {
     ];
 }
 
+/**
+ * Resolve effective material state for one mesh submesh.
+ * @param {object} meshAsset mesh asset
+ * @param {number} submeshIndex submesh index
+ * @param {object} assets asset store
+ * @returns {{albedoColor:number[],albedoTex:string|null,hasRig:boolean,hasMorph:boolean}}
+ */
 function wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets) {
     const submesh = Array.isArray(meshAsset?.submeshes) ? meshAsset.submeshes[submeshIndex] : null;
     const rawMaterial = (submesh && typeof submesh.material === "object") ? submesh.material : {};
@@ -46,6 +65,12 @@ function wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets) {
     };
 }
 
+/**
+ * Multiply two column-major mat4 values.
+ * @param {ArrayLike<number>} a left matrix
+ * @param {ArrayLike<number>} b right matrix
+ * @returns {Float32Array}
+ */
 function wrMulM4(a, b) {
     const out = new Float32Array(16);
     const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
@@ -80,6 +105,13 @@ function wrMulM4(a, b) {
     return out;
 }
 
+/**
+ * Map render config depth compare to WebGL enum.
+ * @param {WebGL2RenderingContext} gl GL context
+ * @param {string} depthCompare compare mode
+ * @param {boolean} depthTest depth test toggle
+ * @returns {number}
+ */
 function wrDepthFuncGL(gl, depthCompare, depthTest) {
     if (!depthTest) return gl.ALWAYS;
     const key = String(depthCompare ?? "less").trim().toLowerCase();
@@ -94,7 +126,14 @@ function wrDepthFuncGL(gl, depthCompare, depthTest) {
     return gl.LESS;
 }
 
+/**
+ * WebGL2 backend implementation.
+ */
 export class WrBackendWGL extends WrBackendBase {
+    /**
+     * @param {HTMLCanvasElement} canvas target canvas
+     * @param {object} [options={}] backend options
+     */
     constructor(canvas, options = {}) {
         super(canvas, options);
         this.gl = null;
@@ -109,8 +148,16 @@ export class WrBackendWGL extends WrBackendBase {
         this.#activeRenderCfgKey = null;
     }
 
+    /**
+     * Backend kind tag.
+     * @returns {string}
+     */
     get kind() { return "webgl2"; }
 
+    /**
+     * Initialize WebGL2 context and capability report.
+     * @returns {Promise<WrBackendWGL>}
+     */
     async init() {
         if (!this.canvas) throw new Error("[WrBackendWGL] canvas is required");
         const rawContextOptions = (this.options.context && typeof this.options.context === "object")
@@ -132,17 +179,31 @@ export class WrBackendWGL extends WrBackendBase {
         return this;
     }
 
+    /**
+     * Update viewport to current canvas pixel size.
+     * @returns {void}
+     */
     resize() {
         if (!this.ready || !this.gl) return;
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     }
 
+    /**
+     * Begin one frame.
+     * @param {object} [frameCtx={}] frame context
+     * @returns {void}
+     */
     beginFrame(frameCtx = {}) {
         if (!this.ready || !this.gl) return;
         this.#frameCtx = frameCtx;
         this.#activeRenderCfgKey = null;
     }
 
+    /**
+     * Execute draw queue with shader, mesh, and texture caches.
+     * @param {object|null} [queue=null] render queue
+     * @returns {void}
+     */
     executeRenderQueue(queue = null) {
         if (!this.ready || !this.gl) return;
         const frameRenderCfg = wrNormalizeRenderCfg(
@@ -237,16 +298,34 @@ export class WrBackendWGL extends WrBackendBase {
         this.gl.useProgram(null);
     }
 
+    /**
+     * End frame hook.
+     * @returns {void}
+     */
     endFrame() {}
 
+    /**
+     * Destroy backend resources and GPU caches.
+     * @returns {void}
+     */
     destroy() {
         this.#destroyGpuCaches();
         this.ready = false;
         this.gl = null;
     }
 
+    /**
+     * Return cached capability report.
+     * @returns {object}
+     */
     getCapabilities() { return this.report; }
 
+    /**
+     * Get or compile shader program for one shader id.
+     * @param {string} shaderId shader id
+     * @param {object} shaderAsset shader asset
+     * @returns {{ok:boolean,program:WebGLProgram|null,error:string|null}}
+     */
     #ensureShader(shaderId, shaderAsset) {
         const cached = this.#shaderCache.get(shaderId);
         if (cached) return cached;
@@ -271,6 +350,14 @@ export class WrBackendWGL extends WrBackendBase {
         return state;
     }
 
+    /**
+     * Get or build cached GPU mesh buffers for one mesh/shader pair.
+     * @param {string} meshId mesh id
+     * @param {string} shaderId shader id
+     * @param {object} meshAsset mesh asset
+     * @param {WebGLProgram} program shader program
+     * @returns {{submeshes: object[]}}
+     */
     #ensureMesh(meshId, shaderId, meshAsset, program) {
         const cacheKey = `${meshId}|${shaderId}`;
         const cached = this.#meshCache.get(cacheKey);
@@ -327,12 +414,26 @@ export class WrBackendWGL extends WrBackendBase {
         return out;
     }
 
+    /**
+     * Wire one vertex attribute pointer.
+     * @param {number} location attrib location
+     * @param {number} size components per vertex
+     * @param {number} type GL type enum
+     * @param {number} stride byte stride
+     * @param {number} offset byte offset
+     * @returns {void}
+     */
     #wireAttr(location, size, type, stride, offset) {
         if (location == null || location < 0) return;
         this.gl.enableVertexAttribArray(location);
         this.gl.vertexAttribPointer(location, size, type, false, stride, offset);
     }
 
+    /**
+     * Apply normalized render state if key changed.
+     * @param {object} renderCfg render config
+     * @returns {void}
+     */
     #applyRenderState(renderCfg) {
         const cfg = wrNormalizeRenderCfg(renderCfg);
         const nextKey = wrRenderCfgKey(cfg);
@@ -362,6 +463,10 @@ export class WrBackendWGL extends WrBackendBase {
         this.#activeRenderCfgKey = nextKey;
     }
 
+    /**
+     * Destroy all cached GL resources.
+     * @returns {void}
+     */
     #destroyGpuCaches() {
         if (!this.gl) return;
         for (const shader of this.#shaderCache.values()) {
@@ -387,12 +492,25 @@ export class WrBackendWGL extends WrBackendBase {
         this.#activeRenderCfgKey = null;
     }
 
+    /**
+     * Emit texture warning once per key.
+     * @param {string} key warning key
+     * @param {string} message warning message
+     * @returns {void}
+     */
     #warnTextureOnce(key, message) {
         if (this.#warnedTextureIds.has(key)) return;
         this.#warnedTextureIds.add(key);
         console.warn(message);
     }
 
+    /**
+     * Get or upload one texture by texture id.
+     * Falls back to internal white texture when missing.
+     * @param {string|null} textureID texture id
+     * @param {object} assets asset store
+     * @returns {WebGLTexture}
+     */
     #ensureTexture(textureID, assets) {
         const key = String(textureID ?? "").trim();
         if (!key) return this.#ensureFallbackTexture();
@@ -439,6 +557,10 @@ export class WrBackendWGL extends WrBackendBase {
         }
     }
 
+    /**
+     * Get or create shared 1x1 white fallback texture.
+     * @returns {WebGLTexture}
+     */
     #ensureFallbackTexture() {
         if (this.#fallbackTexture) return this.#fallbackTexture;
         const gl = this.gl;

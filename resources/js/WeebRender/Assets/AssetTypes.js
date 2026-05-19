@@ -7,6 +7,12 @@ export const WrAssetKind = Object.freeze({
     Shader: "shader",
 });
 
+/**
+ * Clone data recursively for plain objects, arrays, and typed arrays.
+ * Non-plain object references are returned as-is.
+ * @param {any} value input value
+ * @returns {any}
+ */
 export function wrCloneData(value) {
     if (value == null) return value;
     if (ArrayBuffer.isView(value)) return new value.constructor(value);
@@ -22,6 +28,13 @@ export function wrCloneData(value) {
     return value;
 }
 
+/**
+ * Resolve a stable asset id from a preferred id or fallback index.
+ * @param {string} prefix id prefix
+ * @param {string|null|undefined} rawId preferred id
+ * @param {number} [fallbackIndex=0] fallback numeric suffix
+ * @returns {string}
+ */
 export function wrEnsureId(prefix, rawId, fallbackIndex = 0) {
     const value = String(rawId ?? "").trim();
     if (value.length > 0) return value;

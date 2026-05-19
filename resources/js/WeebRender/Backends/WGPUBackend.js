@@ -26,6 +26,12 @@ const WR_ALPHA_BLEND = Object.freeze({
     }),
 });
 
+/**
+ * Map normalized depth compare mode to WebGPU string.
+ * @param {string} compare compare mode
+ * @param {boolean} depthTest depth test toggle
+ * @returns {GPUCompareFunction}
+ */
 function wrDepthCompareWgpu(compare, depthTest) {
     if (!depthTest) return "always";
     const key = String(compare ?? "less").trim().toLowerCase();
@@ -40,11 +46,23 @@ function wrDepthCompareWgpu(compare, depthTest) {
     return "less";
 }
 
+/**
+ * Convert numeric input with fallback.
+ * @param {any} value input value
+ * @param {number} [fallback=0] fallback value
+ * @returns {number}
+ */
 function wrNumberOr(value, fallback = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Normalize RGBA value to numeric array.
+ * @param {ArrayLike<number>|null|undefined} value input color
+ * @param {number[]} [fallback=[1,1,1,1]] fallback color
+ * @returns {number[]}
+ */
 function wrColor4(value, fallback = [1, 1, 1, 1]) {
     const src = (ArrayBuffer.isView(value) || Array.isArray(value)) ? value : fallback;
     return [
@@ -55,6 +73,13 @@ function wrColor4(value, fallback = [1, 1, 1, 1]) {
     ];
 }
 
+/**
+ * Resolve effective material state for one mesh submesh.
+ * @param {object} meshAsset mesh asset
+ * @param {number} submeshIndex submesh index
+ * @param {object} assets asset store
+ * @returns {{albedoColor:number[],albedoTex:string|null,hasRig:boolean,hasMorph:boolean}}
+ */
 function wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets) {
     const submesh = Array.isArray(meshAsset?.submeshes) ? meshAsset.submeshes[submeshIndex] : null;
     const rawMaterial = (submesh && typeof submesh.material === "object") ? submesh.material : {};
@@ -83,6 +108,13 @@ function wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets) {
     };
 }
 
+/**
+ * Add one bind group/binding pair to binding map.
+ * @param {Map<number, Set<number>>} bindingMap binding map
+ * @param {number} groupIndex group index
+ * @param {number} bindingIndex binding index
+ * @returns {void}
+ */
 function wrAddBinding(bindingMap, groupIndex, bindingIndex) {
     if (!bindingMap.has(groupIndex)) {
         bindingMap.set(groupIndex, new Set());
@@ -90,6 +122,12 @@ function wrAddBinding(bindingMap, groupIndex, bindingIndex) {
     bindingMap.get(groupIndex).add(bindingIndex);
 }
 
+/**
+ * Parse WGSL source and record referenced bind group bindings.
+ * @param {string} source WGSL source
+ * @param {Map<number, Set<number>>} outMap output map
+ * @returns {void}
+ */
 function wrParseWgslBindings(source, outMap) {
     const text = String(source ?? "");
     const groupThenBinding = /@group\s*\(\s*(\d+)\s*\)\s*@binding\s*\(\s*(\d+)\s*\)/g;
@@ -108,6 +146,11 @@ function wrParseWgslBindings(source, outMap) {
     }
 }
 
+/**
+ * Build bind group binding map from shader asset code.
+ * @param {object} shaderAsset shader asset
+ * @returns {Map<number, Set<number>>}
+ */
 function wrCollectShaderBindings(shaderAsset) {
     const bindingMap = new Map();
     wrParseWgslBindings(shaderAsset?.resolved?.vertex?.wgsl ?? shaderAsset?.vertex?.wgsl ?? "", bindingMap);
@@ -115,6 +158,12 @@ function wrCollectShaderBindings(shaderAsset) {
     return bindingMap;
 }
 
+/**
+ * Multiply two column-major mat4 values.
+ * @param {ArrayLike<number>} a left matrix
+ * @param {ArrayLike<number>} b right matrix
+ * @returns {Float32Array}
+ */
 function wrMulM4(a, b) {
     const out = new Float32Array(16);
     const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
@@ -149,7 +198,14 @@ function wrMulM4(a, b) {
     return out;
 }
 
+/**
+ * WebGPU backend implementation.
+ */
 export class WrBackendWGPU extends WrBackendBase {
+    /**
+     * @param {HTMLCanvasElement} canvas target canvas
+     * @param {object} [options={}] backend options
+     */
     constructor(canvas, options = {}) {
         super(canvas, options);
         this.adapter = null;
@@ -179,8 +235,16 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#fallbackTextureView = null;
     }
 
+    /**
+     * Backend kind tag.
+     * @returns {string}
+     */
     get kind() { return "webgpu"; }
 
+    /**
+     * Initialize adapter, device, and canvas context.
+     * @returns {Promise<WrBackendWGPU>}
+     */
     async init() {
         if (!this.canvas) throw new Error("[WrBackendWGPU] canvas is required");
 
@@ -209,6 +273,10 @@ export class WrBackendWGPU extends WrBackendBase {
         return this;
     }
 
+    /**
+     * Reconfigure canvas context and depth target.
+     * @returns {void}
+     */
     resize() {
         if (!this.ready || !this.context || !this.device) return;
         AzWGPU.Context.reconfigure(this.context, {
@@ -219,6 +287,11 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#releaseDepthTarget();
     }
 
+    /**
+     * Begin one frame and prepare encoder/swapchain view.
+     * @param {object} [frameCtx={}] frame context
+     * @returns {void}
+     */
     beginFrame(frameCtx = {}) {
         if (!this.ready) return;
         this.#encoder = AzWGPU.Command.createEncoder(this.device, "WrFrame");
@@ -226,6 +299,11 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#frameCtx = frameCtx;
     }
 
+    /**
+     * Execute render queue with pipeline and bind group caches.
+     * @param {object|null} [queue=null] render queue
+     * @returns {void}
+     */
     executeRenderQueue(queue = null) {
         if (!this.ready || !this.#encoder || !this.#textureView) return;
 
@@ -311,6 +389,10 @@ export class WrBackendWGPU extends WrBackendBase {
         AzWGPU.Pass.end(pass);
     }
 
+    /**
+     * Submit current command encoder and clear frame state.
+     * @returns {void}
+     */
     endFrame() {
         if (!this.ready || !this.#encoder) return;
         const commandBuffer = AzWGPU.Command.finish(this.#encoder);
@@ -319,6 +401,10 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#textureView = null;
     }
 
+    /**
+     * Destroy backend resources and GPU caches.
+     * @returns {void}
+     */
     destroy() {
         if (!this.ready) return;
         try { AzWGPU.Context.unconfigure(this.context); }
@@ -348,14 +434,30 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#fallbackSampler = null;
     }
 
+    /**
+     * Return cached capability report.
+     * @returns {object}
+     */
     getCapabilities() { return this.report; }
 
+    /**
+     * Emit one warning message once per key.
+     * @param {string} key warning key
+     * @param {string} message warning message
+     * @returns {void}
+     */
     #warnOnce(key, message) {
         if (this.#warned.has(key)) return;
         this.#warned.add(key);
         console.warn(message);
     }
 
+    /**
+     * Get or create shader modules and binding map for shader id.
+     * @param {string} shaderId shader id
+     * @param {object} shaderAsset shader asset
+     * @returns {object}
+     */
     #ensureShader(shaderId, shaderAsset) {
         const cached = this.#shaderCache.get(shaderId);
         if (cached) return cached;
@@ -381,6 +483,14 @@ export class WrBackendWGPU extends WrBackendBase {
         return state;
     }
 
+    /**
+     * Get or create render pipeline for shader + render cfg.
+     * @param {string} shaderId shader id
+     * @param {object} shaderAsset shader asset
+     * @param {object} shaderState compiled shader state
+     * @param {object} renderCfg render config
+     * @returns {GPURenderPipeline|null}
+     */
     #ensurePipeline(shaderId, shaderAsset, shaderState, renderCfg) {
         const cfg = wrNormalizeRenderCfg(renderCfg);
         const cacheKey = `${shaderId}|${this.format}|${wrRenderCfgKey(cfg)}`;
@@ -431,6 +541,12 @@ export class WrBackendWGPU extends WrBackendBase {
         }
     }
 
+    /**
+     * Get or upload mesh buffers to GPU cache.
+     * @param {string} meshId mesh id
+     * @param {object} meshAsset mesh asset
+     * @returns {{submeshes: object[]}}
+     */
     #ensureMesh(meshId, meshAsset) {
         const cached = this.#meshCache.get(meshId);
         if (cached) return cached;
@@ -463,6 +579,10 @@ export class WrBackendWGPU extends WrBackendBase {
         return out;
     }
 
+    /**
+     * Get or create scene uniform buffer.
+     * @returns {GPUBuffer}
+     */
     #ensureSceneUniformBuffer() {
         if (this.#sceneUniformBuffer) return this.#sceneUniformBuffer;
         this.#sceneUniformBuffer = AzWGPU.Buffer.create(this.device, {
@@ -473,6 +593,10 @@ export class WrBackendWGPU extends WrBackendBase {
         return this.#sceneUniformBuffer;
     }
 
+    /**
+     * Get or create object uniform buffer.
+     * @returns {GPUBuffer}
+     */
     #ensureObjectUniformBuffer() {
         if (this.#objectUniformBuffer) return this.#objectUniformBuffer;
         this.#objectUniformBuffer = AzWGPU.Buffer.create(this.device, {
@@ -483,6 +607,11 @@ export class WrBackendWGPU extends WrBackendBase {
         return this.#objectUniformBuffer;
     }
 
+    /**
+     * Write scene uniform block from camera state.
+     * @param {object|null} camera active camera
+     * @returns {void}
+     */
     #updateSceneUniform(camera) {
         const sceneBuffer = this.#ensureSceneUniformBuffer();
         this.#sceneScratch.fill(0);
@@ -501,6 +630,12 @@ export class WrBackendWGPU extends WrBackendBase {
         AzWGPU.Buffer.write(this.device, sceneBuffer, this.#sceneScratch, 0);
     }
 
+    /**
+     * Write object uniform block from draw and material state.
+     * @param {object} draw draw packet
+     * @param {object|null} [materialState=null] material state
+     * @returns {void}
+     */
     #updateObjectUniform(draw, materialState = null) {
         const objectBuffer = this.#ensureObjectUniformBuffer();
         this.#objectScratch.fill(0);
@@ -536,10 +671,25 @@ export class WrBackendWGPU extends WrBackendBase {
         AzWGPU.Buffer.write(this.device, objectBuffer, this.#objectScratch, 0);
     }
 
+    /**
+     * Check if shader references a bind group index.
+     * @param {object} shaderState shader state
+     * @param {number} groupIndex bind group index
+     * @returns {boolean}
+     */
     #shaderUsesGroup(shaderState, groupIndex) {
         return (shaderState?.bindingMap?.get(groupIndex)?.size ?? 0) > 0;
     }
 
+    /**
+     * Build ordered bind group entries with required-binding validation.
+     * @param {string} shaderId shader id
+     * @param {object} shaderState shader state
+     * @param {number} groupIndex bind group index
+     * @param {Map<number, any>} resourceByBinding binding resource map
+     * @param {string} warnKeyPrefix warning key prefix
+     * @returns {object[]|null}
+     */
     #buildBindGroupEntries(shaderId, shaderState, groupIndex, resourceByBinding, warnKeyPrefix) {
         const requiredBindings = shaderState?.bindingMap?.get(groupIndex);
         if (!requiredBindings || requiredBindings.size <= 0) return [];
@@ -562,6 +712,13 @@ export class WrBackendWGPU extends WrBackendBase {
         return entries;
     }
 
+    /**
+     * Get or create scene bind group for shader.
+     * @param {string} shaderId shader id
+     * @param {GPURenderPipeline} pipeline render pipeline
+     * @param {object} shaderState shader state
+     * @returns {GPUBindGroup|null}
+     */
     #ensureSceneBindGroup(shaderId, pipeline, shaderState) {
         const key = `${shaderId}|scene`;
         const cached = this.#sceneBindGroupCache.get(key);
@@ -592,6 +749,15 @@ export class WrBackendWGPU extends WrBackendBase {
         }
     }
 
+    /**
+     * Get or create object bind group for shader and texture key.
+     * @param {string} shaderId shader id
+     * @param {GPURenderPipeline} pipeline render pipeline
+     * @param {object} shaderState shader state
+     * @param {string|null} albedoTexID texture id
+     * @param {object} assets asset store
+     * @returns {GPUBindGroup|null}
+     */
     #ensureObjectBindGroup(shaderId, pipeline, shaderState, albedoTexID, assets) {
         const texKey = albedoTexID ? String(albedoTexID) : "__fallback__";
         const key = `${shaderId}|object|${texKey}`;
@@ -634,6 +800,12 @@ export class WrBackendWGPU extends WrBackendBase {
         }
     }
 
+    /**
+     * Get or create sampler/texture resources for texture id.
+     * @param {string|null} textureID texture id
+     * @param {object} assets asset store
+     * @returns {{sampler: GPUSampler, texture: GPUTexture, textureView: GPUTextureView}}
+     */
     #ensureTextureResources(textureID, assets) {
         const key = String(textureID ?? "").trim();
         if (!key) return this.#ensureFallbackTextureResources();
@@ -688,6 +860,10 @@ export class WrBackendWGPU extends WrBackendBase {
         }
     }
 
+    /**
+     * Get or create shared white fallback texture resources.
+     * @returns {{sampler: GPUSampler, texture: GPUTexture, textureView: GPUTextureView}}
+     */
     #ensureFallbackTextureResources() {
         if (this.#fallbackSampler && this.#fallbackTexture && this.#fallbackTextureView) {
             return {
@@ -726,6 +902,12 @@ export class WrBackendWGPU extends WrBackendBase {
         };
     }
 
+    /**
+     * Check if frame requires depth attachment.
+     * @param {object} queue render queue
+     * @param {object} frameRenderCfg frame render config
+     * @returns {boolean}
+     */
     #queueNeedsDepth(queue, frameRenderCfg) {
         const frameCfg = wrNormalizeRenderCfg(frameRenderCfg);
         if (frameCfg.depthTest || frameCfg.depthWrite) return true;
@@ -737,6 +919,10 @@ export class WrBackendWGPU extends WrBackendBase {
         return false;
     }
 
+    /**
+     * Destroy current depth texture target.
+     * @returns {void}
+     */
     #releaseDepthTarget() {
         if (this.#depthTexture) this.#depthTexture.destroy();
         this.#depthTexture = null;
@@ -745,6 +931,10 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#depthHeight = 0;
     }
 
+    /**
+     * Get or create depth view matching current canvas size.
+     * @returns {GPUTextureView}
+     */
     #ensureDepthTarget() {
         const width = Math.max(1, this.canvas?.width ?? 1);
         const height = Math.max(1, this.canvas?.height ?? 1);
