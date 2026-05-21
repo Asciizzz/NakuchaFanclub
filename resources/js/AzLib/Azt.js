@@ -27,10 +27,6 @@ function cut(list, value) {
 	return i;
 }
 
-function isObject(value) {
-	return !!value && typeof value === "object";
-}
-
 export class Node {
 	ctx = null;
 	id = "";
@@ -76,7 +72,7 @@ export class Node {
 
 	*traverse(options = {}) {
 		if (!this.ctx) return;
-		const src = isObject(options) ? options : {};
+		const src = options && typeof options === "object" ? options : {};
 		yield* this.ctx.traverse({
 			...src,
 			from: this.id,
@@ -105,8 +101,7 @@ export class Ctx {
 	#prefix = "node_";
 
 	constructor(options = {}) {
-		const src = isObject(options) ? options : {};
-		this.#prefix = String(src.prefix ?? "node_");
+		this.#prefix = String(options?.prefix ?? "node_");
 	}
 
 	get version() { return this.#version; }
@@ -125,7 +120,6 @@ export class Ctx {
 
 		const id = this.#nextId();
 		const node = new Node(this, id);
-		if (!node.id || this.#nodes.has(node.id)) return null;
 
 		node.parentId = parentId;
 		node.childIds.length = 0;
@@ -315,7 +309,9 @@ export class Ctx {
 		const mode = String(options?.mode ?? "dfs_pre").toLowerCase();
 		const includeFrom = options?.includeFrom !== false;
 		const filter = typeof options?.filter === "function" ? options.filter : null;
-		const start = this.#resolveStart(options?.from ?? null, includeFrom);
+		const fromNode = this.getNode(options?.from ?? null);
+		if (!fromNode) return;
+		const start = includeFrom ? [fromNode.id] : fromNode.childIds.slice();
 		if (start.length <= 0) return;
 
 		if (mode === "bfs") {
@@ -383,15 +379,6 @@ export class Ctx {
 			cur = this.#nodes.get(cur.parentId);
 		}
 		return false;
-	}
-
-	#resolveStart(from, includeFrom) {
-		if (from == null) return [];
-
-		const start = this.getNode(from);
-		if (!start) return [];
-		if (includeFrom) return [start.id];
-		return start.childIds.slice();
 	}
 }
 
