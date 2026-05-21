@@ -5,8 +5,6 @@ By Asciiz
 Lightweight agnostic tree structure, you can do literally anything you want with it
 */
 
-const NODE_CORE_KEYS = new Set(["$", "id", "parentId", "childIds"]);
-
 function asId(value) {
 	const id = String(value ?? "").trim();
 	return id ? id : null;
@@ -34,26 +32,26 @@ function isObject(value) {
 }
 
 export class Node {
-	$ = null;
+	ctx = null;
 	id = "";
 	parentId = null;
 	childIds = [];
 
-	constructor($ = null, id = "") {
-		this.$ = $;
+	constructor(ctx = null, id = "") {
+		this.ctx = ctx;
 		this.id = asId(id) ?? "";
 	}
 
 	get parent() {
-		if (!this.$ || this.parentId == null) return null;
-		return this.$.get(this.parentId);
+		if (!this.ctx || this.parentId == null) return null;
+		return this.ctx.getNode(this.parentId);
 	}
 
 	get children() {
-		if (!this.$ || this.childIds.length <= 0) return [];
+		if (!this.ctx || this.childIds.length <= 0) return [];
 		const out = [];
 		for (const childId of this.childIds) {
-			const child = this.$.get(childId);
+			const child = this.ctx.getNode(childId);
 			if (child) out.push(child);
 		}
 		return out;
@@ -62,29 +60,27 @@ export class Node {
 	// Useful call to Ctx
 
 	add(index = -1) {
-		if (!this.$) return null;
-		return this.$.add(this.id, index);
+		if (!this.ctx) return null;
+		return this.ctx.addNode(this.id, index);
 	}
 
 	move(newParentId = null) {
-		if (!this.$) return null;
-		return this.$.move(this.id, newParentId);
+		if (!this.ctx) return null;
+		return this.ctx.moveNode(this.id, newParentId);
 	}
 
-	// Node exclusive behaviours
-
-	remove(key) {
-		if (NODE_CORE_KEYS.has(key)) return false;
-		if (!(key in this)) return false;
-		delete this[key];
-		return true;
+	delete(branch = false) {
+		if (!this.ctx) return null;
+		return this.ctx.deleteNode(this.id, branch);
 	}
 
-	clear() {
-		for (const key in this) {
-			if (NODE_CORE_KEYS.has(key)) continue;
-			delete this[key];
-		}
+	*traverse(options = {}) {
+		if (!this.ctx) return;
+		const src = isObject(options) ? options : {};
+		yield* this.ctx.traverse({
+			...src,
+			from: this.id,
+		});
 	}
 
 	swapChildrenOrder(indexA, indexB) {
@@ -104,7 +100,6 @@ export class Node {
 
 export class Ctx {
 	#nodes = new Map();
-	#roots = [];
 	#version = 0;
 	#seed = 1;
 	#prefix = "node_";
@@ -115,7 +110,7 @@ export class Ctx {
 	}
 
 	get version() { return this.#version; }
-	get roots() { return this.#roots.slice(); }
+	get nodes() { return this.#nodes; }
 
 	/**
 	 * Create empty node and add to tree
@@ -123,7 +118,7 @@ export class Ctx {
 	 * @param {number} [index=-1] insert index
 	 * @returns {Node|null}
 	 */
-	add(parent = null, index = -1) {
+	addNode(parent = null, index = -1) {
 		const parentId = parent == null ? null : asId(parent);
 		if (parent != null && parentId == null) return null;
 		if (parentId != null && !this.#nodes.has(parentId)) return null;
@@ -136,15 +131,8 @@ export class Ctx {
 		node.childIds.length = 0;
 		this.#nodes.set(id, node);
 
-		if (parentId == null) {
-			putAt(this.#roots, id, index);
-		} else {
+		if (parentId != null) {
 			const parentNode = this.#nodes.get(parentId);
-			if (!parentNode) {
-				this.#nodes.delete(id);
-				node.$ = null;
-				return null;
-			}
 			putAt(parentNode.childIds, id, index);
 		}
 
@@ -157,7 +145,7 @@ export class Ctx {
 	 * @param {string} id node id
 	 * @returns {Node|null}
 	 */
-	get(id) {
+	getNode(id) {
 		const key = asId(id);
 		if (!key) return null;
 		return this.#nodes.get(key) ?? null;
@@ -169,8 +157,8 @@ export class Ctx {
 	 * @param {string|null} [newParentId=null] next parent id
 	 * @returns {Node|null}
 	 */
-	move(id, newParentId = null) {
-		const node = this.get(id);
+	moveNode(id, newParentId = null) {
+		const node = this.getNode(id);
 		if (!node) return null;
 
 		const nextParentId = newParentId == null ? null : asId(newParentId);
@@ -180,18 +168,13 @@ export class Ctx {
 		if (!this.#isAcyclicMove(node.id, nextParentId)) return null;
 
 		const prevParentId = node.parentId;
-		if (prevParentId == null) {
-			cut(this.#roots, node.id);
-		} else {
+		if (prevParentId != null) {
 			const prevParent = this.#nodes.get(prevParentId);
 			if (prevParent) cut(prevParent.childIds, node.id);
 		}
 
-		if (nextParentId == null) {
-			this.#roots.push(node.id);
-		} else {
+		if (nextParentId != null) {
 			const nextParent = this.#nodes.get(nextParentId);
-			if (!nextParent) return null;
 			nextParent.childIds.push(node.id);
 		}
 
@@ -206,9 +189,9 @@ export class Ctx {
 	 * @param {string} idB second node id
 	 * @returns {boolean}
 	 */
-	swap(idA, idB) {
-		const nodeA = this.get(idA);
-		const nodeB = this.get(idB);
+	swapNodes(idA, idB) {
+		const nodeA = this.getNode(idA);
+		const nodeB = this.getNode(idB);
 		if (!nodeA || !nodeB) return false;
 		if (nodeA === nodeB) return true;
 
@@ -216,7 +199,8 @@ export class Ctx {
 		const parentB = nodeB.parentId;
 
 		if (parentA === parentB) {
-			const list = parentA == null ? this.#roots : (this.#nodes.get(parentA)?.childIds ?? null);
+			if (parentA == null) return true;
+			const list = this.#nodes.get(parentA)?.childIds ?? null;
 			if (!list) return false;
 			const indexA = list.indexOf(nodeA.id);
 			const indexB = list.indexOf(nodeB.id);
@@ -233,16 +217,15 @@ export class Ctx {
 			return false;
 		}
 
-		const listA = parentA == null ? this.#roots : (this.#nodes.get(parentA)?.childIds ?? null);
-		const listB = parentB == null ? this.#roots : (this.#nodes.get(parentB)?.childIds ?? null);
-		if (!listA || !listB) return false;
+		const listA = parentA == null ? null : (this.#nodes.get(parentA)?.childIds ?? null);
+		const listB = parentB == null ? null : (this.#nodes.get(parentB)?.childIds ?? null);
+		const indexA = listA ? listA.indexOf(nodeA.id) : -1;
+		const indexB = listB ? listB.indexOf(nodeB.id) : -1;
+		if (listA && indexA < 0) return false;
+		if (listB && indexB < 0) return false;
 
-		const indexA = listA.indexOf(nodeA.id);
-		const indexB = listB.indexOf(nodeB.id);
-		if (indexA < 0 || indexB < 0) return false;
-
-		listA[indexA] = nodeB.id;
-		listB[indexB] = nodeA.id;
+		if (listA) listA[indexA] = nodeB.id;
+		if (listB) listB[indexB] = nodeA.id;
 		nodeA.parentId = parentB;
 		nodeB.parentId = parentA;
 		this.#version++;
@@ -255,8 +238,8 @@ export class Ctx {
 	 * @param {boolean} [branch=false] delete subtree branch when true
 	 * @returns {Node|null}
 	 */
-	delete(id, branch = false) {
-		const node = this.get(id);
+	deleteNode(id, branch = false) {
+		const node = this.getNode(id);
 		if (!node) return null;
 		return branch ? this.#deleteBranch(node) : this.#deleteSingle(node);
 	}
@@ -269,12 +252,7 @@ export class Ctx {
 			if (this.#nodes.has(childId)) rescueChildren.push(childId);
 		}
 
-		if (rescueParentId == null) {
-			const idx = cut(this.#roots, id);
-			for (let i = 0; i < rescueChildren.length; i++) {
-				putAt(this.#roots, rescueChildren[i], idx < 0 ? -1 : (idx + i));
-			}
-		} else {
+		if (rescueParentId != null) {
 			const rescueParent = this.#nodes.get(rescueParentId);
 			if (rescueParent) {
 				const idx = cut(rescueParent.childIds, id);
@@ -290,7 +268,7 @@ export class Ctx {
 		}
 
 		this.#nodes.delete(id);
-		node.$ = null;
+		node.ctx = null;
 		node.parentId = null;
 		node.childIds.length = 0;
 		this.#version++;
@@ -300,9 +278,7 @@ export class Ctx {
 	#deleteBranch(node) {
 		const id = node.id;
 		const parentId = node.parentId;
-		if (parentId == null) {
-			cut(this.#roots, id);
-		} else {
+		if (parentId != null) {
 			const parent = this.#nodes.get(parentId);
 			if (parent) cut(parent.childIds, id);
 		}
@@ -321,7 +297,7 @@ export class Ctx {
 
 		for (const curNode of order) {
 			this.#nodes.delete(curNode.id);
-			curNode.$ = null;
+			curNode.ctx = null;
 			curNode.parentId = null;
 			curNode.childIds.length = 0;
 		}
@@ -410,11 +386,9 @@ export class Ctx {
 	}
 
 	#resolveStart(from, includeFrom) {
-		if (from == null) {
-			return this.#roots.slice();
-		}
+		if (from == null) return [];
 
-		const start = this.get(from);
+		const start = this.getNode(from);
 		if (!start) return [];
 		if (includeFrom) return [start.id];
 		return start.childIds.slice();
