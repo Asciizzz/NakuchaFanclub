@@ -1,7 +1,7 @@
 import AzWGPU from "../../AzLib/AzWGPU.js";
 import * as Azm from "../../AzLib/Azm.js";
 import WrBackendBase from "./BackendBase.js";
-import { wrPackMesh } from "../Core/MeshPacking.js";
+import { WrMesh } from "../Assets/Mesh.js";
 import { wrNormalizeRenderCfg, wrRenderCfgKey } from "../Core/RenderConfig.js";
 
 const WR_GPU_VERTEX_FORMAT = Object.freeze({
@@ -30,7 +30,7 @@ const WR_ALPHA_BLEND = Object.freeze({
 });
 
 /**
- * Map normalized depth compare mode to WebGPU string.
+ * Map normalized depth compare mode to WebGPU string
  * @param {string} compare compare mode
  * @param {boolean} depthTest depth test toggle
  * @returns {GPUCompareFunction}
@@ -50,7 +50,7 @@ function wrDepthCompareWgpu(compare, depthTest) {
 }
 
 /**
- * Convert numeric input with fallback.
+ * Convert numeric input with fallback
  * @param {any} value input value
  * @param {number} [fallback=0] fallback value
  * @returns {number}
@@ -61,7 +61,7 @@ function wrNumberOr(value, fallback = 0) {
 }
 
 /**
- * Normalize RGBA value to numeric array.
+ * Normalize RGBA value to numeric array
  * @param {ArrayLike<number>|null|undefined} value input color
  * @param {number[]} [fallback=[1,1,1,1]] fallback color
  * @returns {number[]}
@@ -77,7 +77,7 @@ function wrColor4(value, fallback = [1, 1, 1, 1]) {
 }
 
 /**
- * Align byte size to WebGPU's 4-byte createBuffer requirement.
+ * Align byte size to WebGPU's 4-byte createBuffer requirement
  * @param {number} size source size in bytes
  * @returns {number}
  */
@@ -87,7 +87,7 @@ function wrAlign4(size) {
 }
 
 /**
- * Resolve effective material state for one mesh submesh.
+ * Resolve effective material state for one mesh submesh
  * @param {object} meshAsset mesh asset
  * @param {number} submeshIndex submesh index
  * @param {object} assets asset store
@@ -122,57 +122,7 @@ function wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets) {
 }
 
 /**
- * Add one bind group/binding pair to binding map.
- * @param {Map<number, Set<number>>} bindingMap binding map
- * @param {number} groupIndex group index
- * @param {number} bindingIndex binding index
- * @returns {void}
- */
-function wrAddBinding(bindingMap, groupIndex, bindingIndex) {
-    if (!bindingMap.has(groupIndex)) {
-        bindingMap.set(groupIndex, new Set());
-    }
-    bindingMap.get(groupIndex).add(bindingIndex);
-}
-
-/**
- * Parse WGSL source and record referenced bind group bindings.
- * @param {string} source WGSL source
- * @param {Map<number, Set<number>>} outMap output map
- * @returns {void}
- */
-function wrParseWgslBindings(source, outMap) {
-    const text = String(source ?? "");
-    const groupThenBinding = /@group\s*\(\s*(\d+)\s*\)\s*@binding\s*\(\s*(\d+)\s*\)/g;
-    const bindingThenGroup = /@binding\s*\(\s*(\d+)\s*\)\s*@group\s*\(\s*(\d+)\s*\)/g;
-
-    let match = groupThenBinding.exec(text);
-    while (match) {
-        wrAddBinding(outMap, Number(match[1]), Number(match[2]));
-        match = groupThenBinding.exec(text);
-    }
-
-    match = bindingThenGroup.exec(text);
-    while (match) {
-        wrAddBinding(outMap, Number(match[2]), Number(match[1]));
-        match = bindingThenGroup.exec(text);
-    }
-}
-
-/**
- * Build bind group binding map from shader asset code.
- * @param {object} shaderAsset shader asset
- * @returns {Map<number, Set<number>>}
- */
-function wrCollectShaderBindings(shaderAsset) {
-    const bindingMap = new Map();
-    wrParseWgslBindings(shaderAsset?.resolved?.vertex?.wgsl ?? shaderAsset?.vertex?.wgsl ?? "", bindingMap);
-    wrParseWgslBindings(shaderAsset?.resolved?.fragment?.wgsl ?? shaderAsset?.fragment?.wgsl ?? "", bindingMap);
-    return bindingMap;
-}
-
-/**
- * Write identity matrices to object skin palette range.
+ * Write identity matrices to object skin palette range
  * @param {Float32Array} out target object uniform scratch
  * @returns {void}
  */
@@ -183,7 +133,7 @@ function wrWriteIdentitySkinPalette(out) {
 }
 
 /**
- * WebGPU backend implementation.
+ * WebGPU backend implementation
  */
 export class WrBackendWGPU extends WrBackendBase {
     /**
@@ -217,16 +167,19 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#fallbackSampler = null;
         this.#fallbackTexture = null;
         this.#fallbackTextureView = null;
+        this.#sharedSceneLayout = null;
+        this.#sharedObjectLayout = null;
+        this.#sharedPipelineLayout = null;
     }
 
     /**
-     * Backend kind tag.
+     * Backend kind tag
      * @returns {string}
      */
     get kind() { return "webgpu"; }
 
     /**
-     * Initialize adapter, device, and canvas context.
+     * Initialize adapter, device, and canvas context
      * @returns {Promise<WrBackendWGPU>}
      */
     async init() {
@@ -246,6 +199,7 @@ export class WrBackendWGPU extends WrBackendBase {
         this.context = context;
         this.format = format;
         this.ready = true;
+        this.#ensureSharedLayouts();
         this.report = {
             score: pick.score ?? null,
             request: pick.request ?? null,
@@ -258,7 +212,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Reconfigure canvas context and depth target.
+     * Reconfigure canvas context and depth target
      * @returns {void}
      */
     resize() {
@@ -272,7 +226,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Begin one frame and prepare encoder/swapchain view.
+     * Begin one frame and prepare encoder/swapchain view
      * @param {object} [frameCtx={}] frame context
      * @returns {void}
      */
@@ -284,7 +238,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Execute render queue with pipeline and bind group caches.
+     * Execute render queue with pipeline and bind group caches
      * @param {object|null} [queue=null] render queue
      * @returns {void}
      */
@@ -340,32 +294,23 @@ export class WrBackendWGPU extends WrBackendBase {
                 if (!pipeline) continue;
 
                 pass.setPipeline(pipeline);
-                const requiresSceneGroup = this.#shaderUsesGroup(shaderState, 0);
-                const sceneBindGroup = this.#ensureSceneBindGroup(shaderId, pipeline, shaderState);
-                if (requiresSceneGroup) {
-                    if (!sceneBindGroup) continue;
-                    pass.setBindGroup(0, sceneBindGroup);
-                }
+                const sceneBindGroup = this.#ensureSceneBindGroup();
+                if (!sceneBindGroup) continue;
+                pass.setBindGroup(0, sceneBindGroup);
 
-                const requiresObjectGroup = this.#shaderUsesGroup(shaderState, 1);
                 for (let submeshIndex = 0; submeshIndex < meshGpu.submeshes.length; submeshIndex++) {
                     const submesh = meshGpu.submeshes[submeshIndex];
                     const materialState = wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets);
                     const objectKey = `${draw.nodeId}|${draw.meshID}|sub:${submeshIndex}`;
                     const objectBuffer = this.#ensureObjectUniformBuffer(objectKey);
                     this.#updateObjectUniform(objectBuffer, draw, materialState);
-                    if (requiresObjectGroup) {
-                        const objectBindGroup = this.#ensureObjectBindGroup(
-                            shaderId,
-                            pipeline,
-                            shaderState,
-                            materialState.albedoTex,
-                            assets,
-                            objectKey
-                        );
-                        if (!objectBindGroup) continue;
-                        pass.setBindGroup(1, objectBindGroup);
-                    }
+                    const objectBindGroup = this.#ensureObjectBindGroup(
+                        materialState.albedoTex,
+                        assets,
+                        objectKey
+                    );
+                    if (!objectBindGroup) continue;
+                    pass.setBindGroup(1, objectBindGroup);
 
                     pass.setVertexBuffer(0, submesh.vertexBuffer);
                     pass.setIndexBuffer(submesh.indexBuffer, submesh.indexFormat);
@@ -378,7 +323,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Submit current command encoder and clear frame state.
+     * Submit current command encoder and clear frame state
      * @returns {void}
      */
     endFrame() {
@@ -390,7 +335,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Destroy backend resources and GPU caches.
+     * Destroy backend resources and GPU caches
      * @returns {void}
      */
     destroy() {
@@ -422,16 +367,19 @@ export class WrBackendWGPU extends WrBackendBase {
         this.#fallbackTexture = null;
         this.#fallbackTextureView = null;
         this.#fallbackSampler = null;
+        this.#sharedSceneLayout = null;
+        this.#sharedObjectLayout = null;
+        this.#sharedPipelineLayout = null;
     }
 
     /**
-     * Return cached capability report.
+     * Return cached capability report
      * @returns {object}
      */
     getCapabilities() { return this.report; }
 
     /**
-     * Emit one warning message once per key.
+     * Emit one warning message once per key
      * @param {string} key warning key
      * @param {string} message warning message
      * @returns {void}
@@ -443,7 +391,62 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or create shader modules and binding map for shader id.
+     * Build shared bind group and pipeline layouts used by every shader pipeline
+     * @returns {void}
+     */
+    #ensureSharedLayouts() {
+        if (this.#sharedPipelineLayout) return;
+        const stage = globalThis.GPUShaderStage ?? { VERTEX: 0x1, FRAGMENT: 0x2 };
+        const visibilityAll = stage.VERTEX | stage.FRAGMENT;
+
+        this.#sharedSceneLayout = AzWGPU.BindGroup.createLayout(this.device, {
+            label: "WrSharedSceneBGL",
+            entries: [{
+                binding: 0,
+                visibility: visibilityAll,
+                buffer: {
+                    type: "uniform",
+                    minBindingSize: WR_SCENE_UBO_BYTES,
+                },
+            }],
+        });
+        this.#sharedObjectLayout = AzWGPU.BindGroup.createLayout(this.device, {
+            label: "WrSharedObjectBGL",
+            entries: [
+                {
+                    binding: 0,
+                    visibility: visibilityAll,
+                    buffer: {
+                        type: "uniform",
+                        minBindingSize: WR_OBJECT_UBO_BYTES,
+                    },
+                },
+                {
+                    binding: 1,
+                    visibility: visibilityAll,
+                    sampler: {
+                        type: "filtering",
+                    },
+                },
+                {
+                    binding: 2,
+                    visibility: visibilityAll,
+                    texture: {
+                        sampleType: "float",
+                        viewDimension: "2d",
+                        multisampled: false,
+                    },
+                },
+            ],
+        });
+        this.#sharedPipelineLayout = this.device.createPipelineLayout({
+            label: "WrSharedPipelineLayout",
+            bindGroupLayouts: [this.#sharedSceneLayout, this.#sharedObjectLayout],
+        });
+    }
+
+    /**
+     * Get or create shader modules and binding map for shader id
      * @param {string} shaderId shader id
      * @param {object} shaderAsset shader asset
      * @returns {object}
@@ -452,9 +455,8 @@ export class WrBackendWGPU extends WrBackendBase {
         const cached = this.#shaderCache.get(shaderId);
         if (cached) return cached;
 
-        const state = { ok: false, vertexModule: null, fragmentModule: null, bindingMap: new Map() };
+        const state = { ok: false, vertexModule: null, fragmentModule: null };
         try {
-            state.bindingMap = wrCollectShaderBindings(shaderAsset);
             state.vertexModule = AzWGPU.Shader.create(this.device, {
                 code: shaderAsset.resolved?.vertex?.wgsl ?? shaderAsset.vertex?.wgsl ?? "",
                 label: `${shaderId}:vs`,
@@ -474,7 +476,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or create render pipeline for shader + render cfg.
+     * Get or create render pipeline for shader + render cfg
      * @param {string} shaderId shader id
      * @param {object} shaderAsset shader asset
      * @param {object} shaderState compiled shader state
@@ -488,6 +490,7 @@ export class WrBackendWGPU extends WrBackendBase {
         if (cached) return cached;
 
         try {
+            this.#ensureSharedLayouts();
             const needsDepth = cfg.depthTest || cfg.depthWrite;
             const attrs = (shaderAsset.vertexLayout?.attributes ?? []).map((attr) => ({
                 shaderLocation: attr.location,
@@ -496,7 +499,7 @@ export class WrBackendWGPU extends WrBackendBase {
             }));
             const pipeline = AzWGPU.Pipeline.createRender(this.device, {
                 label: `Wr:${cacheKey}`,
-                layout: "auto",
+                layout: this.#sharedPipelineLayout,
                 vertex: {
                     module: shaderState.vertexModule,
                     entryPoint: "wr_vs_main",
@@ -532,7 +535,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or upload mesh buffers to GPU cache.
+     * Get or upload mesh buffers to GPU cache
      * @param {string} meshId mesh id
      * @param {object} meshAsset mesh asset
      * @param {number} [morphTargetIndex=0] selected morph target index
@@ -543,7 +546,7 @@ export class WrBackendWGPU extends WrBackendBase {
         const cached = this.#meshCache.get(cacheKey);
         if (cached) return cached;
 
-        const packedSubmeshes = wrPackMesh(meshAsset, { morphTargetIndex });
+        const packedSubmeshes = WrMesh.pack(meshAsset, { morphTargetIndex });
         const out = { submeshes: [] };
 
         for (const packed of packedSubmeshes) {
@@ -572,7 +575,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or create scene uniform buffer.
+     * Get or create scene uniform buffer
      * @returns {GPUBuffer}
      */
     #ensureSceneUniformBuffer() {
@@ -586,7 +589,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or create one object uniform buffer by draw key.
+     * Get or create one object uniform buffer by draw key
      * @param {string} objectKey draw object key
      * @returns {GPUBuffer}
      */
@@ -604,7 +607,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Write scene uniform block from camera state.
+     * Write scene uniform block from camera state
      * @param {object|null} camera active camera
      * @returns {void}
      */
@@ -627,7 +630,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Write object uniform block from draw and material state.
+     * Write object uniform block from draw and material state
      * @param {GPUBuffer} objectBuffer target object uniform buffer
      * @param {object} draw draw packet
      * @param {object|null} [materialState=null] material state
@@ -674,137 +677,73 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Check if shader references a bind group index.
-     * @param {object} shaderState shader state
-     * @param {number} groupIndex bind group index
-     * @returns {boolean}
-     */
-    #shaderUsesGroup(shaderState, groupIndex) {
-        return (shaderState?.bindingMap?.get(groupIndex)?.size ?? 0) > 0;
-    }
-
-    /**
-     * Build ordered bind group entries with required-binding validation.
-     * @param {string} shaderId shader id
-     * @param {object} shaderState shader state
-     * @param {number} groupIndex bind group index
-     * @param {Map<number, any>} resourceByBinding binding resource map
-     * @param {string} warnKeyPrefix warning key prefix
-     * @returns {object[]|null}
-     */
-    #buildBindGroupEntries(shaderId, shaderState, groupIndex, resourceByBinding, warnKeyPrefix) {
-        const requiredBindings = shaderState?.bindingMap?.get(groupIndex);
-        if (!requiredBindings || requiredBindings.size <= 0) return [];
-
-        const ordered = Array.from(requiredBindings).sort((a, b) => a - b);
-        const entries = [];
-        for (const bindingIndex of ordered) {
-            if (!resourceByBinding.has(bindingIndex)) {
-                this.#warnOnce(
-                    `${warnKeyPrefix}:${shaderId}:g${groupIndex}:b${bindingIndex}`,
-                    `[WrBackendWGPU] missing resource for "${shaderId}" at group ${groupIndex}, binding ${bindingIndex}; draw skipped`
-                );
-                return null;
-            }
-            entries.push({
-                binding: bindingIndex,
-                resource: resourceByBinding.get(bindingIndex),
-            });
-        }
-        return entries;
-    }
-
-    /**
-     * Get or create scene bind group for shader.
-     * @param {string} shaderId shader id
-     * @param {GPURenderPipeline} pipeline render pipeline
-     * @param {object} shaderState shader state
+     * Get or create shared scene bind group
      * @returns {GPUBindGroup|null}
      */
-    #ensureSceneBindGroup(shaderId, pipeline, shaderState) {
-        const key = `${shaderId}|scene`;
+    #ensureSceneBindGroup() {
+        const key = "shared|scene";
         const cached = this.#sceneBindGroupCache.get(key);
         if (cached) return cached;
-        if (!this.#shaderUsesGroup(shaderState, 0)) return null;
+        this.#ensureSharedLayouts();
 
         const sceneBuffer = this.#ensureSceneUniformBuffer();
-        const entries = this.#buildBindGroupEntries(
-            shaderId,
-            shaderState,
-            0,
-            new Map([[0, { buffer: sceneBuffer }]]),
-            "scene-bg-resource"
-        );
-        if (!entries || entries.length <= 0) return null;
+        const entries = [{
+            binding: 0,
+            resource: { buffer: sceneBuffer },
+        }];
 
         try {
             const bindGroup = AzWGPU.BindGroup.create(this.device, {
-                label: `WrWorldBG:${shaderId}`,
-                layout: pipeline.getBindGroupLayout(0),
+                label: "WrWorldBG:shared",
+                layout: this.#sharedSceneLayout,
                 entries,
             });
             this.#sceneBindGroupCache.set(key, bindGroup);
             return bindGroup;
         } catch (error) {
-            this.#warnOnce(`scene-bg:${shaderId}`, `[WrBackendWGPU] scene bind group failed for "${shaderId}": ${String(error?.message ?? error)}`);
+            this.#warnOnce("scene-bg:shared", `[WrBackendWGPU] scene bind group failed: ${String(error?.message ?? error)}`);
             return null;
         }
     }
 
     /**
-     * Get or create object bind group for shader and texture key.
-     * @param {string} shaderId shader id
-     * @param {GPURenderPipeline} pipeline render pipeline
-     * @param {object} shaderState shader state
+     * Get or create shared object bind group for one draw object + texture key
      * @param {string|null} albedoTexID texture id
      * @param {object} assets asset store
      * @param {string} objectKey draw object key
      * @returns {GPUBindGroup|null}
      */
-    #ensureObjectBindGroup(shaderId, pipeline, shaderState, albedoTexID, assets, objectKey) {
+    #ensureObjectBindGroup(albedoTexID, assets, objectKey) {
         const texKey = albedoTexID ? String(albedoTexID) : "__fallback__";
-        const key = `${shaderId}|object|${String(objectKey ?? "__default__")}|${texKey}`;
+        const key = `shared|object|${String(objectKey ?? "__default__")}|${texKey}`;
         const cached = this.#objectBindGroupCache.get(key);
         if (cached) return cached;
-        if (!this.#shaderUsesGroup(shaderState, 1)) return null;
+        this.#ensureSharedLayouts();
 
         const objectBuffer = this.#ensureObjectUniformBuffer(objectKey);
-        let layout = null;
-        try {
-            layout = pipeline.getBindGroupLayout(1);
-        } catch (_error) {
-            return null;
-        }
         const { sampler, textureView } = this.#ensureTextureResources(albedoTexID, assets);
-        const entries = this.#buildBindGroupEntries(
-            shaderId,
-            shaderState,
-            1,
-            new Map([
-                [0, { buffer: objectBuffer }],
-                [1, sampler],
-                [2, textureView],
-            ]),
-            "object-bg-resource"
-        );
-        if (!entries || entries.length <= 0) return null;
+        const entries = [
+            { binding: 0, resource: { buffer: objectBuffer } },
+            { binding: 1, resource: sampler },
+            { binding: 2, resource: textureView },
+        ];
 
         try {
             const bindGroup = AzWGPU.BindGroup.create(this.device, {
-                label: `WrObjectBG:${shaderId}`,
-                layout,
+                label: "WrObjectBG:shared",
+                layout: this.#sharedObjectLayout,
                 entries,
             });
             this.#objectBindGroupCache.set(key, bindGroup);
             return bindGroup;
         } catch (error) {
-            this.#warnOnce(`object-bg:${shaderId}`, `[WrBackendWGPU] object bind group failed for "${shaderId}": ${String(error?.message ?? error)}`);
+            this.#warnOnce("object-bg:shared", `[WrBackendWGPU] object bind group failed: ${String(error?.message ?? error)}`);
             return null;
         }
     }
 
     /**
-     * Get or create sampler/texture resources for texture id.
+     * Get or create sampler/texture resources for texture id
      * @param {string|null} textureID texture id
      * @param {object} assets asset store
      * @returns {{sampler: GPUSampler, texture: GPUTexture, textureView: GPUTextureView}}
@@ -864,7 +803,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or create shared white fallback texture resources.
+     * Get or create shared white fallback texture resources
      * @returns {{sampler: GPUSampler, texture: GPUTexture, textureView: GPUTextureView}}
      */
     #ensureFallbackTextureResources() {
@@ -906,7 +845,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Check if frame requires depth attachment.
+     * Check if frame requires depth attachment
      * @param {object} queue render queue
      * @param {object} frameRenderCfg frame render config
      * @returns {boolean}
@@ -923,7 +862,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Destroy current depth texture target.
+     * Destroy current depth texture target
      * @returns {void}
      */
     #releaseDepthTarget() {
@@ -935,7 +874,7 @@ export class WrBackendWGPU extends WrBackendBase {
     }
 
     /**
-     * Get or create depth view matching current canvas size.
+     * Get or create depth view matching current canvas size
      * @returns {GPUTextureView}
      */
     #ensureDepthTarget() {
@@ -974,6 +913,9 @@ export class WrBackendWGPU extends WrBackendBase {
     #fallbackSampler;
     #fallbackTexture;
     #fallbackTextureView;
+    #sharedSceneLayout;
+    #sharedObjectLayout;
+    #sharedPipelineLayout;
     #depthTexture;
     #depthView;
     #depthWidth;
@@ -984,3 +926,4 @@ export class WrBackendWGPU extends WrBackendBase {
 }
 
 export default WrBackendWGPU;
+

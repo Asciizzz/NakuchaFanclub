@@ -1,8 +1,7 @@
 import { Ctx } from "../../AzLib/Azt.js";
 import { AzCamera } from "../../AzLib/AzCamera.js";
-import { wrCloneData } from "../Assets/AssetTypes.js";
 import WrAssetStore from "../Assets/AssetStore.js";
-import { wrChooseBackend } from "../Backends/BackendChooser.js";
+import WrBackendBase from "../Backends/BackendBase.js";
 import { wrCompareVertexSignatures, wrValidateShaderDefinition } from "./ShaderAbi.js";
 import {
     wrDefaultKeyMapGlsl,
@@ -21,33 +20,33 @@ const WR_WORLD_NODE_CORE_KEYS = new Set(["ctx", "id", "parentId", "childIds"]);
 const WR_WORLD_SCENE_NODE_SKIP_KEYS = new Set(["id", "parent", "children", "components", "$"]);
 
 /**
- * Check whether value is a canvas element.
+ * Check whether value is a canvas element
  * @param {any} value input value
  * @returns {boolean}
  */
-function wrIsCanvasElement(value) {
+function isCanvasElement(value) {
     return value instanceof HTMLCanvasElement;
 }
 
 /**
- * Resolve or create a canvas using canvas options.
+ * Resolve or create a canvas using canvas options
  * @param {object} [opts={}] canvas options
  * @returns {HTMLCanvasElement}
  */
-function wrEnsureCanvas(opts = {}) {
-    if (wrIsCanvasElement(opts.element)) return opts.element;
+function ensureCanvas(opts = {}) {
+    if (isCanvasElement(opts.element)) return opts.element;
 
     const id = String(opts.id ?? "wr-canvas");
     const found = globalThis.document?.getElementById?.(id);
-    if (wrIsCanvasElement(found)) return found;
+    if (isCanvasElement(found)) return found;
 
     const canvas = globalThis.document?.createElement?.("canvas");
-    if (!wrIsCanvasElement(canvas)) {
+    if (!isCanvasElement(canvas)) {
         throw new Error("[WrWorld] failed to create canvas");
     }
 
     let canvasId = id;
-    if (found && !wrIsCanvasElement(found)) {
+    if (found && !isCanvasElement(found)) {
         canvasId = `${id}-canvas`;
     }
     if (globalThis.document?.getElementById) {
@@ -61,11 +60,11 @@ function wrEnsureCanvas(opts = {}) {
 }
 
 /**
- * Resolve string id from id-like input.
+ * Resolve string id from id-like input
  * @param {string|object|null|undefined} value id input
  * @returns {string|null}
  */
-function wrResolveNodeRefId(value) {
+function resolveNodeRefId(value) {
     if (value == null) return null;
     if (typeof value === "object") {
         const id = String(value.id ?? "").trim();
@@ -76,50 +75,50 @@ function wrResolveNodeRefId(value) {
 }
 
 /**
- * Copy direct payload fields from one ctx node to another.
- * Core hierarchy keys are skipped.
+ * Copy direct payload fields from one ctx node to another
+ * Core hierarchy keys are skipped
  * @param {object} target target node
  * @param {object} source source node
  * @returns {void}
  */
-function wrCopyNodePayload(target, source) {
+function copyNodePayload(target, source) {
     if (!target || !source) return;
     for (const key of Object.keys(source)) {
         if (WR_WORLD_NODE_CORE_KEYS.has(key)) continue;
-        target[key] = wrCloneData(source[key]);
+        target[key] = WrAssetStore.cloneData(source[key]);
     }
 }
 
 /**
- * Copy scene-node payload into one ctx node.
+ * Copy scene-node payload into one ctx node
  * @param {object} target target node
  * @param {object} source source scene node
  * @returns {void}
  */
-function wrCopySceneNodePayload(target, source) {
+function copySceneNodePayload(target, source) {
     if (!target || !source) return;
 
     for (const key of Object.keys(source)) {
         if (WR_WORLD_SCENE_NODE_SKIP_KEYS.has(key)) continue;
-        target[key] = wrCloneData(source[key]);
+        target[key] = WrAssetStore.cloneData(source[key]);
     }
 
     const comps = (source.components && typeof source.components === "object")
         ? source.components
         : ((source.$ && typeof source.$ === "object") ? source.$ : {});
     for (const [key, value] of Object.entries(comps)) {
-        target[key] = wrCloneData(value);
+        target[key] = WrAssetStore.cloneData(value);
     }
 }
 
 /**
- * Remap known node-id links and fire optional remap hooks.
+ * Remap known node-id links and fire optional remap hooks
  * @param {object} node target node
  * @param {Map<string, string>} idMap source->target id map
  * @param {WrWorld} world world context
  * @returns {void}
  */
-function wrRemapNodeLinks(node, idMap, world) {
+function remapNodeLinks(node, idMap, world) {
     if (!node || !(idMap instanceof Map)) return;
     for (const [key, value] of Object.entries(node)) {
         if (WR_WORLD_NODE_CORE_KEYS.has(key)) continue;
@@ -146,12 +145,12 @@ function wrRemapNodeLinks(node, idMap, world) {
 }
 
 /**
- * Main Wr world context.
- * Owns backend lifecycle, shared asset registry, and one shared branch graph.
+ * Main Wr world context
+ * Owns backend lifecycle, shared asset registry, and one shared branch graph
  */
 export class WrWorld extends Ctx {
     /**
-     * Create a new world context.
+     * Create a new world context
      * @param {object} [options={}] initialization options
      */
     constructor(options = {}) {
@@ -160,7 +159,7 @@ export class WrWorld extends Ctx {
         });
         this.options = options ?? {};
         this.canvasOptions = this.options.canvas ?? {};
-        this.canvas = wrEnsureCanvas(this.canvasOptions);
+        this.canvas = ensureCanvas(this.canvasOptions);
         this.backendOptions = this.options.backend ?? {};
         this.camera = this.options.camera instanceof AzCamera
             ? this.options.camera
@@ -177,18 +176,18 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Active backend kind string.
+     * Active backend kind string
      * @returns {string|null}
      */
     get backendKind() { return this.backend?.kind ?? null; }
     /**
-     * Backend capability report.
+     * Backend capability report
      * @returns {object}
      */
     get capabilities() { return this.backend?.getCapabilities?.() ?? {}; }
 
     /**
-     * Read backend capabilities.
+     * Read backend capabilities
      * @returns {object}
      */
     getCapabilities() {
@@ -196,7 +195,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Set active camera.
+     * Set active camera
      * @param {AzCamera} camera camera instance
      * @returns {WrWorld}
      */
@@ -206,7 +205,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Initialize backend and configure initial size.
+     * Initialize backend and configure initial size
      * @param {object} [options={}] backend override options
      * @returns {Promise<WrWorld>}
      */
@@ -226,7 +225,7 @@ export class WrWorld extends Ctx {
         }
         mergedBackendOpts.webgl = webglOptions;
 
-        const { backend, report } = await wrChooseBackend(this.canvas, mergedBackendOpts);
+        const { backend, report } = await WrBackendBase.choose(this.canvas, mergedBackendOpts);
         this.backend = backend;
         this.runtimeReport = { backend: report };
         this.resize(
@@ -237,7 +236,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Mount canvas into a DOM target.
+     * Mount canvas into a DOM target
      * @param {Element} target target DOM element
      * @returns {WrWorld}
      */
@@ -251,7 +250,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Unmount canvas from current parent.
+     * Unmount canvas from current parent
      * @returns {WrWorld}
      */
     unmount() {
@@ -260,7 +259,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Resize canvas to current parent client rect.
+     * Resize canvas to current parent client rect
      * @returns {WrWorld}
      */
     fitContainer() {
@@ -271,7 +270,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Resize canvas and backend buffers using DPR scaling.
+     * Resize canvas and backend buffers using DPR scaling
      * @param {number} width css width
      * @param {number} height css height
      * @returns {WrWorld}
@@ -294,7 +293,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Register shader with dual WGSL/GLSL support and resolved template keys.
+     * Register shader with dual WGSL/GLSL support and resolved template keys
      * @param {string} shaderId shader id
      * @param {object} [shaderDesc={}] shader description
      * @param {object|undefined} [renderCfgInput=undefined] optional render config override
@@ -342,7 +341,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Compare shader vertex layout with provided mesh layout.
+     * Compare shader vertex layout with provided mesh layout
      * @param {string} shaderId shader id
      * @param {object} providedLayout mesh vertex layout
      * @returns {object}
@@ -354,77 +353,111 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Create empty node and track roots list.
+     * Create empty node and track roots list
      * @param {string|null} [parentId=null] parent node id
      * @param {number} [index=-1] insert index
-     * @returns {import("../../AzLib/Azt.js").Node|null}
+     * @returns {import("//AzLib/Aztjs")Node|null}
      */
     addNode(parentId = null, index = -1) {
         const node = super.addNode(parentId, index);
-        this.#refreshRoots();
+        if (node && node.parentId == null) this.#addRootId(node.id);
         return node;
     }
 
     /**
-     * Reparent node and track roots list.
+     * Reparent node and track roots list
      * @param {string} id node id
      * @param {string|null} [newParentId=null] new parent id
-     * @returns {import("../../AzLib/Azt.js").Node|null}
+     * @returns {import("//AzLib/Aztjs")Node|null}
      */
     moveNode(id, newParentId = null) {
+        const source = this.getNode(id);
+        const wasRoot = source?.parentId == null;
         const node = super.moveNode(id, newParentId);
-        this.#refreshRoots();
+        if (!node) return null;
+        const isRoot = node.parentId == null;
+        if (wasRoot !== isRoot) {
+            if (isRoot) this.#addRootId(node.id);
+            else this.#removeRootId(node.id);
+        }
         return node;
     }
 
     /**
-     * Delete one node or branch and track roots list.
+     * Delete one node or branch and track roots list
      * @param {string} id node id
      * @param {boolean} [branch=false] delete branch toggle
-     * @returns {import("../../AzLib/Azt.js").Node|null}
+     * @returns {import("//AzLib/Aztjs")Node|null}
      */
     deleteNode(id, branch = false) {
+        const source = this.getNode(id);
+        if (!source) return null;
+
+        const wasRoot = source.parentId == null;
+        const childIds = Array.isArray(source.childIds) ? source.childIds.slice() : [];
         const node = super.deleteNode(id, branch);
-        this.#refreshRoots();
+        if (!node) return null;
+
+        if (wasRoot) this.#removeRootId(id);
+        if (wasRoot && !branch) {
+            for (const childId of childIds) {
+                const childNode = this.getNode(childId);
+                if (childNode?.parentId == null) this.#addRootId(childId);
+            }
+        }
         return node;
     }
 
     /**
-     * Swap two node positions and track roots list.
+     * Swap two node positions and track roots list
      * @param {string} idA first node id
      * @param {string} idB second node id
      * @returns {boolean}
      */
     swapNodes(idA, idB) {
         const ok = super.swapNodes(idA, idB);
-        if (ok) this.#refreshRoots();
+        if (!ok) return false;
+        this.#replaceRootState(idA);
+        this.#replaceRootState(idB);
         return ok;
     }
 
     /**
-     * Traverse one branch with transform/runtime binding updates.
+     * Raw branch traversal that directly proxies AztCtx traversal
      * @param {object} [options={}] traverse options
-     * @returns {Generator<import("../../AzLib/Azt.js").Node>}
+     * @returns {Generator<import("//AzLib/Aztjs")Node>}
      */
-    *traverse(options = {}) {
+    *traverseRaw(options = {}) {
         const src = options && typeof options === "object" ? options : {};
-        const fromId = wrResolveNodeRefId(src.from ?? null);
+        const fromId = resolveNodeRefId(src.from ?? null);
         if (!fromId) return;
-
-        WrWorldRuntime.updateTransforms(this, { from: fromId });
-        for (const node of super.traverse({
+        yield* super.traverse({
             ...src,
             from: fromId,
-        })) {
-            WrWorldRuntime.bindNodeComponents(this, node);
-            yield node;
-        }
+        });
     }
 
     /**
-     * Load model via internal GLB loader, ingest assets, and return copied branch root.
+     * Traverse one branch with transform/runtime binding updates
+     * @param {object} [options={}] traverse options
+     * @returns {Generator<import("//AzLib/Aztjs")Node>}
+     */
+    *traverse(options = {}) {
+        const src = options && typeof options === "object" ? options : {};
+        const fromId = resolveNodeRefId(src.from ?? null);
+        if (!fromId) return;
+        yield* WrWorldRuntime.traverseNodes(this, {
+            ...src,
+            from: fromId,
+            updateTransforms: src.updateTransforms !== false,
+            bindComponents: true,
+        });
+    }
+
+    /**
+     * Load model via internal GLB loader, ingest assets, and return copied branch root
      * @param {string} url model URL
-     * @returns {Promise<import("../../AzLib/Azt.js").Node>}
+     * @returns {Promise<import("//AzLib/Aztjs")Node>}
      */
     async loadModelFromURL(url) {
         const targetUrl = String(url ?? "").trim();
@@ -497,36 +530,35 @@ export class WrWorld extends Ctx {
             const mappedParentId = sourceId === sourceRootId
                 ? null
                 : (idMap.get(sourceParentId) ?? null);
-            const targetNode = super.addNode(mappedParentId);
+            const targetNode = this.addNode(mappedParentId);
             if (!targetNode) {
                 throw new Error(`[WrWorld] failed to add node copied from "${sourceId}"`);
             }
-            wrCopySceneNodePayload(targetNode, sourceNode);
+            copySceneNodePayload(targetNode, sourceNode);
             copied.push(targetNode);
             idMap.set(sourceId, targetNode.id);
         }
 
         for (const node of copied) {
-            wrRemapNodeLinks(node, idMap, this);
+            remapNodeLinks(node, idMap, this);
             WrWorldRuntime.bindNodeComponents(this, node);
         }
 
         const rootNode = this.getNode(idMap.get(sourceRootId));
         if (!rootNode) throw new Error("[WrWorld] copied root could not be resolved");
         rootNode.name = String(sceneData.name ?? payload.name ?? rootNode.id);
-        this.#refreshRoots();
         return rootNode;
     }
 
     /**
-     * Duplicate one branch and optionally attach copied root under target parent.
+     * Duplicate one branch and optionally attach copied root under target parent
      * @param {string|object} fromId source branch root id or node ref
      * @param {string|object|null} [toId=null] attach parent id or node ref
-     * @returns {import("../../AzLib/Azt.js").Node|null}
+     * @returns {import("//AzLib/Aztjs")Node|null}
      */
     copyBranch(fromId, toId = null) {
-        const sourceId = wrResolveNodeRefId(fromId);
-        const targetParentId = wrResolveNodeRefId(toId);
+        const sourceId = resolveNodeRefId(fromId);
+        const targetParentId = resolveNodeRefId(toId);
         if (!sourceId) return null;
 
         const sourceRoot = this.getNode(sourceId);
@@ -549,34 +581,32 @@ export class WrWorld extends Ctx {
             const mappedParentId = sourceNode.id === sourceRoot.id
                 ? (targetParentId ?? null)
                 : (idMap.get(sourceNode.parentId) ?? (targetParentId ?? null));
-            const targetNode = super.addNode(mappedParentId);
+            const targetNode = this.addNode(mappedParentId);
             if (!targetNode) return null;
-            wrCopyNodePayload(targetNode, sourceNode);
+            copyNodePayload(targetNode, sourceNode);
             copied.push(targetNode);
             idMap.set(sourceNode.id, targetNode.id);
         }
 
         for (const node of copied) {
-            wrRemapNodeLinks(node, idMap, this);
+            remapNodeLinks(node, idMap, this);
             WrWorldRuntime.bindNodeComponents(this, node);
         }
 
-        this.#refreshRoots();
         return this.getNode(idMap.get(sourceRoot.id));
     }
 
     /**
-     * Update one branch and run node update callbacks.
+     * Update one branch and run node update callbacks
      * @param {number} [deltaTime=0] frame delta time in seconds
      * @param {object} [options={}] update options
      * @returns {WrWorld}
      */
     update(deltaTime = 0, options = {}) {
         this.deltaTime = Number(deltaTime) || 0;
-        const fromId = wrResolveNodeRefId(options?.from ?? this.roots[0] ?? null);
+        const fromId = resolveNodeRefId(options?.from ?? this.roots[0] ?? null);
         if (!fromId) return this;
 
-        WrWorldRuntime.updateTransforms(this, { from: fromId });
         for (const node of this.traverse({
             from: fromId,
             mode: "dfs_pre",
@@ -614,7 +644,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Render world branches with backend.
+     * Render world branches with backend
      * @param {object} [options={}] render options
      * @returns {WrWorld}
      */
@@ -627,7 +657,7 @@ export class WrWorld extends Ctx {
         const defaultRenderCfg = wrNormalizeRenderCfg(
             options.renderCfg ?? this.defaultRenderCfg ?? WR_DEFAULT_RENDER_CFG
         );
-        const singleFromId = wrResolveNodeRefId(options?.from ?? null);
+        const singleFromId = resolveNodeRefId(options?.from ?? null);
         const fromIds = singleFromId
             ? [singleFromId]
             : this.roots.slice();
@@ -636,7 +666,6 @@ export class WrWorld extends Ctx {
         const draws = [];
         let frameRenderCfg = defaultRenderCfg;
         for (const fromId of fromIds) {
-            WrWorldRuntime.updateTransforms(this, { from: fromId });
             const queue = WrRenderQueue.build(this, camera, this.assets, {
                 from: fromId,
                 defaultShaderId,
@@ -669,7 +698,7 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Destroy backend resources for this world context.
+     * Destroy backend resources for this world context
      * @returns {void}
      */
     destroy() {
@@ -679,17 +708,48 @@ export class WrWorld extends Ctx {
     }
 
     /**
-     * Rebuild root-id reference list from current node map.
+     * Add one root id if it is not already tracked
+     * @param {string} id node id
      * @returns {void}
      */
-    #refreshRoots() {
-        this.roots.length = 0;
-        for (const node of this.nodes.values()) {
-            if (node?.parentId == null) this.roots.push(String(node.id));
+    #addRootId(id) {
+        const key = String(id ?? "").trim();
+        if (!key) return;
+        if (this.roots.includes(key)) return;
+        this.roots.push(key);
+    }
+
+    /**
+     * Remove one root id from tracked list
+     * @param {string} id node id
+     * @returns {void}
+     */
+    #removeRootId(id) {
+        const key = String(id ?? "").trim();
+        if (!key) return;
+        const index = this.roots.indexOf(key);
+        if (index < 0) return;
+        this.roots.splice(index, 1);
+    }
+
+    /**
+     * Re-evaluate one node root state and sync root list
+     * @param {string} id node id
+     * @returns {void}
+     */
+    #replaceRootState(id) {
+        const node = this.getNode(id);
+        if (!node) {
+            this.#removeRootId(id);
+            return;
         }
+        if (node.parentId == null) this.#addRootId(node.id);
+        else this.#removeRootId(node.id);
     }
 }
 
 export default WrWorld;
+
+
 
 

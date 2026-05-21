@@ -87,7 +87,7 @@ const WR_STAGE_KEYS = Object.freeze({
 });
 
 /**
- * Extract distinct template keys from source text.
+ * Extract distinct template keys from source text
  * @param {string} source shader source
  * @returns {string[]}
  */
@@ -98,7 +98,7 @@ export function wrExtractTemplateKeys(source) {
 }
 
 /**
- * Validate template keys against stage key allowlist.
+ * Validate template keys against stage key allowlist
  * @param {string} source shader source
  * @param {"vertex"|"fragment"} stage stage name
  * @returns {string[]}
@@ -121,7 +121,7 @@ export function wrValidateTemplateKeys(source, stage) {
 }
 
 /**
- * Replace template keys with stage-specific replacements.
+ * Replace template keys with stage-specific replacements
  * @param {string} source shader source
  * @param {"vertex"|"fragment"} stage stage name
  * @param {object} keyMap replacement map
@@ -152,7 +152,7 @@ export function wrReplaceTemplateKeys(source, stage, keyMap) {
 }
 
 /**
- * Default WGSL replacement map for non-template mode.
+ * Default WGSL replacement map for non-template mode
  * @returns {object}
  */
 export function wrDefaultKeyMapWgsl() {
@@ -183,7 +183,7 @@ export function wrDefaultKeyMapWgsl() {
 }
 
 /**
- * Default GLSL replacement map for non-template mode.
+ * Default GLSL replacement map for non-template mode
  * @returns {object}
  */
 export function wrDefaultKeyMapGlsl() {
@@ -214,7 +214,7 @@ export function wrDefaultKeyMapGlsl() {
 }
 
 /**
- * Template-mode WGSL replacement map.
+ * Template-mode WGSL replacement map
  * @returns {object}
  */
 export function wrTemplateKeyMapWgsl() {
@@ -245,7 +245,7 @@ export function wrTemplateKeyMapWgsl() {
 }
 
 /**
- * Template-mode GLSL replacement map.
+ * Template-mode GLSL replacement map
  * @returns {object}
  */
 export function wrTemplateKeyMapGlsl() {
@@ -274,3 +274,4 @@ export function wrTemplateKeyMapGlsl() {
         "$OUT_COLOR$": "outputColor",
     };
 }
+

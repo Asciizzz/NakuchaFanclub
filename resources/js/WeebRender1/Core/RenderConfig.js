@@ -1,5 +1,5 @@
 /**
- * Convert numeric input with fallback.
+ * Convert numeric input with fallback
  * @param {any} value input value
  * @param {number} [fallback=0] fallback value
  * @returns {number}
@@ -10,7 +10,7 @@ function wrNumberOr(value, fallback = 0) {
 }
 
 /**
- * Clamp numeric input to [0, 1].
+ * Clamp numeric input to [0, 1]
  * @param {any} value input value
  * @param {number} [fallback=0] fallback value
  * @returns {number}
@@ -23,7 +23,7 @@ function wrClamp01(value, fallback = 0) {
 }
 
 /**
- * Normalize depth compare mode string.
+ * Normalize depth compare mode string
  * @param {any} value compare mode
  * @returns {string}
  */
@@ -41,7 +41,7 @@ function wrNormalizeDepthCompare(value) {
 }
 
 /**
- * Normalize cull mode string.
+ * Normalize cull mode string
  * @param {any} value cull mode
  * @returns {"back"|"front"|"none"}
  */
@@ -65,9 +65,9 @@ export const WR_DEFAULT_RENDER_CFG = Object.freeze({
 });
 
 /**
- * Normalize clear color input to RGBA array in [0, 1].
+ * Normalize clear color input to RGBA array in [0, 1]
  * @param {ArrayLike<number>|null|undefined} value clear color input
- * @param {ArrayLike<number>} [fallback=WR_DEFAULT_RENDER_CFG.clearColor] fallback color
+ * @param {ArrayLike<number>} [fallback=WR_DEFAULT_RENDER_CFGclearColor] fallback color
  * @returns {[number, number, number, number]}
  */
 export function wrNormalizeClearColor(value, fallback = WR_DEFAULT_RENDER_CFG.clearColor) {
@@ -81,7 +81,7 @@ export function wrNormalizeClearColor(value, fallback = WR_DEFAULT_RENDER_CFG.cl
 }
 
 /**
- * Normalize render config with defaults and type coercion.
+ * Normalize render config with defaults and type coercion
  * @param {object|null} [renderCfg=null] render config input
  * @returns {object}
  */
@@ -112,7 +112,7 @@ export function wrNormalizeRenderCfg(renderCfg = null) {
 }
 
 /**
- * Build stable string key for render config caching.
+ * Build stable string key for render config caching
  * @param {object|null} [renderCfg=null] render config input
  * @returns {string}
  */
@@ -133,3 +133,5 @@ export function wrRenderCfgKey(renderCfg = null) {
 }
 
 export default wrNormalizeRenderCfg;
+
+

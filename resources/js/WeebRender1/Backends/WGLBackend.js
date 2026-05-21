@@ -1,8 +1,9 @@
 import AzWGL from "../../AzLib/AzWGL.js";
 import * as Azm from "../../AzLib/Azm.js";
 import WrBackendBase from "./BackendBase.js";
-import { wrPackMesh } from "../Core/MeshPacking.js";
+import { WrMesh } from "../Assets/Mesh.js";
 import { wrNormalizeRenderCfg, wrRenderCfgKey } from "../Core/RenderConfig.js";
+import { WR_VERTEX_LAYOUT_V1 } from "../Core/ShaderAbi.js";
 
 const WR_SKIN_BONE_CAP = 128;
 const WR_IDENTITY_SKIN_PALETTE = (() => {
@@ -12,9 +13,46 @@ const WR_IDENTITY_SKIN_PALETTE = (() => {
     }
     return out;
 })();
+const WR_GL_ATTRIB_SEMANTIC_TO_NAME = Object.freeze({
+    position: "a_position",
+    normal: "a_normal",
+    uv: "a_uv",
+    boneID: "a_boneID",
+    boneWeight: "a_boneWeight",
+    morphPos: "a_morphPos",
+});
+const WR_GL_ATTRIB_COMPONENTS = Object.freeze({
+    float32: 1,
+    float32x2: 2,
+    float32x3: 3,
+    float32x4: 4,
+});
+const WR_GL_ATTRIB_LOCATIONS = Object.freeze((() => {
+    const out = {};
+    for (const attr of WR_VERTEX_LAYOUT_V1.attributes) {
+        const name = WR_GL_ATTRIB_SEMANTIC_TO_NAME[attr.semantic];
+        if (!name) continue;
+        out[name] = attr.location;
+    }
+    return out;
+})());
+const WR_GL_ATTRIB_LAYOUT = Object.freeze(
+    WR_VERTEX_LAYOUT_V1.attributes
+        .map((attr) => {
+            const name = WR_GL_ATTRIB_SEMANTIC_TO_NAME[attr.semantic];
+            const size = WR_GL_ATTRIB_COMPONENTS[attr.format] ?? 0;
+            if (!name || size <= 0) return null;
+            return Object.freeze({
+                location: attr.location,
+                size,
+                offset: attr.offset,
+            });
+        })
+        .filter(Boolean)
+);
 
 /**
- * Convert numeric input with fallback.
+ * Convert numeric input with fallback
  * @param {any} value input value
  * @param {number} [fallback=0] fallback value
  * @returns {number}
@@ -25,7 +63,7 @@ function wrNumberOr(value, fallback = 0) {
 }
 
 /**
- * Normalize RGBA array-like value.
+ * Normalize RGBA array-like value
  * @param {ArrayLike<number>|null|undefined} value source color
  * @param {number[]} [fallback=[1,1,1,1]] fallback color
  * @returns {number[]}
@@ -41,7 +79,7 @@ function wrColor4(value, fallback = [1, 1, 1, 1]) {
 }
 
 /**
- * Resolve effective material state for one mesh submesh.
+ * Resolve effective material state for one mesh submesh
  * @param {object} meshAsset mesh asset
  * @param {number} submeshIndex submesh index
  * @param {object} assets asset store
@@ -76,7 +114,7 @@ function wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets) {
 }
 
 /**
- * Map render config depth compare to WebGL enum.
+ * Map render config depth compare to WebGL enum
  * @param {WebGL2RenderingContext} gl GL context
  * @param {string} depthCompare compare mode
  * @param {boolean} depthTest depth test toggle
@@ -97,7 +135,7 @@ function wrDepthFuncGL(gl, depthCompare, depthTest) {
 }
 
 /**
- * WebGL2 backend implementation.
+ * WebGL2 backend implementation
  */
 export class WrBackendWGL extends WrBackendBase {
     /**
@@ -119,13 +157,13 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Backend kind tag.
+     * Backend kind tag
      * @returns {string}
      */
     get kind() { return "webgl2"; }
 
     /**
-     * Initialize WebGL2 context and capability report.
+     * Initialize WebGL2 context and capability report
      * @returns {Promise<WrBackendWGL>}
      */
     async init() {
@@ -150,7 +188,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Update viewport to current canvas pixel size.
+     * Update viewport to current canvas pixel size
      * @returns {void}
      */
     resize() {
@@ -159,7 +197,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Begin one frame.
+     * Begin one frame
      * @param {object} [frameCtx={}] frame context
      * @returns {void}
      */
@@ -170,7 +208,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Execute draw queue with shader, mesh, and texture caches.
+     * Execute draw queue with shader, mesh, and texture caches
      * @param {object|null} [queue=null] render queue
      * @returns {void}
      */
@@ -214,7 +252,7 @@ export class WrBackendWGL extends WrBackendBase {
             const meshAsset = assets.getMesh(draw.meshID);
             if (!meshAsset) continue;
             const morphTargetIndex = Math.max(0, Number(draw?.primaryMorphIndex ?? 0) | 0);
-            const meshGpu = this.#ensureMesh(draw.meshID, shaderId, meshAsset, shader.program, morphTargetIndex);
+            const meshGpu = this.#ensureMesh(draw.meshID, meshAsset, morphTargetIndex);
             if (!meshGpu || meshGpu.submeshes.length <= 0) continue;
 
             const renderCfg = wrNormalizeRenderCfg(draw.renderCfg ?? shaderAsset.renderCfg ?? frameRenderCfg);
@@ -278,13 +316,13 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * End frame hook.
+     * End frame hook
      * @returns {void}
      */
     endFrame() {}
 
     /**
-     * Destroy backend resources and GPU caches.
+     * Destroy backend resources and GPU caches
      * @returns {void}
      */
     destroy() {
@@ -294,13 +332,13 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Return cached capability report.
+     * Return cached capability report
      * @returns {object}
      */
     getCapabilities() { return this.report; }
 
     /**
-     * Get or compile shader program for one shader id.
+     * Get or compile shader program for one shader id
      * @param {string} shaderId shader id
      * @param {object} shaderAsset shader asset
      * @returns {{ok:boolean,program:WebGLProgram|null,error:string|null}}
@@ -315,6 +353,7 @@ export class WrBackendWGL extends WrBackendBase {
             state.program = AzWGL.Shader.create(gl, {
                 vertex: shaderAsset.resolved?.vertex?.glsl ?? shaderAsset.vertex?.glsl,
                 fragment: shaderAsset.resolved?.fragment?.glsl ?? shaderAsset.fragment?.glsl,
+                attribLocations: WR_GL_ATTRIB_LOCATIONS,
             });
             state.ok = true;
         } catch (error) {
@@ -330,31 +369,21 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Get or build cached GPU mesh buffers for one mesh/shader pair.
+     * Get or build cached GPU mesh buffers for one mesh
+     * Shared attribute locations make mesh GPU state shader-independent
      * @param {string} meshId mesh id
-     * @param {string} shaderId shader id
      * @param {object} meshAsset mesh asset
-     * @param {WebGLProgram} program shader program
      * @param {number} [morphTargetIndex=0] selected morph target index
      * @returns {{submeshes: object[]}}
      */
-    #ensureMesh(meshId, shaderId, meshAsset, program, morphTargetIndex = 0) {
-        const cacheKey = `${meshId}|${shaderId}|morph:${Math.max(0, Number(morphTargetIndex) | 0)}`;
+    #ensureMesh(meshId, meshAsset, morphTargetIndex = 0) {
+        const cacheKey = `${meshId}|morph:${Math.max(0, Number(morphTargetIndex) | 0)}`;
         const cached = this.#meshCache.get(cacheKey);
         if (cached) return cached;
 
         const gl = this.gl;
-        const packedSubmeshes = wrPackMesh(meshAsset, { morphTargetIndex });
+        const packedSubmeshes = WrMesh.pack(meshAsset, { morphTargetIndex });
         const out = { submeshes: [] };
-
-        const attrLoc = {
-            position: gl.getAttribLocation(program, "a_position"),
-            normal: gl.getAttribLocation(program, "a_normal"),
-            uv: gl.getAttribLocation(program, "a_uv"),
-            boneID: gl.getAttribLocation(program, "a_boneID"),
-            boneWeight: gl.getAttribLocation(program, "a_boneWeight"),
-            morphPos: gl.getAttribLocation(program, "a_morphPos"),
-        };
 
         for (const packed of packedSubmeshes) {
             const vbo = gl.createBuffer();
@@ -370,12 +399,15 @@ export class WrBackendWGL extends WrBackendBase {
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
             gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, packed.indexData, gl.STATIC_DRAW);
 
-            this.#wireAttr(attrLoc.position, 3, gl.FLOAT, 76, 0);
-            this.#wireAttr(attrLoc.normal, 3, gl.FLOAT, 76, 12);
-            this.#wireAttr(attrLoc.uv, 2, gl.FLOAT, 76, 24);
-            this.#wireAttr(attrLoc.boneID, 4, gl.FLOAT, 76, 32);
-            this.#wireAttr(attrLoc.boneWeight, 4, gl.FLOAT, 76, 48);
-            this.#wireAttr(attrLoc.morphPos, 3, gl.FLOAT, 76, 64);
+            for (const attr of WR_GL_ATTRIB_LAYOUT) {
+                this.#wireAttr(
+                    attr.location,
+                    attr.size,
+                    gl.FLOAT,
+                    WR_VERTEX_LAYOUT_V1.stride,
+                    attr.offset
+                );
+            }
 
             out.submeshes.push({
                 vao,
@@ -395,7 +427,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Wire one vertex attribute pointer.
+     * Wire one vertex attribute pointer
      * @param {number} location attrib location
      * @param {number} size components per vertex
      * @param {number} type GL type enum
@@ -410,7 +442,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Apply normalized render state if key changed.
+     * Apply normalized render state if key changed
      * @param {object} renderCfg render config
      * @returns {void}
      */
@@ -444,7 +476,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Destroy all cached GL resources.
+     * Destroy all cached GL resources
      * @returns {void}
      */
     #destroyGpuCaches() {
@@ -473,7 +505,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Emit texture warning once per key.
+     * Emit texture warning once per key
      * @param {string} key warning key
      * @param {string} message warning message
      * @returns {void}
@@ -485,8 +517,8 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Get or upload one texture by texture id.
-     * Falls back to internal white texture when missing.
+     * Get or upload one texture by texture id
+     * Falls back to internal white texture when missing
      * @param {string|null} textureID texture id
      * @param {object} assets asset store
      * @returns {WebGLTexture}
@@ -538,7 +570,7 @@ export class WrBackendWGL extends WrBackendBase {
     }
 
     /**
-     * Get or create shared 1x1 white fallback texture.
+     * Get or create shared 1x1 white fallback texture
      * @returns {WebGLTexture}
      */
     #ensureFallbackTexture() {
@@ -572,3 +604,4 @@ export class WrBackendWGL extends WrBackendBase {
 }
 
 export default WrBackendWGL;
+

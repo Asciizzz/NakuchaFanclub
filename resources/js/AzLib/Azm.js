@@ -1,4 +1,4 @@
-/* Azm - AzMath
+/* Azm (Math)
 By Asciiz
 
 Lightweight mathlib for Float32Array vectors/matrices/quater-onions(yummers)
@@ -542,10 +542,7 @@ Mat4.IDENTITY = Object.freeze([
 
 Mat4.makeIdentity = function(out = null) {
     out ??= new Float32Array(16);
-    out[0]  = Mat4.IDENTITY[0]; out[1]  = Mat4.IDENTITY[1]; out[2]  = Mat4.IDENTITY[2]; out[3]  = Mat4.IDENTITY[3];
-    out[4]  = Mat4.IDENTITY[4]; out[5]  = Mat4.IDENTITY[5]; out[6]  = Mat4.IDENTITY[6]; out[7]  = Mat4.IDENTITY[7];
-    out[8]  = Mat4.IDENTITY[8]; out[9]  = Mat4.IDENTITY[9]; out[10] = Mat4.IDENTITY[10]; out[11] = Mat4.IDENTITY[11];
-    out[12] = Mat4.IDENTITY[12]; out[13] = Mat4.IDENTITY[13]; out[14] = Mat4.IDENTITY[14]; out[15] = Mat4.IDENTITY[15];
+    out.set(Mat4.IDENTITY);
     return out;
 };
 
@@ -651,7 +648,8 @@ Mat4.invert = function(a, out = null) {
 };
 
 Mat4.fromTranslation = function(v, out = null) {
-    out = Mat4.makeIdentity(out);
+    out ??= new Float32Array(16);
+    out.set(Mat4.IDENTITY);
     out[12] = v[0];
     out[13] = v[1];
     out[14] = v[2];
@@ -659,7 +657,8 @@ Mat4.fromTranslation = function(v, out = null) {
 };
 
 Mat4.fromScaling = function(v, out = null) {
-    out = Mat4.makeIdentity(out);
+    out ??= new Float32Array(16);
+    out.set(Mat4.IDENTITY);
     out[0]  = v[0];
     out[5]  = v[1];
     out[10] = v[2];
@@ -667,7 +666,8 @@ Mat4.fromScaling = function(v, out = null) {
 };
 
 Mat4.fromRotationX = function(rad, out = null) {
-    out = Mat4.makeIdentity(out);
+    out ??= new Float32Array(16);
+    out.set(Mat4.IDENTITY);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[5]  =  c; out[6]  = s;
     out[9]  = -s; out[10] = c;
@@ -675,7 +675,8 @@ Mat4.fromRotationX = function(rad, out = null) {
 };
 
 Mat4.fromRotationY = function(rad, out = null) {
-    out = Mat4.makeIdentity(out);
+    out ??= new Float32Array(16);
+    out.set(Mat4.IDENTITY);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[0]  =  c; out[2]  = -s;
     out[8]  =  s; out[10] =  c;
@@ -683,7 +684,8 @@ Mat4.fromRotationY = function(rad, out = null) {
 };
 
 Mat4.fromRotationZ = function(rad, out = null) {
-    out = Mat4.makeIdentity(out);
+    out ??= new Float32Array(16);
+    out.set(Mat4.IDENTITY);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[0] =  c; out[1] = s;
     out[4] = -s; out[5] = c;
@@ -826,7 +828,7 @@ Mat4.lookAt = function(eye, target, up, out = null) {
     let fz = eye[2] - target[2];
     let len = Math.sqrt(fx * fx + fy * fy + fz * fz);
     if (len < EPSILON) {
-        Mat4.makeIdentity(out);
+        out.set(Mat4.IDENTITY);
         return out;
     }
     const invLenF = 1 / len;

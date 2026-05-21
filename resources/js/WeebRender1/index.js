@@ -1,16 +1,15 @@
-export { WrAsset } from "./Core/Asset.js";
+// export { WrAsset } from "./Core/Asset.js";
 export { WrWorld } from "./Core/World.js";
 export { WrWorldRuntime } from "./Core/WorldRuntime.js";
 export { WrRenderQueue } from "./Core/RenderQueue.js";
-export { wrPackMesh, wrPackSubmesh, wrResolveNodeModelMatrix } from "./Core/MeshPacking.js";
 
 export { WrBackendBase } from "./Backends/BackendBase.js";
 export { WrBackendWGPU } from "./Backends/WGPUBackend.js";
 export { WrBackendWGL } from "./Backends/WGLBackend.js";
-export { wrChooseBackend } from "./Backends/BackendChooser.js";
 
-export { WrAssetStore } from "./Assets/AssetStore.js";
-export { WrAssetKind } from "./Assets/AssetTypes.js";
+export { WrAssetStore, WrAssetKind, AssetKind } from "./Assets/AssetStore.js";
+export { WrMesh } from "./Assets/Mesh.js";
+export { WrSkeleton } from "./Assets/Skeleton.js";
 
 export {
     WR_VERTEX_ABI_VERSION,
@@ -42,4 +41,3 @@ export {
     wrNormalizeRenderCfg,
     wrRenderCfgKey,
 } from "./Core/RenderConfig.js";
-

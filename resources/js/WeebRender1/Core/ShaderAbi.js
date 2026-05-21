@@ -30,7 +30,7 @@ const WR_FORMAT_SIZE = Object.freeze({
 });
 
 /**
- * Assert non-empty string value.
+ * Assert non-empty string value
  * @param {any} value input value
  * @param {string} name parameter name
  * @returns {void}
@@ -42,7 +42,7 @@ function wrAssertString(value, name) {
 }
 
 /**
- * Check WGSL function entrypoint presence.
+ * Check WGSL function entrypoint presence
  * @param {string} source WGSL source
  * @param {string} entryName function name
  * @returns {boolean}
@@ -52,7 +52,7 @@ function wrHasWgslEntry(source, entryName) {
 }
 
 /**
- * Check GLSL main() entry presence.
+ * Check GLSL main() entry presence
  * @param {string} source GLSL source
  * @returns {boolean}
  */
@@ -61,7 +61,7 @@ function wrHasGlslMain(source) {
 }
 
 /**
- * Check WGSL vertex output has builtin(position).
+ * Check WGSL vertex output has builtin(position)
  * @param {string} source WGSL source
  * @returns {boolean}
  */
@@ -70,7 +70,7 @@ function wrHasWgslVertexPositionBuiltin(source) {
 }
 
 /**
- * Check WGSL fragment output has @location(0).
+ * Check WGSL fragment output has @location(0)
  * @param {string} source WGSL source
  * @returns {boolean}
  */
@@ -79,7 +79,7 @@ function wrHasWgslFragmentColorLocation(source) {
 }
 
 /**
- * Resolve byte size for one vertex attribute format.
+ * Resolve byte size for one vertex attribute format
  * @param {string} format format key
  * @returns {number}
  */
@@ -90,7 +90,7 @@ export function wrSizeOfFormat(format) {
 }
 
 /**
- * Normalize and validate vertex layout object.
+ * Normalize and validate vertex layout object
  * @param {object|null|undefined} layout layout input
  * @returns {{stride:number,attributes:object[]}}
  */
@@ -146,7 +146,7 @@ export function wrNormalizeVertexLayout(layout) {
 }
 
 /**
- * Compare expected and provided vertex signatures.
+ * Compare expected and provided vertex signatures
  * @param {object} expectedLayout expected layout
  * @param {object} providedLayout provided layout
  * @returns {object}
@@ -185,7 +185,7 @@ export function wrCompareVertexSignatures(expectedLayout, providedLayout) {
 }
 
 /**
- * Validate dual-language shader definition and normalize ABI shape.
+ * Validate dual-language shader definition and normalize ABI shape
  * @param {object} shaderDesc shader definition
  * @returns {object}
  */
@@ -248,3 +248,4 @@ export function wrValidateShaderDefinition(shaderDesc) {
         },
     };
 }
+

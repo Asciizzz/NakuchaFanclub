@@ -1,6 +1,7 @@
 import * as Azm from "../../AzLib/Azm.js";
 
 const WR_COMPONENT_CTX = Symbol("wr_component_ctx");
+const WR_NODE_WORLD_FALLBACK = "__wrWorldFallback";
 const WR_SKIN_BONE_CAP_DEFAULT = 128;
 const WR_NODE_COMPONENT_SKIP_KEYS = new Set([
     "ctx",
@@ -14,7 +15,7 @@ const WR_NODE_COMPONENT_SKIP_KEYS = new Set([
 ]);
 
 /**
- * Convert input to finite number with fallback.
+ * Convert input to finite number with fallback
  * @param {any} value source value
  * @param {number} [fallback=0] fallback value
  * @returns {number}
@@ -25,7 +26,7 @@ function wrNumberOr(value, fallback = 0) {
 }
 
 /**
- * Convert input matrix data to Float32Array[16], fallback identity.
+ * Convert input matrix data to Float32Array[16], fallback identity
  * @param {ArrayLike<number>|null|undefined} value matrix input
  * @returns {Float32Array}
  */
@@ -36,11 +37,11 @@ function wrReadMat4(value) {
             return Float32Array.from(copy);
         }
     }
-    return Azm.Mat4.makeIdentity();
+    return Azm.Mat4.IDENTITY;
 }
 
 /**
- * Resolve integer-like index from number or numeric string.
+ * Resolve integer-like index from number or numeric string
  * @param {any} value source value
  * @returns {number}
  */
@@ -51,7 +52,7 @@ function wrReadIndex(value) {
 }
 
 /**
- * Ensure method exists on component object without overriding user impl.
+ * Ensure method exists on component object without overriding user impl
  * @param {object} target component object
  * @param {string} key method name
  * @param {Function} impl method implementation
@@ -68,20 +69,23 @@ function wrDefineMethod(target, key, impl) {
 }
 
 /**
- * Resolve asset store from scene context.
+ * Resolve asset store from scene context
  * @param {object|null|undefined} scene scene instance
- * @returns {import("../Assets/AssetStore.js").WrAssetStore|null}
+ * @returns {import("/Assets/AssetStorejs")WrAssetStore|null}
  */
 function wrSceneAssets(scene) {
     return scene?.assets ?? scene?.asset?.assets ?? null;
 }
 
 /**
- * Resolve mesh morph target count from mesh asset shape.
+ * Resolve mesh morph target count from mesh asset shape
  * @param {object|null|undefined} meshAsset mesh asset
  * @returns {number}
  */
 function wrResolveMorphTargetCount(meshAsset) {
+    if (meshAsset && typeof meshAsset.getMorphTargetCount === "function") {
+        return Math.max(0, Number(meshAsset.getMorphTargetCount()) | 0);
+    }
     if (!meshAsset || typeof meshAsset !== "object") return 0;
     let count = Math.max(0, Number(meshAsset.morphTargetCount ?? 0) | 0);
     if (Array.isArray(meshAsset.morphTargetNames)) count = Math.max(count, meshAsset.morphTargetNames.length);
@@ -95,7 +99,7 @@ function wrResolveMorphTargetCount(meshAsset) {
 }
 
 /**
- * Resolve mesh asset for one mesh renderer from scene context.
+ * Resolve mesh asset for one mesh renderer from scene context
  * @param {object|null|undefined} scene scene instance
  * @param {object} meshRenderer mesh renderer component
  * @returns {object|null}
@@ -108,7 +112,7 @@ function wrResolveMeshAsset(scene, meshRenderer) {
 }
 
 /**
- * Ensure mesh renderer has morph weight array sized for referenced mesh.
+ * Ensure mesh renderer has morph weight array sized for referenced mesh
  * @param {object} meshRenderer mesh renderer component
  * @param {object|null|undefined} meshAsset mesh asset
  * @returns {Float32Array|null}
@@ -136,6 +140,9 @@ function wrEnsureMeshRendererMorphWeights(meshRenderer, meshAsset) {
     const next = new Float32Array(targetCount);
     if (prev && prev.length > 0) {
         next.set(prev.subarray ? prev.subarray(0, targetCount) : prev.slice(0, targetCount));
+    } else if (typeof meshAsset?.getDefaultMorphWeights === "function") {
+        const defaults = meshAsset.getDefaultMorphWeights();
+        if (defaults) next.set(defaults.subarray ? defaults.subarray(0, targetCount) : defaults.slice(0, targetCount));
     } else if (ArrayBuffer.isView(meshAsset?.defaultMorphWeights) || Array.isArray(meshAsset?.defaultMorphWeights)) {
         const defaults = meshAsset.defaultMorphWeights;
         next.set(defaults.subarray ? defaults.subarray(0, targetCount) : defaults.slice(0, targetCount));
@@ -145,31 +152,33 @@ function wrEnsureMeshRendererMorphWeights(meshRenderer, meshAsset) {
 }
 
 /**
- * Resolve morph target index by index or name with asset cache fallback.
+ * Resolve morph target index by index or name with asset cache fallback
  * @param {object|null|undefined} scene scene instance
  * @param {object} meshRenderer mesh renderer component
  * @param {string|number} indexOrName morph target reference
  * @returns {number}
  */
 function wrResolveMeshMorphIndex(scene, meshRenderer, indexOrName) {
-    const assets = wrSceneAssets(scene);
-    const meshID = String(meshRenderer?.meshID ?? "").trim();
-    if (!meshID) return -1;
+    const meshAsset = wrResolveMeshAsset(scene, meshRenderer);
+    if (meshAsset && typeof meshAsset.resolveMorphIndex === "function") {
+        return meshAsset.resolveMorphIndex(indexOrName);
+    }
 
     const idx = wrReadIndex(indexOrName);
     if (idx >= 0) {
-        const meshAsset = wrResolveMeshAsset(scene, meshRenderer);
         const count = wrResolveMorphTargetCount(meshAsset);
         return idx < count ? idx : -1;
     }
 
+    const assets = wrSceneAssets(scene);
+    const meshID = String(meshRenderer?.meshID ?? "").trim();
+    if (!meshID) return -1;
     if (assets?.resolveMeshMorphIndex) {
         return assets.resolveMeshMorphIndex(meshID, indexOrName);
     }
 
     const name = String(indexOrName ?? "").trim();
     if (!name) return -1;
-    const meshAsset = wrResolveMeshAsset(scene, meshRenderer);
     const map = meshAsset?.morphTargetMap;
     if (!(map instanceof Map)) return -1;
     const exact = map.get(name);
@@ -179,7 +188,7 @@ function wrResolveMeshMorphIndex(scene, meshRenderer, indexOrName) {
 }
 
 /**
- * Resolve skeleton asset for skeleton component.
+ * Resolve skeleton asset for skeleton component
  * @param {object|null|undefined} scene scene instance
  * @param {object} skeletonComp skeleton component
  * @returns {object|null}
@@ -194,26 +203,35 @@ function wrResolveSkeletonAsset(scene, skeletonComp) {
 }
 
 /**
- * Ensure skeleton local pose array is at least `count` long.
+ * Ensure skeleton local pose array is at least `count` long
  * @param {object} skeletonComp skeleton component
  * @param {number} count minimum length
  * @returns {void}
  */
 function wrEnsureSkeletonPoseCapacity(skeletonComp, count) {
     if (!Array.isArray(skeletonComp.bones)) skeletonComp.bones = [];
+    if (typeof skeletonComp?.skeleton?.ensurePoseCapacity === "function") {
+        skeletonComp.bones = skeletonComp.skeleton.ensurePoseCapacity(skeletonComp.bones, count);
+        return;
+    }
     while (skeletonComp.bones.length < count) {
         skeletonComp.bones.push(Azm.Mat4.makeIdentity());
     }
 }
 
 /**
- * Resolve skeleton bone index by index or name.
+ * Resolve skeleton bone index by index or name
  * @param {object|null|undefined} scene scene instance
  * @param {object} skeletonComp skeleton component
  * @param {string|number} indexOrName bone reference
  * @returns {number}
  */
 function wrResolveSkeletonBoneIndex(scene, skeletonComp, indexOrName) {
+    const skeletonAsset = wrResolveSkeletonAsset(scene, skeletonComp);
+    if (skeletonAsset && typeof skeletonAsset.resolveBoneIndex === "function") {
+        return skeletonAsset.resolveBoneIndex(indexOrName);
+    }
+
     const idx = wrReadIndex(indexOrName);
     if (idx >= 0) return idx;
 
@@ -227,7 +245,6 @@ function wrResolveSkeletonBoneIndex(scene, skeletonComp, indexOrName) {
         if (fromAssets >= 0) return fromAssets;
     }
 
-    const skeletonAsset = wrResolveSkeletonAsset(scene, skeletonComp);
     const map = skeletonAsset?.map;
     if (!(map instanceof Map)) return -1;
     const exact = map.get(name);
@@ -237,7 +254,7 @@ function wrResolveSkeletonBoneIndex(scene, skeletonComp, indexOrName) {
 }
 
 /**
- * Build skeleton skinning palette from local pose overrides and skeleton asset.
+ * Build skeleton skinning palette from local pose overrides and skeleton asset
  * @param {object|null|undefined} scene scene instance
  * @param {object} skeletonComp skeleton component
  * @param {number} [maxBones=WR_SKIN_BONE_CAP_DEFAULT] palette cap
@@ -245,11 +262,15 @@ function wrResolveSkeletonBoneIndex(scene, skeletonComp, indexOrName) {
  */
 function wrBuildSkeletonPalette(scene, skeletonComp, maxBones = WR_SKIN_BONE_CAP_DEFAULT) {
     const skeletonAsset = wrResolveSkeletonAsset(scene, skeletonComp);
+    if (skeletonAsset && typeof skeletonAsset.buildPalette === "function") {
+        const sourceBones = Array.isArray(skeletonAsset.bones) ? skeletonAsset.bones : [];
+        wrEnsureSkeletonPoseCapacity(skeletonComp, sourceBones.length);
+        return skeletonAsset.buildPalette(skeletonComp.bones, maxBones);
+    }
+
     const sourceBones = Array.isArray(skeletonAsset?.bones) ? skeletonAsset.bones : [];
     if (sourceBones.length <= 0) return null;
-
     wrEnsureSkeletonPoseCapacity(skeletonComp, sourceBones.length);
-
     const cap = Math.max(1, Number(maxBones) | 0);
     const out = new Float32Array(cap * 16);
     for (let i = 0; i < cap; i++) out.set(Azm.Mat4.IDENTITY, i * 16);
@@ -261,21 +282,18 @@ function wrBuildSkeletonPalette(scene, skeletonComp, maxBones = WR_SKIN_BONE_CAP
         const localBind = wrReadMat4(bone.localBind);
         const pose = wrReadMat4(skeletonComp.bones?.[i]);
         const local = Azm.Mat4.mul(localBind, pose);
-
         const parent = Number(bone.parent ?? -1) | 0;
         if (parent < 0 || !global[parent]) global[i] = local;
         else global[i] = Azm.Mat4.mul(global[parent], local);
-
         const inverseBind = wrReadMat4(bone.inverseBind);
         const skinned = Azm.Mat4.mul(global[i], inverseBind);
         out.set(skinned, i * 16);
     }
-
     return out;
 }
 
 /**
- * Bind runtime helpers to MeshRenderer component.
+ * Bind runtime helpers to MeshRenderer component
  * @param {object} scene scene instance
  * @param {string} nodeId owner node id
  * @param {object} meshRenderer mesh renderer component
@@ -394,7 +412,7 @@ function wrBindMeshRenderer(scene, nodeId, meshRenderer) {
 }
 
 /**
- * Bind runtime helpers to Skeleton component.
+ * Bind runtime helpers to Skeleton component
  * @param {object} scene scene instance
  * @param {string} nodeId owner node id
  * @param {object} skeletonComp skeleton component
@@ -420,7 +438,11 @@ function wrBindSkeleton(scene, nodeId, skeletonComp) {
         skeletonComp.skeletonId = skeletonComp.skeletonID;
     }
     if (Array.isArray(linkedSkeleton?.bones)) {
-        wrEnsureSkeletonPoseCapacity(skeletonComp, linkedSkeleton.bones.length);
+        if (typeof linkedSkeleton.ensurePoseCapacity === "function") {
+            skeletonComp.bones = linkedSkeleton.ensurePoseCapacity(skeletonComp.bones, linkedSkeleton.bones.length);
+        } else {
+            wrEnsureSkeletonPoseCapacity(skeletonComp, linkedSkeleton.bones.length);
+        }
     }
 
     wrDefineMethod(skeletonComp, "use", function use(skeleton) {
@@ -430,7 +452,11 @@ function wrBindSkeleton(scene, nodeId, skeletonComp) {
             this.skeletonID = String(skeleton.id);
             this.skeletonId = this.skeletonID;
         }
-        wrEnsureSkeletonPoseCapacity(this, skeleton.bones.length);
+        if (typeof skeleton.ensurePoseCapacity === "function") {
+            this.bones = skeleton.ensurePoseCapacity(this.bones, skeleton.bones.length);
+        } else {
+            wrEnsureSkeletonPoseCapacity(this, skeleton.bones.length);
+        }
         return this;
     });
 
@@ -469,11 +495,11 @@ function wrBindSkeleton(scene, nodeId, skeletonComp) {
 }
 
 /**
- * Runtime helpers for world branch traversal and transform updates.
+ * Runtime helpers for world branch traversal and transform updates
  */
 export class WrWorldRuntime {
     /**
-     * Resolve component map from supported node shapes.
+     * Resolve component map from supported node shapes
      * @param {object} node scene node
      * @returns {object}
      */
@@ -485,7 +511,7 @@ export class WrWorldRuntime {
     }
 
     /**
-     * Bind runtime component methods for one scene node.
+     * Bind runtime component methods for one scene node
      * @param {object} scene owner scene
      * @param {object} node scene node
      * @returns {void}
@@ -504,7 +530,7 @@ export class WrWorldRuntime {
     }
 
     /**
-     * Bind runtime component methods for all scene nodes.
+     * Bind runtime component methods for all scene nodes
      * @param {object} scene owner scene
      * @returns {void}
      */
@@ -519,7 +545,7 @@ export class WrWorldRuntime {
     }
 
     /**
-     * Bind runtime helper methods for one component instance.
+     * Bind runtime helper methods for one component instance
      * @param {object} scene owner scene
      * @param {string} nodeId owner node id
      * @param {string} key component key
@@ -540,7 +566,7 @@ export class WrWorldRuntime {
     }
 
     /**
-     * Resolve mesh renderer component from node.
+     * Resolve mesh renderer component from node
      * @param {object} node scene node
      * @returns {object|null}
      */
@@ -550,14 +576,18 @@ export class WrWorldRuntime {
     }
 
     /**
-     * Resolve and normalize transform component from node.
+     * Resolve and normalize transform component from node
      * @param {object} node scene node
-     * @returns {{local: Float32Array, world: Float32Array}}
+     * @param {object} [options={}] transform resolve options
+     * @param {boolean} [optionscreate=true] create transform when missing
+     * @returns {{local: Float32Array, world: Float32Array}|null}
      */
-    static getTransform(node) {
+    static getTransform(node, options = {}) {
+        const create = options?.create !== false;
         const comps = WrWorldRuntime.getNodeComponents(node);
         let tx = comps.Transform ?? comps.transform ?? null;
         if (!tx || typeof tx !== "object") {
+            if (!create) return null;
             tx = {
                 local: Azm.Mat4.makeIdentity(),
                 world: Azm.Mat4.makeIdentity(),
@@ -585,172 +615,91 @@ export class WrWorldRuntime {
     }
 
     /**
-     * Rebuild hierarchy links and propagate world transforms.
+     * Rebuild hierarchy links and propagate world transforms
      * @param {object} scene scene-like object with nodes array
      * @returns {object|null}
      */
     static updateTransforms(scene, options = {}) {
         if (!scene) return scene ?? null;
-
-        if (scene?.nodes instanceof Map) {
-            const fromId = String(options?.from ?? "").trim();
-            if (!fromId) return scene;
-            const nodeById = scene.nodes;
-            const visited = new Set();
-
-            const walk = (nodeId, parentWorld) => {
-                const node = nodeById.get(nodeId);
-                if (!node) return;
-                if (visited.has(nodeId)) return;
-                visited.add(nodeId);
-
-                const tx = WrWorldRuntime.getTransform(node);
-                if (parentWorld) {
-                    Azm.Mat4.mul(parentWorld, tx.local, tx.world);
-                } else {
-                    tx.world.set(tx.local);
-                }
-
-                const childIds = Array.isArray(node.childIds)
-                    ? node.childIds
-                    : (Array.isArray(node.children) ? node.children : []);
-                for (const childRef of childIds) {
-                    const childId = String(childRef ?? "").trim();
-                    if (!childId) continue;
-                    walk(childId, tx.world);
-                }
-            };
-
-            let parentWorld = null;
-            const chain = [];
-            let chainParentId = nodeById.get(fromId)?.parentId ?? null;
-            while (chainParentId != null) {
-                const parentId = String(chainParentId ?? "").trim();
-                if (!parentId) break;
-                const parentNode = nodeById.get(parentId);
-                if (!parentNode) break;
-                chain.push(parentId);
-                chainParentId = parentNode.parentId ?? null;
-            }
-            for (let i = chain.length - 1; i >= 0; i--) {
-                const parentNode = nodeById.get(chain[i]);
-                if (!parentNode) continue;
-                const tx = WrWorldRuntime.getTransform(parentNode);
-                if (parentWorld) {
-                    Azm.Mat4.mul(parentWorld, tx.local, tx.world);
-                } else {
-                    tx.world.set(tx.local);
-                }
-                parentWorld = tx.world;
-            }
-
-            walk(fromId, parentWorld);
-            return scene;
-        }
-
-        if (!Array.isArray(scene.nodes)) return scene ?? null;
-        const nodeById = new Map();
-        for (const node of scene.nodes) {
-            const id = String(node?.id ?? "");
-            if (!id) continue;
-            nodeById.set(id, node);
-        }
-
-        const childrenByParent = new Map();
-        for (const node of scene.nodes) {
-            const id = String(node?.id ?? "");
-            if (!id) continue;
-            if (!childrenByParent.has(id)) childrenByParent.set(id, []);
-        }
-
         const fromId = String(options?.from ?? "").trim();
-        const roots = [];
-        for (const node of scene.nodes) {
-            const id = String(node?.id ?? "");
-            if (!id) continue;
-            const parentIdRaw = node.parentId ?? node.parent ?? null;
-            const parentId = parentIdRaw == null ? null : String(parentIdRaw);
-            if (!parentId || !nodeById.has(parentId)) {
-                if (!fromId || fromId === id) roots.push(id);
-                if ("parent" in node) node.parent = null;
-                if ("parentId" in node) node.parentId = null;
-                continue;
-            }
-            const children = childrenByParent.get(parentId) ?? [];
-            children.push(id);
-            childrenByParent.set(parentId, children);
-        }
+        if (!fromId) return scene ?? null;
 
-        for (const [parentId, childIds] of childrenByParent.entries()) {
-            const parentNode = nodeById.get(parentId);
-            if (!parentNode) continue;
-            const dedup = Array.from(new Set(childIds));
-            if ("children" in parentNode) parentNode.children = dedup;
-            if ("childIds" in parentNode) parentNode.childIds = dedup;
-        }
-
-        const visited = new Set();
-        const walk = (nodeId, parentWorld) => {
-            const node = nodeById.get(nodeId);
-            if (!node) return;
-            if (visited.has(nodeId)) return;
-            visited.add(nodeId);
-
-            const tx = WrWorldRuntime.getTransform(node);
-            if (parentWorld) {
-                Azm.Mat4.mul(parentWorld, tx.local, tx.world);
-            } else {
-                tx.world.set(tx.local);
-            }
-
-            const children = childrenByParent.get(nodeId) ?? [];
-            for (const childId of children) {
-                walk(childId, tx.world);
-            }
-        };
-
-        if (fromId) {
-            let parentWorld = null;
-            const chain = [];
-            let chainParentId = nodeById.get(fromId)?.parentId ?? nodeById.get(fromId)?.parent ?? null;
-            while (chainParentId != null) {
-                const parentId = String(chainParentId ?? "").trim();
-                if (!parentId) break;
-                const parentNode = nodeById.get(parentId);
-                if (!parentNode) break;
-                chain.push(parentId);
-                chainParentId = parentNode.parentId ?? parentNode.parent ?? null;
-            }
-            for (let i = chain.length - 1; i >= 0; i--) {
-                const parentNode = nodeById.get(chain[i]);
-                if (!parentNode) continue;
-                const tx = WrWorldRuntime.getTransform(parentNode);
-                if (parentWorld) {
-                    Azm.Mat4.mul(parentWorld, tx.local, tx.world);
-                } else {
-                    tx.world.set(tx.local);
-                }
-                parentWorld = tx.world;
-            }
-
-            walk(fromId, parentWorld);
-        } else {
-            for (const rootId of roots) walk(rootId, null);
-        }
-
-        if (!fromId) {
-            for (const node of scene.nodes) {
-                const id = String(node?.id ?? "");
-                if (!id || visited.has(id)) continue;
-                walk(id, null);
-            }
+        for (const _node of WrWorldRuntime.traverseNodes(scene, {
+            from: fromId,
+            mode: "dfs_pre",
+            includeFrom: true,
+            updateTransforms: true,
+            bindComponents: false,
+        })) {
+            // traversal performs in-place world transform update
         }
 
         return scene;
     }
 
     /**
-     * Return active renderable nodes with mesh renderer payload.
+     * Traverse one branch and optionally update transforms and bind components inline
+     * Uses scenetraverseRaw when available to avoid recursive wrapper overhead
+     * @param {object} scene scene-like object
+     * @param {object} [options={}] traverse options
+     * @param {string|object} [optionsfrom] branch root id
+     * @param {string} [optionsmode="dfs_pre"] traversal mode
+     * @param {boolean} [optionsincludeFrom=true] include from node
+     * @param {boolean} [optionsupdateTransforms=true] update transform world during traversal
+     * @param {boolean} [optionsbindComponents=true] bind runtime component helpers
+     * @returns {Generator<object>}
+     */
+    static *traverseNodes(scene, options = {}) {
+        if (!scene) return;
+        const fromId = String(options?.from ?? "").trim();
+        if (!fromId) return;
+
+        const mode = String(options?.mode ?? "dfs_pre");
+        const includeFrom = options?.includeFrom !== false;
+        const updateTransforms = options?.updateTransforms !== false;
+        const bindComponents = options?.bindComponents !== false;
+        const closestWorldById = updateTransforms ? new Map() : null;
+
+        const baseIter = (() => {
+            if (typeof scene?.traverseRaw === "function") {
+                return scene.traverseRaw({ from: fromId, mode, includeFrom });
+            }
+            if (typeof scene?.traverse === "function") {
+                return scene.traverse({ from: fromId, mode, includeFrom });
+            }
+            return [];
+        })();
+
+        for (const node of baseIter) {
+            if (!node || typeof node !== "object") continue;
+            const nodeId = String(node.id ?? "").trim();
+
+            if (updateTransforms && nodeId) {
+                const parentRaw = node.parentId ?? node.parent ?? null;
+                const parentId = parentRaw == null ? null : String(parentRaw).trim();
+                const parentWorld = parentId ? (closestWorldById.get(parentId) ?? null) : null;
+                const tx = WrWorldRuntime.getTransform(node, { create: false });
+                if (!tx) {
+                    node[WR_NODE_WORLD_FALLBACK] = parentWorld ?? Azm.Mat4.IDENTITY;
+                    closestWorldById.set(nodeId, parentWorld);
+                } else {
+                    if (parentWorld) {
+                        Azm.Mat4.mul(parentWorld, tx.local, tx.world);
+                    } else {
+                        tx.world.set(tx.local);
+                    }
+                    node[WR_NODE_WORLD_FALLBACK] = tx.world;
+                    closestWorldById.set(nodeId, tx.world);
+                }
+            }
+
+            if (bindComponents) WrWorldRuntime.bindNodeComponents(scene, node);
+            yield node;
+        }
+    }
+
+    /**
+     * Return active renderable nodes with mesh renderer payload
      * @param {object} scene scene-like object with nodes array
      * @returns {{node: object, meshRenderer: object}[]}
      */
@@ -758,24 +707,26 @@ export class WrWorldRuntime {
         if (!scene) return [];
         const out = [];
         const fromId = String(options?.from ?? "").trim();
-        const nodes = [];
-
-        if (fromId && typeof scene?.traverse === "function") {
-            for (const node of scene.traverse({
+        if (fromId) {
+            for (const node of WrWorldRuntime.traverseNodes(scene, {
                 from: fromId,
                 mode: options.mode ?? "dfs_pre",
                 includeFrom: options.includeFrom !== false,
+                updateTransforms: options.updateTransforms !== false,
+                bindComponents: true,
             })) {
-                nodes.push(node);
+                const meshRenderer = WrWorldRuntime.getMeshRenderer(node);
+                if (!meshRenderer) continue;
+                if (meshRenderer.active === false) continue;
+                if (!meshRenderer.meshID) continue;
+                out.push({ node, meshRenderer });
             }
-        } else if (Array.isArray(scene.nodes)) {
-            nodes.push(...scene.nodes);
-        } else if (scene?.nodes instanceof Map) {
-            nodes.push(...scene.nodes.values());
-        } else {
             return out;
         }
 
+        const nodes = Array.isArray(scene.nodes)
+            ? scene.nodes
+            : (scene?.nodes instanceof Map ? Array.from(scene.nodes.values()) : []);
         for (const node of nodes) {
             WrWorldRuntime.bindNodeComponents(scene, node);
             const meshRenderer = WrWorldRuntime.getMeshRenderer(node);
@@ -784,9 +735,11 @@ export class WrWorldRuntime {
             if (!meshRenderer.meshID) continue;
             out.push({ node, meshRenderer });
         }
+
         return out;
     }
 }
 
 export default WrWorldRuntime;
+
 

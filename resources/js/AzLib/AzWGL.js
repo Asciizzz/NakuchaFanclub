@@ -241,6 +241,14 @@ export class Shader {
 
 		gl.attachShader(program, vs);
 		gl.attachShader(program, fs);
+		if (descriptor.attribLocations && typeof descriptor.attribLocations === "object") {
+			for (const [name, rawIndex] of Object.entries(descriptor.attribLocations)) {
+				const index = Number(rawIndex);
+				if (!Number.isInteger(index) || index < 0) continue;
+				if (typeof name !== "string" || name.length <= 0) continue;
+				gl.bindAttribLocation(program, index, name);
+			}
+		}
 		gl.linkProgram(program);
 
 		if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
@@ -2401,7 +2409,6 @@ if (typeof window !== "undefined") {
 }
 
 export default AzWGL;
-
 
 
 

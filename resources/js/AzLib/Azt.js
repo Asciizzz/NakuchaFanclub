@@ -1,8 +1,9 @@
 /*
-Azt - Tree structure
+Azt (Tree)
 By Asciiz
 
 Lightweight agnostic tree structure, you can do literally anything you want with it
+Best used as inherited base (Scene extends Ctx, Entity extends Node, etc)
 */
 
 function asId(value) {
@@ -55,20 +56,21 @@ export class Node {
 
 	// Useful call to Ctx
 
-	add(index = -1) {
+	addChild(index = -1) {
 		if (!this.ctx) return null;
 		return this.ctx.addNode(this.id, index);
 	}
 
-	move(newParentId = null) {
+	moveTo(newParentId = null) {
 		if (!this.ctx) return null;
 		return this.ctx.moveNode(this.id, newParentId);
 	}
 
-	delete(branch = false) {
+	deleteSelf(branch = false) {
 		if (!this.ctx) return null;
 		return this.ctx.deleteNode(this.id, branch);
 	}
+	kys(branch = false) { return this.deleteSelf(branch); }
 
 	*traverse(options = {}) {
 		if (!this.ctx) return;
@@ -77,20 +79,6 @@ export class Node {
 			...src,
 			from: this.id,
 		});
-	}
-
-	swapChildrenOrder(indexA, indexB) {
-		const iA = Number(indexA);
-		const iB = Number(indexB);
-		if (!Number.isInteger(iA) || !Number.isInteger(iB)) return false;
-		if (iA < 0 || iA >= this.childIds.length) return false;
-		if (iB < 0 || iB >= this.childIds.length) return false;
-		if (iA === iB) return true;
-
-		const temp = this.childIds[iA];
-		this.childIds[iA] = this.childIds[iB];
-		this.childIds[iB] = temp;
-		return true;
 	}
 }
 

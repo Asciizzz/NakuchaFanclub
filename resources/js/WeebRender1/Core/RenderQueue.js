@@ -1,11 +1,11 @@
 import WrWorldRuntime from "./WorldRuntime.js";
-import { wrResolveNodeModelMatrix } from "./MeshPacking.js";
+import { WrMesh } from "../Assets/Mesh.js";
 import { WR_DEFAULT_RENDER_CFG, wrNormalizeRenderCfg } from "./RenderConfig.js";
 
 const WR_SKIN_BONE_CAP = 128;
 
 /**
- * Convert numeric input with fallback.
+ * Convert numeric input with fallback
  * @param {any} value input value
  * @param {number} [fallback=0] fallback value
  * @returns {number}
@@ -16,8 +16,8 @@ function wrNumberOr(value, fallback = 0) {
 }
 
 /**
- * Resolve morph selection from mesh renderer and mesh defaults.
- * Returns dominant target index and weight.
+ * Resolve morph selection from mesh renderer and mesh defaults
+ * Returns dominant target index and weight
  * @param {object} meshRenderer mesh renderer component
  * @param {object|null} meshAsset mesh asset
  * @returns {{index:number,weight:number}}
@@ -59,7 +59,7 @@ function wrResolveMorphSelection(meshRenderer, meshAsset) {
 }
 
 /**
- * Build fast scene node id map.
+ * Build fast scene node id map
  * @param {object} scene scene object
  * @returns {Map<string, object>}
  */
@@ -85,7 +85,7 @@ function wrBuildSceneNodeMap(scene) {
 }
 
 /**
- * Resolve skeleton palette from mesh renderer skeleton link.
+ * Resolve skeleton palette from mesh renderer skeleton link
  * @param {object} scene active scene
  * @param {Map<string, object>} sceneNodeById node map
  * @param {object} meshRenderer mesh renderer component
@@ -108,11 +108,11 @@ function wrResolveSkinPalette(scene, sceneNodeById, meshRenderer) {
 }
 
 /**
- * Build backend-agnostic draw queue from scene data.
+ * Build backend-agnostic draw queue from scene data
  */
 export class WrRenderQueue {
     /**
-     * Build one frame queue.
+     * Build one frame queue
      * @param {object} scene active scene
      * @param {object} camera active camera
      * @param {object} assets asset registry
@@ -146,7 +146,7 @@ export class WrRenderQueue {
                 meshID: String(meshRenderer.meshID),
                 shaderKeys,
                 shaderID: shaderId,
-                modelMatrix: wrResolveNodeModelMatrix(node),
+                modelMatrix: WrMesh.resolveNodeModelMatrix(node),
                 morphWeight: morph.weight,
                 primaryMorphIndex: morph.index,
                 skinPalette,
@@ -170,5 +170,6 @@ export class WrRenderQueue {
 }
 
 export default WrRenderQueue;
+
 
 

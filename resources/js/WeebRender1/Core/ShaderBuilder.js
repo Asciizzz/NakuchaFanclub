@@ -15,7 +15,7 @@ const WR_LINK_RESERVED = new Set([
 ]);
 
 /**
- * Parse legacy numeric link slot from number or name suffix.
+ * Parse legacy numeric link slot from number or name suffix
  * @param {number|string} value slot input
  * @returns {number}
  */
@@ -30,7 +30,7 @@ function wrLegacyLinkSlot(value) {
 }
 
 /**
- * Infer WGSL type from GLSL type.
+ * Infer WGSL type from GLSL type
  * @param {string} glslType GLSL type
  * @returns {string}
  */
@@ -48,7 +48,7 @@ function wrDefaultWgslTypeFromGlsl(glslType) {
 }
 
 /**
- * Infer GLSL type from WGSL type.
+ * Infer GLSL type from WGSL type
  * @param {string} wgslType WGSL type
  * @returns {string}
  */
@@ -66,7 +66,7 @@ function wrDefaultGlslTypeFromWgsl(wgslType) {
 }
 
 /**
- * Build WGSL default literal for type.
+ * Build WGSL default literal for type
  * @param {string} type WGSL type
  * @returns {string}
  */
@@ -84,7 +84,7 @@ function wrDefaultLiteralWgsl(type) {
 }
 
 /**
- * Build GLSL default literal for type.
+ * Build GLSL default literal for type
  * @param {string} type GLSL type
  * @returns {string}
  */
@@ -102,7 +102,7 @@ function wrDefaultLiteralGlsl(type) {
 }
 
 /**
- * Resolve link type pair from mixed schema input.
+ * Resolve link type pair from mixed schema input
  * @param {object} raw link raw value
  * @returns {{wgslType:string,glslType:string}}
  */
@@ -145,7 +145,7 @@ function wrResolveLinkTypes(raw) {
 }
 
 /**
- * Validate and normalize link variable name.
+ * Validate and normalize link variable name
  * @param {string} name link name
  * @returns {string}
  */
@@ -162,7 +162,7 @@ function wrAssertLinkName(name) {
 }
 
 /**
- * Collect and normalize link definitions from shader description.
+ * Collect and normalize link definitions from shader description
  * @param {object} [shaderDesc={}] shader description
  * @returns {object[]}
  */
@@ -223,7 +223,7 @@ function wrCollectLinks(shaderDesc = {}) {
 }
 
 /**
- * Build compatibility key map for $LINK0$..$LINK7$.
+ * Build compatibility key map for $LINK0$$LINK7$
  * @param {object[]} links link list
  * @returns {{wgsl: object, glsl: object}}
  */
@@ -240,7 +240,7 @@ function wrBuildLinkKeyMap(links) {
 }
 
 /**
- * Resolve stage main source from template inputs and defaults.
+ * Resolve stage main source from template inputs and defaults
  * @param {"vertex"|"fragment"} stage stage name
  * @param {"wgsl"|"glsl"} language language key
  * @param {object} shaderDesc shader description
@@ -264,7 +264,7 @@ function wrStageMain(stage, language, shaderDesc, defaultSource) {
 }
 
 /**
- * Check if description uses template shader mode inputs.
+ * Check if description uses template shader mode inputs
  * @param {object} shaderDesc shader description
  * @returns {boolean}
  */
@@ -282,7 +282,7 @@ export function wrIsTemplateShaderDefinition(shaderDesc) {
 }
 
 /**
- * Build full dual-language shader definition from template settings.
+ * Build full dual-language shader definition from template settings
  * @param {object} [shaderDesc={}] template input
  * @returns {object}
  */
@@ -505,3 +505,5 @@ ${fragmentMainGlsl}
 }
 
 export default wrBuildTemplateShaderDefinition;
+
+
