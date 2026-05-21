@@ -352,12 +352,14 @@ Vec4.norm = function(a, out = null) {
 
 
 
-Quat.identity = function(out = null) {
+Quat.IDENTITY = Object.freeze([0, 0, 0, 1]);
+
+Quat.makeIdentity = function(out = null) {
     out ??= new Float32Array(4);
-    out[0] = 0;
-    out[1] = 0;
-    out[2] = 0;
-    out[3] = 1;
+    out[0] = Quat.IDENTITY[0];
+    out[1] = Quat.IDENTITY[1];
+    out[2] = Quat.IDENTITY[2];
+    out[3] = Quat.IDENTITY[3];
     return out;
 };
 
@@ -531,12 +533,19 @@ Quat.slerp = function(a, b, t, out = null) {
 
 
 
-Mat4.identity = function(out = null) {
+Mat4.IDENTITY = Object.freeze([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+]);
+
+Mat4.makeIdentity = function(out = null) {
     out ??= new Float32Array(16);
-    out[0]  = 1; out[1]  = 0; out[2]  = 0; out[3]  = 0;
-    out[4]  = 0; out[5]  = 1; out[6]  = 0; out[7]  = 0;
-    out[8]  = 0; out[9]  = 0; out[10] = 1; out[11] = 0;
-    out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+    out[0]  = Mat4.IDENTITY[0]; out[1]  = Mat4.IDENTITY[1]; out[2]  = Mat4.IDENTITY[2]; out[3]  = Mat4.IDENTITY[3];
+    out[4]  = Mat4.IDENTITY[4]; out[5]  = Mat4.IDENTITY[5]; out[6]  = Mat4.IDENTITY[6]; out[7]  = Mat4.IDENTITY[7];
+    out[8]  = Mat4.IDENTITY[8]; out[9]  = Mat4.IDENTITY[9]; out[10] = Mat4.IDENTITY[10]; out[11] = Mat4.IDENTITY[11];
+    out[12] = Mat4.IDENTITY[12]; out[13] = Mat4.IDENTITY[13]; out[14] = Mat4.IDENTITY[14]; out[15] = Mat4.IDENTITY[15];
     return out;
 };
 
@@ -642,7 +651,7 @@ Mat4.invert = function(a, out = null) {
 };
 
 Mat4.fromTranslation = function(v, out = null) {
-    out = Mat4.identity(out);
+    out = Mat4.makeIdentity(out);
     out[12] = v[0];
     out[13] = v[1];
     out[14] = v[2];
@@ -650,7 +659,7 @@ Mat4.fromTranslation = function(v, out = null) {
 };
 
 Mat4.fromScaling = function(v, out = null) {
-    out = Mat4.identity(out);
+    out = Mat4.makeIdentity(out);
     out[0]  = v[0];
     out[5]  = v[1];
     out[10] = v[2];
@@ -658,7 +667,7 @@ Mat4.fromScaling = function(v, out = null) {
 };
 
 Mat4.fromRotationX = function(rad, out = null) {
-    out = Mat4.identity(out);
+    out = Mat4.makeIdentity(out);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[5]  =  c; out[6]  = s;
     out[9]  = -s; out[10] = c;
@@ -666,7 +675,7 @@ Mat4.fromRotationX = function(rad, out = null) {
 };
 
 Mat4.fromRotationY = function(rad, out = null) {
-    out = Mat4.identity(out);
+    out = Mat4.makeIdentity(out);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[0]  =  c; out[2]  = -s;
     out[8]  =  s; out[10] =  c;
@@ -674,7 +683,7 @@ Mat4.fromRotationY = function(rad, out = null) {
 };
 
 Mat4.fromRotationZ = function(rad, out = null) {
-    out = Mat4.identity(out);
+    out = Mat4.makeIdentity(out);
     const c = Math.cos(rad), s = Math.sin(rad);
     out[0] =  c; out[1] = s;
     out[4] = -s; out[5] = c;
@@ -817,7 +826,7 @@ Mat4.lookAt = function(eye, target, up, out = null) {
     let fz = eye[2] - target[2];
     let len = Math.sqrt(fx * fx + fy * fy + fz * fz);
     if (len < EPSILON) {
-        Mat4.identity(out);
+        Mat4.makeIdentity(out);
         return out;
     }
     const invLenF = 1 / len;

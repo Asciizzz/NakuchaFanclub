@@ -1,12 +1,7 @@
+import * as Azm from "../../AzLib/Azm.js";
 import { WR_VERTEX_LAYOUT_V1 } from "./ShaderAbi.js";
 
 const WR_FLOATS_PER_VERTEX = 19; // 76 bytes / 4
-const WR_IDENTITY_M4 = Object.freeze([
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1,
-]);
 
 /**
  * Convert numeric source to Float32Array when possible.
@@ -49,7 +44,7 @@ function wrReadMat4(value) {
             return Float32Array.from(value.slice ? value.slice(0, 16) : value.subarray(0, 16));
         }
     }
-    return Float32Array.from(WR_IDENTITY_M4);
+    return Azm.Mat4.makeIdentity();
 }
 
 /**
@@ -58,7 +53,7 @@ function wrReadMat4(value) {
  * @returns {Float32Array}
  */
 export function wrResolveNodeModelMatrix(node) {
-    if (!node || typeof node !== "object") return Float32Array.from(WR_IDENTITY_M4);
+    if (!node || typeof node !== "object") return Azm.Mat4.makeIdentity();
     const comps = node.components ?? node.$ ?? {};
     const tx = comps.Transform ?? comps.transform ?? {};
     return wrReadMat4(tx.world ?? tx.local ?? null);

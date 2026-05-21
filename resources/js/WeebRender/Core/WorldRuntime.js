@@ -1,14 +1,17 @@
 import * as Azm from "../../AzLib/Azm.js";
 
-const WR_IDENTITY_M4 = Object.freeze([
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1,
-]);
-
 const WR_COMPONENT_CTX = Symbol("wr_component_ctx");
 const WR_SKIN_BONE_CAP_DEFAULT = 128;
+const WR_NODE_COMPONENT_SKIP_KEYS = new Set([
+    "ctx",
+    "id",
+    "parentId",
+    "childIds",
+    "parent",
+    "children",
+    "components",
+    "$",
+]);
 
 /**
  * Convert input to finite number with fallback.
@@ -33,47 +36,7 @@ function wrReadMat4(value) {
             return Float32Array.from(copy);
         }
     }
-    return Float32Array.from(WR_IDENTITY_M4);
-}
-
-/**
- * Multiply two column-major mat4 values.
- * @param {ArrayLike<number>} a left matrix
- * @param {ArrayLike<number>} b right matrix
- * @returns {Float32Array}
- */
-function wrMulM4(a, b) {
-    const out = new Float32Array(16);
-    const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
-    const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
-    const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
-    const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
-    let b0; let b1; let b2; let b3;
-
-    b0 = b[0]; b1 = b[1]; b2 = b[2]; b3 = b[3];
-    out[0] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[3] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-
-    b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
-    out[4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[5] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[6] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[7] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-
-    b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
-    out[8] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[9] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[10] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[11] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-
-    b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
-    out[12] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-    return out;
+    return Azm.Mat4.makeIdentity();
 }
 
 /**
@@ -110,7 +73,7 @@ function wrDefineMethod(target, key, impl) {
  * @returns {import("../Assets/AssetStore.js").WrAssetStore|null}
  */
 function wrSceneAssets(scene) {
-    return scene?.asset?.assets ?? null;
+    return scene?.assets ?? scene?.asset?.assets ?? null;
 }
 
 /**
@@ -239,7 +202,7 @@ function wrResolveSkeletonAsset(scene, skeletonComp) {
 function wrEnsureSkeletonPoseCapacity(skeletonComp, count) {
     if (!Array.isArray(skeletonComp.bones)) skeletonComp.bones = [];
     while (skeletonComp.bones.length < count) {
-        skeletonComp.bones.push(Float32Array.from(WR_IDENTITY_M4));
+        skeletonComp.bones.push(Azm.Mat4.makeIdentity());
     }
 }
 
@@ -289,7 +252,7 @@ function wrBuildSkeletonPalette(scene, skeletonComp, maxBones = WR_SKIN_BONE_CAP
 
     const cap = Math.max(1, Number(maxBones) | 0);
     const out = new Float32Array(cap * 16);
-    for (let i = 0; i < cap; i++) out.set(WR_IDENTITY_M4, i * 16);
+    for (let i = 0; i < cap; i++) out.set(Azm.Mat4.IDENTITY, i * 16);
 
     const global = new Array(sourceBones.length);
     const count = Math.min(sourceBones.length, cap);
@@ -297,14 +260,14 @@ function wrBuildSkeletonPalette(scene, skeletonComp, maxBones = WR_SKIN_BONE_CAP
         const bone = sourceBones[i] ?? {};
         const localBind = wrReadMat4(bone.localBind);
         const pose = wrReadMat4(skeletonComp.bones?.[i]);
-        const local = wrMulM4(localBind, pose);
+        const local = Azm.Mat4.mul(localBind, pose);
 
         const parent = Number(bone.parent ?? -1) | 0;
         if (parent < 0 || !global[parent]) global[i] = local;
-        else global[i] = wrMulM4(global[parent], local);
+        else global[i] = Azm.Mat4.mul(global[parent], local);
 
         const inverseBind = wrReadMat4(bone.inverseBind);
-        const skinned = wrMulM4(global[i], inverseBind);
+        const skinned = Azm.Mat4.mul(global[i], inverseBind);
         out.set(skinned, i * 16);
     }
 
@@ -506,9 +469,9 @@ function wrBindSkeleton(scene, nodeId, skeletonComp) {
 }
 
 /**
- * Runtime helpers for scene graph traversal and transform updates.
+ * Runtime helpers for world branch traversal and transform updates.
  */
-export class WrSceneRuntime {
+export class WrWorldRuntime {
     /**
      * Resolve component map from supported node shapes.
      * @param {object} node scene node
@@ -518,7 +481,7 @@ export class WrSceneRuntime {
         if (!node || typeof node !== "object") return {};
         if (node.components && typeof node.components === "object") return node.components;
         if (node.$ && typeof node.$ === "object") return node.$;
-        return {};
+        return node;
     }
 
     /**
@@ -530,10 +493,13 @@ export class WrSceneRuntime {
     static bindNodeComponents(scene, node) {
         if (!node || typeof node !== "object") return;
         const nodeId = String(node.id ?? "");
-        const comps = WrSceneRuntime.getNodeComponents(node);
-        for (const [key, value] of Object.entries(comps)) {
+        const comps = WrWorldRuntime.getNodeComponents(node);
+        const entries = comps === node
+            ? Object.entries(node).filter(([key]) => !WR_NODE_COMPONENT_SKIP_KEYS.has(key))
+            : Object.entries(comps);
+        for (const [key, value] of entries) {
             if (!value || typeof value !== "object") continue;
-            WrSceneRuntime.bindComponent(scene, nodeId, key, value);
+            WrWorldRuntime.bindComponent(scene, nodeId, key, value);
         }
     }
 
@@ -543,9 +509,12 @@ export class WrSceneRuntime {
      * @returns {void}
      */
     static bindSceneComponents(scene) {
-        if (!scene || !Array.isArray(scene.nodes)) return;
-        for (const node of scene.nodes) {
-            WrSceneRuntime.bindNodeComponents(scene, node);
+        if (!scene) return;
+        const nodes = Array.isArray(scene.nodes)
+            ? scene.nodes
+            : (scene?.nodes instanceof Map ? Array.from(scene.nodes.values()) : []);
+        for (const node of nodes) {
+            WrWorldRuntime.bindNodeComponents(scene, node);
         }
     }
 
@@ -576,7 +545,7 @@ export class WrSceneRuntime {
      * @returns {object|null}
      */
     static getMeshRenderer(node) {
-        const comps = WrSceneRuntime.getNodeComponents(node);
+        const comps = WrWorldRuntime.getNodeComponents(node);
         return comps.MeshRenderer ?? comps.meshRenderer ?? null;
     }
 
@@ -586,12 +555,12 @@ export class WrSceneRuntime {
      * @returns {{local: Float32Array, world: Float32Array}}
      */
     static getTransform(node) {
-        const comps = WrSceneRuntime.getNodeComponents(node);
+        const comps = WrWorldRuntime.getNodeComponents(node);
         let tx = comps.Transform ?? comps.transform ?? null;
         if (!tx || typeof tx !== "object") {
             tx = {
-                local: Float32Array.from(WR_IDENTITY_M4),
-                world: Float32Array.from(WR_IDENTITY_M4),
+                local: Azm.Mat4.makeIdentity(),
+                world: Azm.Mat4.makeIdentity(),
             };
             comps.Transform = tx;
             if (comps.transform && comps.transform !== tx) delete comps.transform;
@@ -599,7 +568,7 @@ export class WrSceneRuntime {
         }
 
         if (!tx.local || !(ArrayBuffer.isView(tx.local) || Array.isArray(tx.local)) || tx.local.length < 16) {
-            tx.local = Float32Array.from(WR_IDENTITY_M4);
+            tx.local = Azm.Mat4.makeIdentity();
         } else if (!(tx.local instanceof Float32Array)) {
             tx.local = wrReadMat4(tx.local);
         }
@@ -620,8 +589,66 @@ export class WrSceneRuntime {
      * @param {object} scene scene-like object with nodes array
      * @returns {object|null}
      */
-    static updateTransforms(scene) {
-        if (!scene || !Array.isArray(scene.nodes)) return scene ?? null;
+    static updateTransforms(scene, options = {}) {
+        if (!scene) return scene ?? null;
+
+        if (scene?.nodes instanceof Map) {
+            const fromId = String(options?.from ?? "").trim();
+            if (!fromId) return scene;
+            const nodeById = scene.nodes;
+            const visited = new Set();
+
+            const walk = (nodeId, parentWorld) => {
+                const node = nodeById.get(nodeId);
+                if (!node) return;
+                if (visited.has(nodeId)) return;
+                visited.add(nodeId);
+
+                const tx = WrWorldRuntime.getTransform(node);
+                if (parentWorld) {
+                    Azm.Mat4.mul(parentWorld, tx.local, tx.world);
+                } else {
+                    tx.world.set(tx.local);
+                }
+
+                const childIds = Array.isArray(node.childIds)
+                    ? node.childIds
+                    : (Array.isArray(node.children) ? node.children : []);
+                for (const childRef of childIds) {
+                    const childId = String(childRef ?? "").trim();
+                    if (!childId) continue;
+                    walk(childId, tx.world);
+                }
+            };
+
+            let parentWorld = null;
+            const chain = [];
+            let chainParentId = nodeById.get(fromId)?.parentId ?? null;
+            while (chainParentId != null) {
+                const parentId = String(chainParentId ?? "").trim();
+                if (!parentId) break;
+                const parentNode = nodeById.get(parentId);
+                if (!parentNode) break;
+                chain.push(parentId);
+                chainParentId = parentNode.parentId ?? null;
+            }
+            for (let i = chain.length - 1; i >= 0; i--) {
+                const parentNode = nodeById.get(chain[i]);
+                if (!parentNode) continue;
+                const tx = WrWorldRuntime.getTransform(parentNode);
+                if (parentWorld) {
+                    Azm.Mat4.mul(parentWorld, tx.local, tx.world);
+                } else {
+                    tx.world.set(tx.local);
+                }
+                parentWorld = tx.world;
+            }
+
+            walk(fromId, parentWorld);
+            return scene;
+        }
+
+        if (!Array.isArray(scene.nodes)) return scene ?? null;
         const nodeById = new Map();
         for (const node of scene.nodes) {
             const id = String(node?.id ?? "");
@@ -636,14 +663,17 @@ export class WrSceneRuntime {
             if (!childrenByParent.has(id)) childrenByParent.set(id, []);
         }
 
+        const fromId = String(options?.from ?? "").trim();
         const roots = [];
         for (const node of scene.nodes) {
             const id = String(node?.id ?? "");
             if (!id) continue;
-            const parentId = node.parent == null ? null : String(node.parent);
+            const parentIdRaw = node.parentId ?? node.parent ?? null;
+            const parentId = parentIdRaw == null ? null : String(parentIdRaw);
             if (!parentId || !nodeById.has(parentId)) {
-                roots.push(id);
-                node.parent = null;
+                if (!fromId || fromId === id) roots.push(id);
+                if ("parent" in node) node.parent = null;
+                if ("parentId" in node) node.parentId = null;
                 continue;
             }
             const children = childrenByParent.get(parentId) ?? [];
@@ -654,7 +684,9 @@ export class WrSceneRuntime {
         for (const [parentId, childIds] of childrenByParent.entries()) {
             const parentNode = nodeById.get(parentId);
             if (!parentNode) continue;
-            parentNode.children = Array.from(new Set(childIds));
+            const dedup = Array.from(new Set(childIds));
+            if ("children" in parentNode) parentNode.children = dedup;
+            if ("childIds" in parentNode) parentNode.childIds = dedup;
         }
 
         const visited = new Set();
@@ -664,7 +696,7 @@ export class WrSceneRuntime {
             if (visited.has(nodeId)) return;
             visited.add(nodeId);
 
-            const tx = WrSceneRuntime.getTransform(node);
+            const tx = WrWorldRuntime.getTransform(node);
             if (parentWorld) {
                 Azm.Mat4.mul(parentWorld, tx.local, tx.world);
             } else {
@@ -677,12 +709,41 @@ export class WrSceneRuntime {
             }
         };
 
-        for (const rootId of roots) walk(rootId, null);
+        if (fromId) {
+            let parentWorld = null;
+            const chain = [];
+            let chainParentId = nodeById.get(fromId)?.parentId ?? nodeById.get(fromId)?.parent ?? null;
+            while (chainParentId != null) {
+                const parentId = String(chainParentId ?? "").trim();
+                if (!parentId) break;
+                const parentNode = nodeById.get(parentId);
+                if (!parentNode) break;
+                chain.push(parentId);
+                chainParentId = parentNode.parentId ?? parentNode.parent ?? null;
+            }
+            for (let i = chain.length - 1; i >= 0; i--) {
+                const parentNode = nodeById.get(chain[i]);
+                if (!parentNode) continue;
+                const tx = WrWorldRuntime.getTransform(parentNode);
+                if (parentWorld) {
+                    Azm.Mat4.mul(parentWorld, tx.local, tx.world);
+                } else {
+                    tx.world.set(tx.local);
+                }
+                parentWorld = tx.world;
+            }
 
-        for (const node of scene.nodes) {
-            const id = String(node?.id ?? "");
-            if (!id || visited.has(id)) continue;
-            walk(id, null);
+            walk(fromId, parentWorld);
+        } else {
+            for (const rootId of roots) walk(rootId, null);
+        }
+
+        if (!fromId) {
+            for (const node of scene.nodes) {
+                const id = String(node?.id ?? "");
+                if (!id || visited.has(id)) continue;
+                walk(id, null);
+            }
         }
 
         return scene;
@@ -693,12 +754,31 @@ export class WrSceneRuntime {
      * @param {object} scene scene-like object with nodes array
      * @returns {{node: object, meshRenderer: object}[]}
      */
-    static iterRenderableNodes(scene) {
-        if (!scene || !Array.isArray(scene.nodes)) return [];
+    static iterRenderableNodes(scene, options = {}) {
+        if (!scene) return [];
         const out = [];
-        for (const node of scene.nodes) {
-            WrSceneRuntime.bindNodeComponents(scene, node);
-            const meshRenderer = WrSceneRuntime.getMeshRenderer(node);
+        const fromId = String(options?.from ?? "").trim();
+        const nodes = [];
+
+        if (fromId && typeof scene?.traverse === "function") {
+            for (const node of scene.traverse({
+                from: fromId,
+                mode: options.mode ?? "dfs_pre",
+                includeFrom: options.includeFrom !== false,
+            })) {
+                nodes.push(node);
+            }
+        } else if (Array.isArray(scene.nodes)) {
+            nodes.push(...scene.nodes);
+        } else if (scene?.nodes instanceof Map) {
+            nodes.push(...scene.nodes.values());
+        } else {
+            return out;
+        }
+
+        for (const node of nodes) {
+            WrWorldRuntime.bindNodeComponents(scene, node);
+            const meshRenderer = WrWorldRuntime.getMeshRenderer(node);
             if (!meshRenderer) continue;
             if (meshRenderer.active === false) continue;
             if (!meshRenderer.meshID) continue;
@@ -708,4 +788,5 @@ export class WrSceneRuntime {
     }
 }
 
-export default WrSceneRuntime;
+export default WrWorldRuntime;
+

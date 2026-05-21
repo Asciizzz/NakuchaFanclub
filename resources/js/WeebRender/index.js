@@ -1,7 +1,6 @@
 export { WrAsset } from "./Core/Asset.js";
-export { WrScene } from "./Core/Scene.js";
-export { WrNode } from "./Core/Node.js";
-export { WrSceneRuntime } from "./Core/SceneRuntime.js";
+export { WrWorld } from "./Core/World.js";
+export { WrWorldRuntime } from "./Core/WorldRuntime.js";
 export { WrRenderQueue } from "./Core/RenderQueue.js";
 export { wrPackMesh, wrPackSubmesh, wrResolveNodeModelMatrix } from "./Core/MeshPacking.js";
 
@@ -43,3 +42,4 @@ export {
     wrNormalizeRenderCfg,
     wrRenderCfgKey,
 } from "./Core/RenderConfig.js";
+

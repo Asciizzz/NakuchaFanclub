@@ -1,3 +1,5 @@
+import * as Azm from "../../AzLib/Azm.js";
+
 "use strict";
 
     const TYPE_COMPS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
@@ -500,23 +502,19 @@
         };
 
         const rootId = pushNode(modelName || "Model_Root", null, {
-            Transform: { local: new Float32Array(16), world: new Float32Array(16) },
+            Transform: { local: Azm.Mat4.makeIdentity(), world: Azm.Mat4.makeIdentity() },
         });
-        nodes[0].components.Transform.local[0] = 1;
-        nodes[0].components.Transform.local[5] = 1;
-        nodes[0].components.Transform.local[10] = 1;
-        nodes[0].components.Transform.local[15] = 1;
         nodes[0].components.Transform.world.set(nodes[0].components.Transform.local);
 
         const skinToHolderNodeId = {};
         if ((gltf.skins?.length || 0) > 0) {
             const skeletonRootId = pushNode("Skeletons", rootId, {
-                Transform: { local: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]), world: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]) },
+                Transform: { local: Azm.Mat4.makeIdentity(), world: Azm.Mat4.makeIdentity() },
             });
             for (let si = 0; si < gltf.skins.length; si++) {
                 const skelId = skinToSkeletonId[si] ?? null;
                 const holderId = pushNode(nameOr(gltf.skins[si].name, "Skeleton", si), skeletonRootId, {
-                    Transform: { local: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]), world: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]) },
+                    Transform: { local: Azm.Mat4.makeIdentity(), world: Azm.Mat4.makeIdentity() },
                     Skeleton: { skeletonID: skelId, bones: null },
                 });
                 skinToHolderNodeId[si] = holderId;

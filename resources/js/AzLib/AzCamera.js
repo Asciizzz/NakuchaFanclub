@@ -90,7 +90,7 @@ export class AzCamera {
 		const right = Azm.Vec3.norm(Azm.Vec3.cross(up, forward));
 		const camUp = Azm.Vec3.cross(forward, right);
 
-		const m = Azm.Mat4.identity();
+		const m = Azm.Mat4.makeIdentity();
 
 		m[0] = right[0]; m[4] = camUp[0]; m[8] = -forward[0];
 		m[1] = right[1]; m[5] = camUp[1]; m[9] = -forward[1];

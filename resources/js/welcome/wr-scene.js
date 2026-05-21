@@ -1,60 +1,86 @@
 import { AzCamera } from "../AzLib/AzCamera.js";
-import WrAsset from "../WeebRender/Core/Asset.js";
-
+import WrWorld from "../WeebRender/Core/World.js";
 import * as Azm from "../AzLib/Azm.js";
 
 const container = document.getElementById("main-canvas");
 const EYE_CLOSE_MORPH = "Eye_2_R(CloseA)[M_Face]";
+const WR_NODE_CORE_KEYS = new Set(["ctx", "id", "parentId", "childIds", "name"]);
 
-function createEmptyCompositeScene(asset) {
-    return asset.createScene({
-        id: "wr-composite",
-        name: "WrComposite",
-        rootId: "CompositeRoot",
-        nodes: [{
-            id: "CompositeRoot",
-            name: "CompositeRoot",
-            parent: null,
-            children: [],
-            components: {
-                Transform: {
-                    local: new Float32Array([
-                        1, 0, 0, 0,
-                        0, 1, 0, 0,
-                        0, 0, 1, 0,
-                        0, 0, 0, 1,
-                    ]),
-                    world: new Float32Array([
-                        1, 0, 0, 0,
-                        0, 1, 0, 0,
-                        0, 0, 1, 0,
-                        0, 0, 0, 1,
-                    ]),
-                },
-            },
-        }],
-    });
+/**
+ * Create identity matrix clone.
+ * @returns {Float32Array}
+ */
+function wrIdentityM4() {
+    return new Float32Array([
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+    ]);
 }
 
-function createInstanceBundle(compositeScene, sourceScene, offset = [0, 0, 0], speed = 1) {
-    const tracker = compositeScene.instantiate(sourceScene, compositeScene.rootId);
-    const rootId = tracker.map[sourceScene.rootId] ?? tracker.nodeIds[0] ?? null;
-    const rootNode = rootId ? compositeScene.node(rootId) : null;
-    const rootTransform = rootNode?.get("Transform") ?? null;
+/**
+ * Iterate one branch into flat node list.
+ * @param {import("../AzLib/Azt.js").Node|null} branchRoot branch root node
+ * @returns {import("../AzLib/Azt.js").Node[]}
+ */
+function wrCollectBranchNodes(branchRoot) {
+    if (!branchRoot) return [];
+    const out = [];
+    for (const node of branchRoot.traverse({
+        mode: "dfs_pre",
+        includeFrom: true,
+    })) {
+        out.push(node);
+    }
+    return out;
+}
+
+/**
+ * Create one empty composite root branch.
+ * @param {WrWorld} world world context
+ * @returns {import("../AzLib/Azt.js").Node}
+ */
+function createEmptyCompositeRoot(world) {
+    const root = world.addNode(null);
+    if (!root) throw new Error("[WrWorld] failed to create composite root");
+    root.name = "CompositeRoot";
+    root.Transform = {
+        local: wrIdentityM4(),
+        world: wrIdentityM4(),
+    };
+    return root;
+}
+
+/**
+ * Create one copied branch bundle from model root.
+ * @param {WrWorld} world world context
+ * @param {import("../AzLib/Azt.js").Node} compositeRoot composite branch root
+ * @param {import("../AzLib/Azt.js").Node} sourceRoot source model branch root
+ * @param {number[]} [offset=[0,0,0]] translation offset
+ * @param {number} [speed=1] animation speed
+ * @returns {object|null}
+ */
+function createInstanceBundle(world, compositeRoot, sourceRoot, offset = [0, 0, 0], speed = 1) {
+    const copiedRoot = world.copyBranch(sourceRoot, compositeRoot);
+    if (!copiedRoot) return null;
+
+    const rootTransform = copiedRoot.Transform ?? copiedRoot.transform ?? null;
     if (rootTransform?.local) {
         rootTransform.local.set(Azm.Mat4.fromTranslation(offset));
     }
 
+    const nodeIds = [];
     const morphs = [];
     const skeletons = [];
-    for (const nodeId of tracker.nodeIds) {
-        const node = compositeScene.node(nodeId);
-        const mr = node?.get("MeshRenderer") ?? null;
+    for (const node of wrCollectBranchNodes(copiedRoot)) {
+        nodeIds.push(node.id);
+        const mr = node.MeshRenderer ?? node.meshRenderer ?? null;
         if (!mr) continue;
         morphs.push(mr);
 
-        const skeletonNode = mr.skeletonNode ? compositeScene.node(mr.skeletonNode) : null;
-        const skeleton = skeletonNode?.get("Skeleton") ?? null;
+        const skeletonNode = mr.skeletonNode ? world.getNode(mr.skeletonNode) : null;
+        const skeleton = skeletonNode?.Skeleton ?? skeletonNode?.skeleton ?? null;
         if (skeleton && !skeletons.includes(skeleton)) {
             skeletons.push(skeleton);
         }
@@ -70,9 +96,9 @@ function createInstanceBundle(compositeScene, sourceScene, offset = [0, 0, 0], s
     }
 
     return {
-        tracker,
-        rootNode,
+        rootNode: copiedRoot,
         rootTransform,
+        nodeIds,
         morphs,
         skeletons,
         hip,
@@ -82,18 +108,25 @@ function createInstanceBundle(compositeScene, sourceScene, offset = [0, 0, 0], s
     };
 }
 
-function logMeshMorphTargetNames(scene, asset) {
-    const meshNodes = scene.findByComponent("MeshRenderer");
-    console.group(`[WrScene] Mesh morph targets (${meshNodes.length} mesh renderers)`);
-    for (let i = 0; i < meshNodes.length; i++) {
-        const node = meshNodes[i];
-        const mr = node?.get("MeshRenderer") ?? null;
+/**
+ * Print mesh morph target summary for one branch.
+ * @param {WrWorld} world world context
+ * @param {import("../AzLib/Azt.js").Node} branchRoot branch root node
+ * @returns {void}
+ */
+function logMeshMorphTargetNames(world, branchRoot) {
+    const meshNodes = wrCollectBranchNodes(branchRoot)
+        .filter((node) => !!(node.MeshRenderer ?? node.meshRenderer ?? null));
+
+    console.group(`[WrWorld] Mesh morph targets (${meshNodes.length} mesh renderers)`);
+    for (const node of meshNodes) {
+        const mr = node.MeshRenderer ?? node.meshRenderer ?? null;
         const meshID = String(mr?.meshID ?? "");
-        const mesh = asset.assets.getMesh(meshID);
+        const mesh = world.assets.getMesh(meshID);
         const names = Array.isArray(mesh?.morphTargetNames) ? mesh.morphTargetNames : [];
         console.log({
-            nodeId: node?.id ?? null,
-            nodeName: node?.name ?? null,
+            nodeId: node.id,
+            nodeName: node.name ?? null,
             meshID,
             morphTargetCount: Number(mesh?.morphTargetCount ?? names.length ?? 0),
             morphTargetNames: names,
@@ -102,20 +135,25 @@ function logMeshMorphTargetNames(scene, asset) {
     console.groupEnd();
 }
 
-function dumpSceneStructure(scene, label = "scene") {
-    if (!scene) return;
-    const nodes = Array.isArray(scene.nodes) ? scene.nodes : [];
-    const nodeById = new Map(nodes.map((n) => [String(n.id), n]));
+/**
+ * Dump branch hierarchy + component summary.
+ * @param {WrWorld} world world context
+ * @param {import("../AzLib/Azt.js").Node} branchRoot branch root node
+ * @param {string} [label="branch"] label
+ * @returns {void}
+ */
+function dumpBranchStructure(world, branchRoot, label = "branch") {
+    if (!branchRoot) return;
 
     const formatComponent = (key, value) => {
         if (!value || typeof value !== "object") return value;
-        if (key === "Transform") {
+        if (key === "Transform" || key === "transform") {
             return {
                 local: ArrayBuffer.isView(value.local) ? `mat4(${value.local.length})` : null,
                 world: ArrayBuffer.isView(value.world) ? `mat4(${value.world.length})` : null,
             };
         }
-        if (key === "MeshRenderer") {
+        if (key === "MeshRenderer" || key === "meshRenderer") {
             return {
                 active: value.active ?? true,
                 meshID: value.meshID ?? null,
@@ -124,7 +162,7 @@ function dumpSceneStructure(scene, label = "scene") {
                 morphWeights: ArrayBuffer.isView(value.morphWeights) ? `f32[${value.morphWeights.length}]` : null,
             };
         }
-        if (key === "Skeleton") {
+        if (key === "Skeleton" || key === "skeleton") {
             return {
                 skeletonID: value.skeletonID ?? value.skeletonId ?? null,
                 bones: Array.isArray(value.bones) ? `bones[${value.bones.length}]` : null,
@@ -134,43 +172,45 @@ function dumpSceneStructure(scene, label = "scene") {
     };
 
     const walk = (nodeId, depth = 0) => {
-        const node = scene.node(nodeId);
-        const raw = nodeById.get(String(nodeId));
-        if (!node || !raw) return;
+        const node = world.getNode(nodeId);
+        if (!node) return;
         const indent = "  ".repeat(depth);
-        console.group(`${indent}Node ${node.id} (${node.name})`);
+        console.group(`${indent}Node ${node.id} (${node.name ?? node.id})`);
         console.log({
             id: node.id,
-            name: node.name,
+            name: node.name ?? null,
             parentId: node.parentId,
-            children: Array.isArray(raw.children) ? raw.children.slice() : [],
+            children: Array.isArray(node.childIds) ? node.childIds.slice() : [],
         });
-        const comps = node.components ?? {};
         console.group(`${indent}Components`);
-        for (const [key, value] of Object.entries(comps)) {
+        for (const [key, value] of Object.entries(node)) {
+            if (WR_NODE_CORE_KEYS.has(key)) continue;
+            if (!value || typeof value !== "object") continue;
             console.log(`${key}:`, formatComponent(key, value));
         }
         console.groupEnd();
-        const children = Array.isArray(raw.children) ? raw.children : [];
-        for (const childId of children) walk(childId, depth + 1);
+        for (const childId of node.childIds ?? []) {
+            walk(String(childId), depth + 1);
+        }
         console.groupEnd();
     };
 
-    console.group(`[WrScene] Tree: ${label}`);
+    console.group(`[WrWorld] Tree: ${label}`);
     console.log({
-        sceneId: scene.id,
-        rootId: scene.rootId,
-        nodeCount: nodes.length,
+        worldId: world.id,
+        branchRootId: branchRoot.id,
+        rootCount: world.roots.length,
+        branchNodeCount: wrCollectBranchNodes(branchRoot).length,
     });
-    walk(scene.rootId, 0);
+    walk(branchRoot.id, 0);
     console.groupEnd();
 }
 
 if (!container) {
-    console.warn("[WrScene] #main-canvas is missing");
+    console.warn("[WrWorld] #main-canvas is missing");
 } else {
     run().catch((error) => {
-        console.error("[WrScene] fatal error", error);
+        console.error("[WrWorld] fatal error", error);
     });
 }
 
@@ -181,7 +221,7 @@ async function run() {
         backendPrefer = raw === "1" ? "webgl2" : "webgpu";
     }
 
-    const asset = new WrAsset({
+    const world = new WrWorld({
         canvas: { id: "wr-canvas", alpha: true, maxPixelRatio: 2 },
         backend: {
             prefer: backendPrefer,
@@ -193,8 +233,8 @@ async function run() {
         },
     });
 
-    await asset.init();
-    asset.mount(container).fitContainer();
+    await world.init();
+    world.mount(container).fitContainer();
 
     const camera = new AzCamera({
         position: [0, 1, 5],
@@ -203,9 +243,9 @@ async function run() {
         fov: 45,
     });
     camera.lookAt([0, 1, 0]);
-    asset.setCamera(camera);
+    world.setCamera(camera);
 
-    asset.registerShader("wr-default", {
+    world.registerShader("wr-default", {
         vertexAbiVersion: 1,
         mode: "template",
         links: [
@@ -274,8 +314,6 @@ async function run() {
                 $OUT_COLOR$ = textureSample($ALBEDO_TEX$, texSampler, out_uv) * $ALBEDO_COLOR$;
             `,
             glslMain: `
-                // $OUT_COLOR$ = texture($ALBEDO_TEX$, out_uv) * $ALBEDO_COLOR$;
-
                 vec4 texColor = texture($ALBEDO_TEX$, out_uv) * $ALBEDO_COLOR$;
                 texColor.rg *= 0.5;
                 $OUT_COLOR$ = texColor;
@@ -283,31 +321,28 @@ async function run() {
         },
     });
 
-    let scene = null;
-    let composite = null;
+    let sourceRoot = null;
+    let compositeRoot = null;
     let bundles = [];
     try {
-        scene = await asset.loadModelFromURL("/Models/Agnes.glb");
-        console.info("[WrScene] model loaded", scene.id);
-        logMeshMorphTargetNames(scene, asset);
-        dumpSceneStructure(scene, "source");
-        composite = createEmptyCompositeScene(asset);
+        sourceRoot = await world.loadModelFromURL("/Models/Agnes.glb");
+        console.info("[WrWorld] model loaded", sourceRoot.id);
+        logMeshMorphTargetNames(world, sourceRoot);
+        dumpBranchStructure(world, sourceRoot, "source");
 
+        compositeRoot = createEmptyCompositeRoot(world);
         bundles = [
-            // createInstanceBundle(composite, scene, [-0.2, 0, 0], 0.6),
-            createInstanceBundle(composite, scene, [0, 0, 0], 1.1),
-            // createInstanceBundle(composite, scene, [0.2, 0, 0], 1.8),
-        ];
+            createInstanceBundle(world, compositeRoot, sourceRoot, [0, 0, 0], 1.1),
+        ].filter(Boolean);
 
-        console.log(composite);
-        dumpSceneStructure(composite, "composite");
+        dumpBranchStructure(world, compositeRoot, "composite");
 
-        for (const [index, bundle] of bundles.entries()) {
+        for (const bundle of bundles) {
             for (const morph of bundle.morphs) {
                 if (!morph?.resolveMorphIndex) continue;
                 const targetIndex = morph.resolveMorphIndex(EYE_CLOSE_MORPH);
                 if (targetIndex >= 0) {
-                    console.info("[WrScene] eye morph resolved", {
+                    console.info("[WrWorld] eye morph resolved", {
                         meshID: morph.meshID,
                         morphName: EYE_CLOSE_MORPH,
                         morphIndex: targetIndex,
@@ -315,13 +350,13 @@ async function run() {
                 }
             }
         }
-        console.info("[WrScene] composite instantiated", bundles.length);
+        console.info("[WrWorld] composite instantiated", bundles.length);
     } catch (error) {
-        console.warn("[WrScene] model load skipped", String(error?.message ?? error));
+        console.warn("[WrWorld] model load skipped", String(error?.message ?? error));
     }
 
     new ResizeObserver(() => {
-        asset.fitContainer();
+        world.fitContainer();
     }).observe(container);
 
     let lastTime = performance.now();
@@ -329,16 +364,10 @@ async function run() {
         const dt = (now - lastTime) * 0.001;
         lastTime = now;
 
-        if (composite && bundles.length > 0) {
+        if (compositeRoot && bundles.length > 0) {
             for (let i = 0; i < bundles.length; i++) {
                 const bundle = bundles[i];
                 bundle.time += dt;
-
-                // if (bundle.rootTransform?.local) {
-                //     const local = Azm.Mat4.fromTranslation(bundle.offset);
-                //     Azm.Mat4.rotateY(local, bundle.time * bundle.speed, local);
-                //     bundle.rootTransform.local.set(local);
-                // }
 
                 if (bundle.hip) {
                     const angle = Math.sin((bundle.time * 2.0) + (i * 0.6)) * 0.35;
@@ -353,8 +382,8 @@ async function run() {
                 }
             }
 
-            composite.update(dt);
-            composite.render();
+            world.update(dt, { from: compositeRoot.id });
+            world.render({ from: compositeRoot.id });
         }
 
         requestAnimationFrame(frame);

@@ -1,4 +1,4 @@
-import WrSceneRuntime from "./SceneRuntime.js";
+import WrWorldRuntime from "./WorldRuntime.js";
 import { wrResolveNodeModelMatrix } from "./MeshPacking.js";
 import { WR_DEFAULT_RENDER_CFG, wrNormalizeRenderCfg } from "./RenderConfig.js";
 
@@ -65,11 +65,21 @@ function wrResolveMorphSelection(meshRenderer, meshAsset) {
  */
 function wrBuildSceneNodeMap(scene) {
     const map = new Map();
-    const nodes = Array.isArray(scene?.nodes) ? scene.nodes : [];
-    for (const node of nodes) {
-        const id = String(node?.id ?? "").trim();
-        if (!id) continue;
-        map.set(id, node);
+    if (scene?.nodes instanceof Map) {
+        for (const [idRaw, node] of scene.nodes.entries()) {
+            const id = String(idRaw ?? node?.id ?? "").trim();
+            if (!id) continue;
+            map.set(id, node);
+        }
+        return map;
+    }
+
+    if (Array.isArray(scene?.nodes)) {
+        for (const node of scene.nodes) {
+            const id = String(node?.id ?? "").trim();
+            if (!id) continue;
+            map.set(id, node);
+        }
     }
     return map;
 }
@@ -88,11 +98,11 @@ function wrResolveSkinPalette(scene, sceneNodeById, meshRenderer) {
     const skeletonNode = sceneNodeById.get(skeletonNodeId);
     if (!skeletonNode) return null;
 
-    const skeletonComps = WrSceneRuntime.getNodeComponents(skeletonNode);
+    const skeletonComps = WrWorldRuntime.getNodeComponents(skeletonNode);
     const skeletonComp = skeletonComps.Skeleton ?? skeletonComps.skeleton ?? null;
     if (!skeletonComp || typeof skeletonComp !== "object") return null;
 
-    WrSceneRuntime.bindComponent(scene, skeletonNodeId, "Skeleton", skeletonComp);
+    WrWorldRuntime.bindComponent(scene, skeletonNodeId, "Skeleton", skeletonComp);
     if (typeof skeletonComp.buildPalette !== "function") return null;
     return skeletonComp.buildPalette(WR_SKIN_BONE_CAP);
 }
@@ -111,7 +121,9 @@ export class WrRenderQueue {
      */
     static build(scene, camera, assets, options = {}) {
         const drawList = [];
-        const items = WrSceneRuntime.iterRenderableNodes(scene);
+        const items = WrWorldRuntime.iterRenderableNodes(scene, {
+            from: options.from ?? null,
+        });
         const sceneNodeById = wrBuildSceneNodeMap(scene);
         const defaultShaderId = options.defaultShaderId ?? null;
         const defaultRenderCfg = wrNormalizeRenderCfg(options.defaultRenderCfg ?? WR_DEFAULT_RENDER_CFG);
@@ -158,3 +170,5 @@ export class WrRenderQueue {
 }
 
 export default WrRenderQueue;
+
+

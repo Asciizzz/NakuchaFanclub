@@ -146,7 +146,7 @@ Flow:
   - `Core/Scene.js`
   - `Core/Node.js` (WrNode facade)
 - Refactor:
-  - `Core/SceneRuntime.js` -> world/node traversal helpers
+  - `Core/WorldRuntime.js` -> world/node traversal helpers
   - `Core/RenderQueue.js` -> branch-root traversal input
   - `Core/Asset.js` -> keep thin store helper or fold into `World`
   - `index.js` exports -> export `WrWorld`, drop `WrScene`/`WrNode`
