@@ -96,6 +96,16 @@ export class Ctx {
 	get nodes() { return this.#nodes; }
 
 	/**
+	 * Create one node instance for this context
+	 * Override in derived contexts to return inherited node classes
+	 * @param {string} id node id
+	 * @returns {Node}
+	 */
+	createNode(id) {
+		return new Node(this, id);
+	}
+
+	/**
 	 * Create empty node and add to tree
 	 * @param {string|null} [parent=null] parent id
 	 * @param {number} [index=-1] insert index
@@ -107,7 +117,8 @@ export class Ctx {
 		if (parentId != null && !this.#nodes.has(parentId)) return null;
 
 		const id = this.#nextId();
-		const node = new Node(this, id);
+		const node = this.createNode(id);
+		if (!node) return null;
 
 		node.parentId = parentId;
 		node.childIds.length = 0;

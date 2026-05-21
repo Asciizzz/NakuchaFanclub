@@ -6,8 +6,9 @@ import {
 	WrShaderStore,
 	WrSkeletonStore,
 } from "./Assets.js";
+import WrNode from "./Node.js";
 
-const WR_NODE_STATIC_KEYS = new Set(["ctx", "id", "parentId", "childIds"]);
+const WR_NODE_STATIC_KEYS = new Set(["ctx", "id", "parentId", "childIds", "components"]);
 
 function asId(value) {
 	const key = String(value ?? "").trim();
@@ -15,6 +16,9 @@ function asId(value) {
 }
 
 function cloneValue(value) {
+	if (ArrayBuffer.isView(value)) {
+		return new value.constructor(value);
+	}
 	if (typeof structuredClone === "function") {
 		try {
 			return structuredClone(value);
@@ -35,6 +39,21 @@ function copyNodeData(source, target) {
 	for (const key of Object.keys(source)) {
 		if (WR_NODE_STATIC_KEYS.has(key)) continue;
 		target[key] = cloneValue(source[key]);
+	}
+}
+
+function copyNodeComponents(source, target) {
+	if (!source?.components || typeof target?.addComp !== "function") return;
+	if (typeof source.components.entries !== "function") return;
+
+	for (const [Type, srcComp] of source.components.entries()) {
+		if (!srcComp || typeof srcComp !== "object") continue;
+		const dstComp = target.addComp(Type);
+		if (!dstComp) continue;
+		for (const field of Object.keys(srcComp)) {
+			if (field === "node") continue;
+			dstComp[field] = cloneValue(srcComp[field]);
+		}
 	}
 }
 
@@ -76,6 +95,10 @@ export class WrWorld extends Ctx {
 
 	get store() { return this.#store; }
 	get roots() { return Array.from(this.#roots); }
+
+	createNode(id) {
+		return new WrNode(this, id);
+	}
 
 	setCanvas(canvasRef) {
 		this.canvas = WrBackend.resolveCanvas(canvasRef);
@@ -178,6 +201,7 @@ export class WrWorld extends Ctx {
 			const clone = this.addNode(nextParentId);
 			if (!clone) return null;
 			copyNodeData(current, clone);
+			copyNodeComponents(current, clone);
 			remap.set(current.id, clone);
 		}
 
