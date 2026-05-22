@@ -4,7 +4,7 @@
 
 Yes, this is possible
 
-`WrBackend` can expose a fully agnostic render API that knows nothing about:
+`WrWBackend` can expose a fully agnostic render API that knows nothing about:
 
 - world
 - scene
@@ -19,7 +19,7 @@ It only knows:
 - render targets
 - draw commands
 
-`WrWorld` can then optionally consume this API later, but `WrBackend` stays standalone
+`WrWorld` can then optionally consume this API later, but `WrWBackend` stays standalone
 
 ## Core Design Rule
 
@@ -177,7 +177,7 @@ But backend API itself remains standalone and reusable without world
 
 ## 9) Implementation Steps
 
-1. Add agnostic resource/command interfaces to `WrWBackend/WrBackend.js` (`WrBackend.Base`)
+1. Add agnostic resource/command interfaces to `WrWBackend/WrWBackend.js` (`WrWBackend.Base`)
 2. Implement WGPU backend first (closest to explicit API)
 3. Implement WGL2 emulation layer with state/program caches
 4. Add handle lifetime tracking + debug labels
@@ -196,6 +196,6 @@ But backend API itself remains standalone and reusable without world
 You can have both:
 
 - `WrWorld` as render logic owner
-- `WrBackend` as pure agnostic GPU command executor
+- `WrWBackend` as pure agnostic GPU command executor
 
 The key is a strict handle/instruction API with no domain objects crossing the backend boundary

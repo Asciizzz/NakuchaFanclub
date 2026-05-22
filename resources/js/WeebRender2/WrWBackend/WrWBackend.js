@@ -1,11 +1,67 @@
+/* WrWBackend
+By Asciiz
+
+Backend-only render foundation for WR2.
+This module does not know what a world, scene, mesh, skeleton, or material is.
+
+#Base:
+* Shared backend base with canvas helpers and backend selection.
+* Methods
+	+ setCanvas(canvasRef)
+	+ init()
+	+ resize(options = {})
+	+ beginFrame(frameOptions = {})
+	+ endFrame()
+	+ destroy()
+	+ getCapabilities()
+	+ resolveCanvas(canvasRef)
+	+ normalizeClearColor(value)
+	+ normalizeFrameOptions(options = {})
+	+ resolveCanvasSize(canvas, options = {})
+	+ choose(canvasRef, options = {})
+
+#WGPU:
+* WebGPU backend implementation.
+* Methods
+	+ init()
+	+ resize(options = {})
+	+ beginFrame(frameOptions = {})
+	+ beginRenderPass(options = {})
+	+ endFrame()
+	+ destroy()
+
+#WGL2:
+* WebGL2 backend implementation.
+* Methods
+	+ init()
+	+ resize(options = {})
+	+ beginFrame(frameOptions = {})
+	+ beginRenderPass(options = {})
+	+ endFrame()
+	+ destroy()
+*/
+
 import AzWGPU from "../../AzLib/AzWGPU.js";
 import AzWGL2 from "../../AzLib/AzWGL2.js";
 
+const WR_WGPU_DEPTH_FORMAT = "depth24plus";
+
+/**
+ * Convert value to finite number with fallback
+ * @param {any} value source value
+ * @param {number} [fallback=0] fallback value
+ * @returns {number}
+ */
 function toNumber(value, fallback = 0) {
 	const n = Number(value);
 	return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Resolve canvas from element or selector
+ * @param {HTMLCanvasElement|string|null} canvasRef canvas ref
+ * @returns {HTMLCanvasElement|null}
+ */
 function resolveCanvas(canvasRef) {
 	if (!canvasRef) return null;
 	if (typeof HTMLCanvasElement !== "undefined" && canvasRef instanceof HTMLCanvasElement) {
@@ -20,9 +76,14 @@ function resolveCanvas(canvasRef) {
 	return null;
 }
 
-const WR_WGPU_DEPTH_FORMAT = "depth24plus";
-
+/**
+ * Shared backend base class
+ */
 export class Base {
+	/**
+	 * @param {HTMLCanvasElement|string|null} [canvas=null] canvas ref
+	 * @param {object} [options={}] backend options
+	 */
 	constructor(canvas = null, options = {}) {
 		this.canvas = resolveCanvas(canvas);
 		this.options = options ?? {};
@@ -30,35 +91,84 @@ export class Base {
 		this.report = null;
 	}
 
+	/**
+	 * Backend kind tag
+	 * @returns {string}
+	 */
 	get kind() { return "unknown"; }
 
+	/**
+	 * Set canvas from element or selector
+	 * @param {HTMLCanvasElement|string|null} canvasRef canvas ref
+	 * @returns {HTMLCanvasElement|null}
+	 */
 	setCanvas(canvasRef) {
 		this.canvas = resolveCanvas(canvasRef);
 		return this.canvas;
 	}
 
+	/**
+	 * Init backend resources
+	 * @returns {Promise<Base>}
+	 */
 	async init() {
 		throw new Error("[WrWBackend.Base] init() is required");
 	}
 
-	resize() {
+	/**
+	 * Resize backend targets
+	 * @param {object} [_options={}] resize options
+	 * @returns {boolean}
+	 */
+	resize(_options = {}) {
 		return false;
 	}
 
-	beginFrame(_frameOptions = {}) {}
+	/**
+	 * Begin one frame
+	 * @param {object} [_frameOptions={}] frame options
+	 * @returns {object|null}
+	 */
+	beginFrame(_frameOptions = {}) {
+		return null;
+	}
+
+	/**
+	 * End one frame
+	 * @returns {void}
+	 */
 	endFrame() {}
+
+	/**
+	 * Release backend resources
+	 * @returns {void}
+	 */
 	destroy() {
 		this.ready = false;
 	}
 
+	/**
+	 * Read capability report
+	 * @returns {object}
+	 */
 	getCapabilities() {
 		return this.report ?? {};
 	}
 
+	/**
+	 * Resolve canvas from element or selector
+	 * @param {HTMLCanvasElement|string|null} canvasRef canvas ref
+	 * @returns {HTMLCanvasElement|null}
+	 */
 	static resolveCanvas(canvasRef) {
 		return resolveCanvas(canvasRef);
 	}
 
+	/**
+	 * Normalize clear color into rgba object
+	 * @param {ArrayLike<number>|null} value color input
+	 * @returns {{r:number,g:number,b:number,a:number}}
+	 */
 	static normalizeClearColor(value) {
 		const src = (Array.isArray(value) || ArrayBuffer.isView(value))
 			? value
@@ -71,6 +181,11 @@ export class Base {
 		};
 	}
 
+	/**
+	 * Normalize generic frame options
+	 * @param {object} [options={}] frame options
+	 * @returns {object}
+	 */
 	static normalizeFrameOptions(options = {}) {
 		const src = options && typeof options === "object" ? options : {};
 		return {
@@ -82,6 +197,12 @@ export class Base {
 		};
 	}
 
+	/**
+	 * Resolve canvas output size using dpr and cap
+	 * @param {HTMLCanvasElement|null} canvas target canvas
+	 * @param {object} [options={}] size options
+	 * @returns {{width:number,height:number,pixelRatio:number}|null}
+	 */
 	static resolveCanvasSize(canvas, options = {}) {
 		if (!canvas) return null;
 		const src = options && typeof options === "object" ? options : {};
@@ -96,6 +217,12 @@ export class Base {
 		return { width, height, pixelRatio: useDpr };
 	}
 
+	/**
+	 * Choose and init backend with fallback
+	 * @param {HTMLCanvasElement|string} canvasRef canvas ref
+	 * @param {object} [options={}] choose options
+	 * @returns {Promise<{backend: Base, report: object}>}
+	 */
 	static async choose(canvasRef, options = {}) {
 		const canvas = Base.resolveCanvas(canvasRef);
 		if (!canvas) throw new Error("[WrWBackend] valid canvas is required");
@@ -156,7 +283,14 @@ export class Base {
 	}
 }
 
+/**
+ * WebGPU backend implementation
+ */
 export class WGPU extends Base {
+	/**
+	 * @param {HTMLCanvasElement|string|null} [canvas=null] canvas ref
+	 * @param {object} [options={}] backend options
+	 */
 	constructor(canvas = null, options = {}) {
 		super(canvas, options);
 		this.adapter = null;
@@ -172,8 +306,16 @@ export class WGPU extends Base {
 		this.#depthHeight = 0;
 	}
 
+	/**
+	 * Backend kind tag
+	 * @returns {string}
+	 */
 	get kind() { return "webgpu"; }
 
+	/**
+	 * Init adapter, device, and context
+	 * @returns {Promise<WGPU>}
+	 */
 	async init() {
 		if (!this.canvas) throw new Error("[WrWBackendWGPU] canvas is required");
 
@@ -203,6 +345,11 @@ export class WGPU extends Base {
 		return this;
 	}
 
+	/**
+	 * Resize canvas and reconfigure context
+	 * @param {object} [options={}] resize options
+	 * @returns {boolean}
+	 */
 	resize(options = {}) {
 		if (!this.ready || !this.context || !this.canvas || !this.device) return false;
 		const size = Base.resolveCanvasSize(this.canvas, options);
@@ -222,6 +369,11 @@ export class WGPU extends Base {
 		return true;
 	}
 
+	/**
+	 * Begin frame encoder and optional clear pass
+	 * @param {object} [frameOptions={}] frame options
+	 * @returns {object|null}
+	 */
 	beginFrame(frameOptions = {}) {
 		if (!this.ready || !this.context || !this.device) return null;
 		if (this.#encoder) this.endFrame();
@@ -237,6 +389,11 @@ export class WGPU extends Base {
 		return this.#frame;
 	}
 
+	/**
+	 * Begin one render pass on current frame
+	 * @param {object} [options={}] pass options
+	 * @returns {GPURenderPassEncoder|null}
+	 */
 	beginRenderPass(options = {}) {
 		if (!this.#encoder || !this.#colorView) return null;
 		const frame = this.#frame ?? Base.normalizeFrameOptions();
@@ -248,6 +405,10 @@ export class WGPU extends Base {
 		return AzWGPU.Pass.beginRender(this.#encoder, this.#passDescriptor(merged));
 	}
 
+	/**
+	 * Finish and submit frame command buffer
+	 * @returns {void}
+	 */
 	endFrame() {
 		if (!this.ready || !this.device || !this.#encoder) return;
 		const command = AzWGPU.Command.finish(this.#encoder);
@@ -257,6 +418,10 @@ export class WGPU extends Base {
 		this.#colorView = null;
 	}
 
+	/**
+	 * Release backend resources
+	 * @returns {void}
+	 */
 	destroy() {
 		if (this.#encoder) {
 			this.#encoder = null;
@@ -275,6 +440,11 @@ export class WGPU extends Base {
 		this.ready = false;
 	}
 
+	/**
+	 * Build pass descriptor from frame config
+	 * @param {object} frame frame options
+	 * @returns {GPURenderPassDescriptor}
+	 */
 	#passDescriptor(frame) {
 		const clearColor = frame.clearColor ?? Base.normalizeClearColor();
 		const needsDepth = frame.useDepth || frame.clearDepthEnabled;
@@ -296,6 +466,10 @@ export class WGPU extends Base {
 		};
 	}
 
+	/**
+	 * Ensure depth target for current canvas size
+	 * @returns {GPUTextureView|null}
+	 */
 	#ensureDepthTarget() {
 		if (!this.device || !this.canvas) return null;
 		const width = Math.max(1, this.canvas.width | 0);
@@ -318,6 +492,10 @@ export class WGPU extends Base {
 		return this.#depthView;
 	}
 
+	/**
+	 * Release cached depth resources
+	 * @returns {void}
+	 */
 	#releaseDepthTarget() {
 		if (this.#depthTexture?.destroy) this.#depthTexture.destroy();
 		this.#depthTexture = null;
@@ -335,15 +513,30 @@ export class WGPU extends Base {
 	#depthHeight;
 }
 
+/**
+ * WebGL2 backend implementation
+ */
 export class WGL2 extends Base {
+	/**
+	 * @param {HTMLCanvasElement|string|null} [canvas=null] canvas ref
+	 * @param {object} [options={}] backend options
+	 */
 	constructor(canvas = null, options = {}) {
 		super(canvas, options);
 		this.gl = null;
 		this.#frame = null;
 	}
 
+	/**
+	 * Backend kind tag
+	 * @returns {string}
+	 */
 	get kind() { return "webgl2"; }
 
+	/**
+	 * Init WebGL2 context
+	 * @returns {Promise<WGL2>}
+	 */
 	async init() {
 		if (!this.canvas) throw new Error("[WrWBackendWGL2] canvas is required");
 
@@ -364,6 +557,11 @@ export class WGL2 extends Base {
 		return this;
 	}
 
+	/**
+	 * Resize canvas and viewport
+	 * @param {object} [options={}] resize options
+	 * @returns {boolean}
+	 */
 	resize(options = {}) {
 		if (!this.ready || !this.gl || !this.canvas) return false;
 		const size = Base.resolveCanvasSize(this.canvas, options);
@@ -378,6 +576,11 @@ export class WGL2 extends Base {
 		return true;
 	}
 
+	/**
+	 * Begin frame and apply clear state
+	 * @param {object} [frameOptions={}] frame options
+	 * @returns {object|null}
+	 */
 	beginFrame(frameOptions = {}) {
 		if (!this.ready || !this.gl) return null;
 		this.#frame = Base.normalizeFrameOptions(frameOptions);
@@ -385,6 +588,11 @@ export class WGL2 extends Base {
 		return this.#frame;
 	}
 
+	/**
+	 * Begin one render pass style block
+	 * @param {object} [options={}] pass options
+	 * @returns {object|null}
+	 */
 	beginRenderPass(options = {}) {
 		if (!this.ready || !this.gl) return null;
 		const base = this.#frame ?? Base.normalizeFrameOptions();
@@ -397,8 +605,16 @@ export class WGL2 extends Base {
 		return next;
 	}
 
+	/**
+	 * End frame hook
+	 * @returns {void}
+	 */
 	endFrame() {}
 
+	/**
+	 * Release backend resources
+	 * @returns {void}
+	 */
 	destroy() {
 		this.#frame = null;
 		this.gl = null;
@@ -406,6 +622,11 @@ export class WGL2 extends Base {
 		this.ready = false;
 	}
 
+	/**
+	 * Apply clear state from normalized frame options
+	 * @param {object} frame frame options
+	 * @returns {void}
+	 */
 	#applyFrameClear(frame) {
 		const gl = this.gl;
 		if (!gl) return;
