@@ -154,6 +154,9 @@ that is categorized by resource type
 	+ destroy(timer)
 */
 
+function typeErrorWGPU(message) {
+	return new TypeError("[AzWGPU] " + String(message ?? "Type error"));
+}
 
 // ------ Adapter ------
 
@@ -265,7 +268,7 @@ export class Adapter {
 	 */
 	static getCapabilities(adapter) {
 		if (!adapter) {
-			throw new TypeError("Adapter.getCapabilities requires a GPUAdapter");
+			throw typeErrorWGPU("Adapter.getCapabilities requires a GPUAdapter");
 		}
 
 		return {
@@ -328,7 +331,7 @@ export class Device {
 	 */
 	static async create(adapter, options = {}) {
 		if (!adapter) {
-			throw new TypeError("Device.create requires a GPUAdapter");
+			throw typeErrorWGPU("Device.create requires a GPUAdapter");
 		}
 
 		const descriptor = options.descriptor ?? options;
@@ -342,7 +345,7 @@ export class Device {
 	 */
 	static getQueue(device) {
 		if (!device) {
-			throw new TypeError("Device.getQueue requires a GPUDevice");
+			throw typeErrorWGPU("Device.getQueue requires a GPUDevice");
 		}
 
 		return device.queue;
@@ -356,10 +359,10 @@ export class Device {
 	 */
 	static onLost(device, handler) {
 		if (!device) {
-			throw new TypeError("Device.onLost requires a GPUDevice");
+			throw typeErrorWGPU("Device.onLost requires a GPUDevice");
 		}
 		if (typeof handler !== "function") {
-			throw new TypeError("Device.onLost requires a function handler");
+			throw typeErrorWGPU("Device.onLost requires a function handler");
 		}
 
 		device.lost.then(handler);
@@ -374,10 +377,10 @@ export class Device {
 	 */
 	static async withErrorScope(device, filter, callback) {
 		if (!device) {
-			throw new TypeError("Device.withErrorScope requires a GPUDevice");
+			throw typeErrorWGPU("Device.withErrorScope requires a GPUDevice");
 		}
 		if (typeof callback !== "function") {
-			throw new TypeError("Device.withErrorScope requires a callback function");
+			throw typeErrorWGPU("Device.withErrorScope requires a callback function");
 		}
 
 		device.pushErrorScope(filter ?? "validation");
@@ -408,10 +411,10 @@ export class Context {
 	 */
 	static create(device, canvas, config = {}) {
 		if (!device) {
-			throw new TypeError("Context.create requires a GPUDevice");
+			throw typeErrorWGPU("Context.create requires a GPUDevice");
 		}
 		if (!canvas) {
-			throw new TypeError("Context.create requires a canvas");
+			throw typeErrorWGPU("Context.create requires a canvas");
 		}
 
 		const context = canvas.getContext("webgpu");
@@ -441,7 +444,7 @@ export class Context {
 	 */
 	static reconfigure(context, descriptor) {
 		if (!context) {
-			throw new TypeError("Context.reconfigure requires a GPUCanvasContext");
+			throw typeErrorWGPU("Context.reconfigure requires a GPUCanvasContext");
 		}
 
 		context.configure(descriptor);
@@ -455,7 +458,7 @@ export class Context {
 	 */
 	static unconfigure(context) {
 		if (!context) {
-			throw new TypeError("Context.unconfigure requires a GPUCanvasContext");
+			throw typeErrorWGPU("Context.unconfigure requires a GPUCanvasContext");
 		}
 
 		context.unconfigure();
@@ -475,10 +478,10 @@ export class Buffer {
 	 */
 	static create(device, descriptor) {
 		if (!device) {
-			throw new TypeError("Buffer.create requires a GPUDevice");
+			throw typeErrorWGPU("Buffer.create requires a GPUDevice");
 		}
 		if (!descriptor) {
-			throw new TypeError("Buffer.create requires a descriptor");
+			throw typeErrorWGPU("Buffer.create requires a descriptor");
 		}
 
 		return device.createBuffer(descriptor);
@@ -494,7 +497,7 @@ export class Buffer {
 	 */
 	static createMapped(device, descriptor, source = null, sourceOffset = 0) {
 		if (!device || !descriptor) {
-			throw new TypeError("Buffer.createMapped requires device and descriptor");
+			throw typeErrorWGPU("Buffer.createMapped requires device and descriptor");
 		}
 
 		const mappedDescriptor = {
@@ -533,10 +536,10 @@ export class Buffer {
 	 */
 	static write(device, buffer, data, offset = 0) {
 		if (!device || !buffer) {
-			throw new TypeError("Buffer.write requires a GPUDevice and GPUBuffer");
+			throw typeErrorWGPU("Buffer.write requires a GPUDevice and GPUBuffer");
 		}
 		if (!data) {
-			throw new TypeError("Buffer.write requires data");
+			throw typeErrorWGPU("Buffer.write requires data");
 		}
 
 		if (ArrayBuffer.isView(data)) {
@@ -555,7 +558,7 @@ export class Buffer {
 			return;
 		}
 
-		throw new TypeError("Buffer.write data must be ArrayBuffer or ArrayBufferView");
+		throw typeErrorWGPU("Buffer.write data must be ArrayBuffer or ArrayBufferView");
 	}
 
 	/**
@@ -568,7 +571,7 @@ export class Buffer {
 	 */
 	static async read(device, buffer, size, offset = 0) {
 		if (!device || !buffer) {
-			throw new TypeError("Buffer.read requires a GPUDevice and GPUBuffer");
+			throw typeErrorWGPU("Buffer.read requires a GPUDevice and GPUBuffer");
 		}
 
 		const staging = device.createBuffer({
@@ -599,16 +602,16 @@ export class Buffer {
 	 */
 	static async readTyped(device, buffer, TypedArrayCtor, count, options = {}) {
 		if (typeof TypedArrayCtor !== "function") {
-			throw new TypeError("Buffer.readTyped requires a typed array constructor");
+			throw typeErrorWGPU("Buffer.readTyped requires a typed array constructor");
 		}
 		if (typeof count !== "number" || count <= 0) {
-			throw new TypeError("Buffer.readTyped requires a positive count");
+			throw typeErrorWGPU("Buffer.readTyped requires a positive count");
 		}
 
 		const byteOffset = options.offset ?? 0;
 		const bytesPerElement = TypedArrayCtor.BYTES_PER_ELEMENT;
 		if (!bytesPerElement) {
-			throw new TypeError("Buffer.readTyped expected a typed array constructor with BYTES_PER_ELEMENT");
+			throw typeErrorWGPU("Buffer.readTyped expected a typed array constructor with BYTES_PER_ELEMENT");
 		}
 
 		const byteLength = count * bytesPerElement;
@@ -627,10 +630,10 @@ export class Buffer {
 	 */
 	static copy(device, sourceBuffer, destinationBuffer, size, options = {}) {
 		if (!device || !sourceBuffer || !destinationBuffer) {
-			throw new TypeError("Buffer.copy requires device, sourceBuffer, and destinationBuffer");
+			throw typeErrorWGPU("Buffer.copy requires device, sourceBuffer, and destinationBuffer");
 		}
 		if (typeof size !== "number" || size <= 0) {
-			throw new TypeError("Buffer.copy requires a positive size");
+			throw typeErrorWGPU("Buffer.copy requires a positive size");
 		}
 
 		return Command.copyBufferToBuffer(device, sourceBuffer, destinationBuffer, size, options);
@@ -643,7 +646,7 @@ export class Buffer {
 	 */
 	static destroyAll(buffers) {
 		if (!Array.isArray(buffers)) {
-			throw new TypeError("Buffer.destroyAll requires a buffer array");
+			throw typeErrorWGPU("Buffer.destroyAll requires a buffer array");
 		}
 
 		let destroyed = 0;
@@ -672,10 +675,10 @@ export class Texture {
 	 */
 	static create(device, descriptor) {
 		if (!device) {
-			throw new TypeError("Texture.create requires a GPUDevice");
+			throw typeErrorWGPU("Texture.create requires a GPUDevice");
 		}
 		if (!descriptor) {
-			throw new TypeError("Texture.create requires a descriptor");
+			throw typeErrorWGPU("Texture.create requires a descriptor");
 		}
 
 		return device.createTexture(descriptor);
@@ -689,7 +692,7 @@ export class Texture {
 	 */
 	static create2D(device, options = {}) {
 		if (!device) {
-			throw new TypeError("Texture.create2D requires a GPUDevice");
+			throw typeErrorWGPU("Texture.create2D requires a GPUDevice");
 		}
 
 		const usage = options.usage ?? (
@@ -717,7 +720,7 @@ export class Texture {
 	 */
 	static createCube(device, options = {}) {
 		if (!device) {
-			throw new TypeError("Texture.createCube requires a GPUDevice");
+			throw typeErrorWGPU("Texture.createCube requires a GPUDevice");
 		}
 
 		const size = options.size ?? 1;
@@ -746,7 +749,7 @@ export class Texture {
 	 */
 	static create3D(device, options = {}) {
 		if (!device) {
-			throw new TypeError("Texture.create3D requires a GPUDevice");
+			throw typeErrorWGPU("Texture.create3D requires a GPUDevice");
 		}
 
 		const usage = options.usage ?? (
@@ -773,7 +776,7 @@ export class Texture {
 	 */
 	static create2DArray(device, options = {}) {
 		if (!device) {
-			throw new TypeError("Texture.create2DArray requires a GPUDevice");
+			throw typeErrorWGPU("Texture.create2DArray requires a GPUDevice");
 		}
 
 		const usage = options.usage ?? (
@@ -801,7 +804,7 @@ export class Texture {
 	 */
 	static createDepth2D(device, options = {}) {
 		if (!device) {
-			throw new TypeError("Texture.createDepth2D requires a GPUDevice");
+			throw typeErrorWGPU("Texture.createDepth2D requires a GPUDevice");
 		}
 
 		const usage = options.usage ?? (
@@ -831,10 +834,10 @@ export class Texture {
 	 */
 	static write(device, texture, source, layout, size) {
 		if (!device || !texture) {
-			throw new TypeError("Texture.write requires a GPUDevice and GPUTexture");
+			throw typeErrorWGPU("Texture.write requires a GPUDevice and GPUTexture");
 		}
 		if (!source || !layout || !size) {
-			throw new TypeError("Texture.write requires source, layout, and size");
+			throw typeErrorWGPU("Texture.write requires source, layout, and size");
 		}
 
 		device.queue.writeTexture({ texture }, source, layout, size);
@@ -850,7 +853,7 @@ export class Texture {
 	 */
 	static writeLayer(device, texture, source, options = {}) {
 		if (!device || !texture || !source) {
-			throw new TypeError("Texture.writeLayer requires device, texture, and source");
+			throw typeErrorWGPU("Texture.writeLayer requires device, texture, and source");
 		}
 
 		const size = options.size ?? [
@@ -885,7 +888,7 @@ export class Texture {
 	 */
 	static writeExternal(device, texture, source, options = {}) {
 		if (!device || !texture || !source) {
-			throw new TypeError("Texture.writeExternal requires device, texture, and source");
+			throw typeErrorWGPU("Texture.writeExternal requires device, texture, and source");
 		}
 
 		const copySize = options.copySize ?? [
@@ -919,7 +922,7 @@ export class Texture {
 	 */
 	static createView(texture, descriptor) {
 		if (!texture) {
-			throw new TypeError("Texture.createView requires a GPUTexture");
+			throw typeErrorWGPU("Texture.createView requires a GPUTexture");
 		}
 
 		return texture.createView(descriptor);
@@ -932,7 +935,7 @@ export class Texture {
 	 */
 	static destroyAll(textures) {
 		if (!Array.isArray(textures)) {
-			throw new TypeError("Texture.destroyAll requires a texture array");
+			throw typeErrorWGPU("Texture.destroyAll requires a texture array");
 		}
 
 		let destroyed = 0;
@@ -961,7 +964,7 @@ export class Sampler {
 	 */
 	static create(device, descriptor = {}) {
 		if (!device) {
-			throw new TypeError("Sampler.create requires a GPUDevice");
+			throw typeErrorWGPU("Sampler.create requires a GPUDevice");
 		}
 
 		return device.createSampler(descriptor);
@@ -981,7 +984,7 @@ export class BindGroup {
 	 */
 	static createLayout(device, descriptor) {
 		if (!device || !descriptor) {
-			throw new TypeError("BindGroup.createLayout requires a device and descriptor");
+			throw typeErrorWGPU("BindGroup.createLayout requires a device and descriptor");
 		}
 
 		return device.createBindGroupLayout(descriptor);
@@ -995,7 +998,7 @@ export class BindGroup {
 	 */
 	static create(device, descriptor) {
 		if (!device || !descriptor) {
-			throw new TypeError("BindGroup.create requires a device and descriptor");
+			throw typeErrorWGPU("BindGroup.create requires a device and descriptor");
 		}
 
 		return device.createBindGroup(descriptor);
@@ -1015,7 +1018,7 @@ export class Pipeline {
 	 */
 	static createRender(device, descriptor) {
 		if (!device || !descriptor) {
-			throw new TypeError("Pipeline.createRender requires a device and descriptor");
+			throw typeErrorWGPU("Pipeline.createRender requires a device and descriptor");
 		}
 
 		return device.createRenderPipeline(descriptor);
@@ -1029,7 +1032,7 @@ export class Pipeline {
 	 */
 	static createCompute(device, descriptor) {
 		if (!device || !descriptor) {
-			throw new TypeError("Pipeline.createCompute requires a device and descriptor");
+			throw typeErrorWGPU("Pipeline.createCompute requires a device and descriptor");
 		}
 
 		return device.createComputePipeline(descriptor);
@@ -1044,7 +1047,7 @@ export class Pipeline {
 	 */
 	static async createRenderChecked(device, descriptor, options = {}) {
 		if (!device || !descriptor) {
-			throw new TypeError("Pipeline.createRenderChecked requires a device and descriptor");
+			throw typeErrorWGPU("Pipeline.createRenderChecked requires a device and descriptor");
 		}
 
 		const scoped = await Device.withErrorScope(
@@ -1077,7 +1080,7 @@ export class Pipeline {
 	 */
 	static async createComputeChecked(device, descriptor, options = {}) {
 		if (!device || !descriptor) {
-			throw new TypeError("Pipeline.createComputeChecked requires a device and descriptor");
+			throw typeErrorWGPU("Pipeline.createComputeChecked requires a device and descriptor");
 		}
 
 		const scoped = await Device.withErrorScope(
@@ -1115,7 +1118,7 @@ export class Pass {
 	 */
 	static beginRender(encoder, descriptor) {
 		if (!encoder || !descriptor) {
-			throw new TypeError("Pass.beginRender requires an encoder and descriptor");
+			throw typeErrorWGPU("Pass.beginRender requires an encoder and descriptor");
 		}
 
 		return encoder.beginRenderPass(descriptor);
@@ -1129,7 +1132,7 @@ export class Pass {
 	 */
 	static beginCompute(encoder, descriptor = {}) {
 		if (!encoder) {
-			throw new TypeError("Pass.beginCompute requires an encoder");
+			throw typeErrorWGPU("Pass.beginCompute requires an encoder");
 		}
 
 		return encoder.beginComputePass(descriptor);
@@ -1149,7 +1152,7 @@ export class Pass {
 		}
 
 		if (typeof callback !== "function") {
-			throw new TypeError("Pass.withRender requires a callback function");
+			throw typeErrorWGPU("Pass.withRender requires a callback function");
 		}
 
 		const pass = Pass.beginRender(encoder, descriptor);
@@ -1174,7 +1177,7 @@ export class Pass {
 		}
 
 		if (typeof callback !== "function") {
-			throw new TypeError("Pass.withCompute requires a callback function");
+			throw typeErrorWGPU("Pass.withCompute requires a callback function");
 		}
 
 		const pass = Pass.beginCompute(encoder, descriptor);
@@ -1192,7 +1195,7 @@ export class Pass {
 	 */
 	static end(passEncoder) {
 		if (!passEncoder) {
-			throw new TypeError("Pass.end requires a pass encoder");
+			throw typeErrorWGPU("Pass.end requires a pass encoder");
 		}
 
 		passEncoder.end();
@@ -1212,7 +1215,7 @@ export class Command {
 	 */
 	static createEncoder(device, label) {
 		if (!device) {
-			throw new TypeError("Command.createEncoder requires a GPUDevice");
+			throw typeErrorWGPU("Command.createEncoder requires a GPUDevice");
 		}
 		const finalLabel = (typeof label === "string" && label.length > 0) ? label : "AzCommandEncoder";
 		return device.createCommandEncoder({ label: finalLabel });
@@ -1225,7 +1228,7 @@ export class Command {
 	 */
 	static finish(encoder) {
 		if (!encoder) {
-			throw new TypeError("Command.finish requires a GPUCommandEncoder");
+			throw typeErrorWGPU("Command.finish requires a GPUCommandEncoder");
 		}
 
 		return encoder.finish();
@@ -1240,10 +1243,10 @@ export class Command {
 	 */
 	static async withEncoder(device, callback, options = {}) {
 		if (!device) {
-			throw new TypeError("Command.withEncoder requires a GPUDevice");
+			throw typeErrorWGPU("Command.withEncoder requires a GPUDevice");
 		}
 		if (typeof callback !== "function") {
-			throw new TypeError("Command.withEncoder requires a callback function");
+			throw typeErrorWGPU("Command.withEncoder requires a callback function");
 		}
 
 		const encoder = Command.createEncoder(device, options.label ?? "Command.withEncoder");
@@ -1271,7 +1274,7 @@ export class Command {
 	 */
 	static submit(device, commandBuffers) {
 		if (!device || !Array.isArray(commandBuffers)) {
-			throw new TypeError("Command.submit requires a device and command buffer array");
+			throw typeErrorWGPU("Command.submit requires a device and command buffer array");
 		}
 
 		device.queue.submit(commandBuffers);
@@ -1299,10 +1302,10 @@ export class Command {
 	 */
 	static copyBufferToBuffer(device, source, destination, size, options = {}) {
 		if (!device || !source || !destination) {
-			throw new TypeError("Command.copyBufferToBuffer requires device, source, and destination");
+			throw typeErrorWGPU("Command.copyBufferToBuffer requires device, source, and destination");
 		}
 		if (typeof size !== "number" || size <= 0) {
-			throw new TypeError("Command.copyBufferToBuffer requires positive size");
+			throw typeErrorWGPU("Command.copyBufferToBuffer requires positive size");
 		}
 
 		const encoder = Command.createEncoder(device, options.label ?? "Command.copyBufferToBuffer");
@@ -1337,7 +1340,7 @@ export class Command {
 	 */
 	static copyBufferToTexture(device, source, destination, copySize, options = {}) {
 		if (!device || !source || !destination || !copySize) {
-			throw new TypeError("Command.copyBufferToTexture requires device, source, destination, and copySize");
+			throw typeErrorWGPU("Command.copyBufferToTexture requires device, source, destination, and copySize");
 		}
 
 		const encoder = Command.createEncoder(device, options.label ?? "Command.copyBufferToTexture");
@@ -1366,7 +1369,7 @@ export class Command {
 	 */
 	static copyTextureToBuffer(device, source, destination, copySize, options = {}) {
 		if (!device || !source || !destination || !copySize) {
-			throw new TypeError("Command.copyTextureToBuffer requires device, source, destination, and copySize");
+			throw typeErrorWGPU("Command.copyTextureToBuffer requires device, source, destination, and copySize");
 		}
 
 		const encoder = Command.createEncoder(device, options.label ?? "Command.copyTextureToBuffer");
@@ -1395,7 +1398,7 @@ export class Command {
 	 */
 	static copyTextureToTexture(device, source, destination, copySize, options = {}) {
 		if (!device || !source || !destination || !copySize) {
-			throw new TypeError("Command.copyTextureToTexture requires device, source, destination, and copySize");
+			throw typeErrorWGPU("Command.copyTextureToTexture requires device, source, destination, and copySize");
 		}
 
 		const encoder = Command.createEncoder(device, options.label ?? "Command.copyTextureToTexture");
@@ -1427,7 +1430,7 @@ export class Shader {
 	 */
 	static create(device, descriptor) {
 		if (!device || !descriptor || typeof descriptor.code !== "string") {
-			throw new TypeError("Shader.create requires { code: string, ... }");
+			throw typeErrorWGPU("Shader.create requires { code: string, ... }");
 		}
 
 		return device.createShaderModule(descriptor);
@@ -1548,7 +1551,7 @@ export class Limits {
 	 */
 	static inspect(adapterOrDevice) {
 		if (!adapterOrDevice || !adapterOrDevice.limits) {
-			throw new TypeError("Limits.inspect requires an adapter or device with limits");
+			throw typeErrorWGPU("Limits.inspect requires an adapter or device with limits");
 		}
 
 		return adapterOrDevice.limits;
@@ -1562,10 +1565,10 @@ export class Limits {
 	 */
 	static hasFeatures(adapterOrDevice, featureList) {
 		if (!adapterOrDevice || !adapterOrDevice.features) {
-			throw new TypeError("Limits.hasFeatures requires an adapter or device with features");
+			throw typeErrorWGPU("Limits.hasFeatures requires an adapter or device with features");
 		}
 		if (!Array.isArray(featureList)) {
-			throw new TypeError("Limits.hasFeatures requires featureList as an array");
+			throw typeErrorWGPU("Limits.hasFeatures requires featureList as an array");
 		}
 
 		return featureList.every((feature) => adapterOrDevice.features.has(feature));
@@ -1579,10 +1582,10 @@ export class Limits {
 	 */
 	static require(adapterOrDevice, constraints = {}) {
 		if (!adapterOrDevice) {
-			throw new TypeError("Limits.require requires an adapter or device");
+			throw typeErrorWGPU("Limits.require requires an adapter or device");
 		}
 		if (!adapterOrDevice.features || !adapterOrDevice.limits) {
-			throw new TypeError("Limits.require expects an adapter or device with features and limits");
+			throw typeErrorWGPU("Limits.require expects an adapter or device with features and limits");
 		}
 
 		const requiredFeatures = Array.isArray(constraints.features) ? constraints.features : [];
@@ -1686,7 +1689,7 @@ export class Frame {
 	 */
 	static begin(device, options = {}) {
 		if (!device) {
-			throw new TypeError("Frame.begin requires a GPUDevice");
+			throw typeErrorWGPU("Frame.begin requires a GPUDevice");
 		}
 
 		const label = options.label ?? "Frame";
@@ -1706,7 +1709,7 @@ export class Frame {
 	 */
 	static finish(frame) {
 		if (!frame || !frame.encoder) {
-			throw new TypeError("Frame.finish requires a frame from Frame.begin");
+			throw typeErrorWGPU("Frame.finish requires a frame from Frame.begin");
 		}
 		if (frame.finished) {
 			return frame.commandBuffer;
@@ -1726,10 +1729,10 @@ export class Frame {
 	 */
 	static async submit(device, frameOrCommandBuffer, options = {}) {
 		if (!device) {
-			throw new TypeError("Frame.submit requires a GPUDevice");
+			throw typeErrorWGPU("Frame.submit requires a GPUDevice");
 		}
 		if (!frameOrCommandBuffer) {
-			throw new TypeError("Frame.submit requires frame or command buffer");
+			throw typeErrorWGPU("Frame.submit requires frame or command buffer");
 		}
 
 		let buffers;
@@ -1759,7 +1762,7 @@ export class Frame {
 	 */
 	static async with(device, callback, options = {}) {
 		if (typeof callback !== "function") {
-			throw new TypeError("Frame.with requires a callback function");
+			throw typeErrorWGPU("Frame.with requires a callback function");
 		}
 
 		const frame = Frame.begin(device, options);
@@ -1807,7 +1810,7 @@ export class ResourcePool {
 	static acquireBuffer(pool, device, descriptor, key) {
 		ResourcePool._assertPool(pool);
 		if (!device || !descriptor) {
-			throw new TypeError("ResourcePool.acquireBuffer requires device and descriptor");
+			throw typeErrorWGPU("ResourcePool.acquireBuffer requires device and descriptor");
 		}
 
 		const resolvedKey = ResourcePool._resolveKey("buffer", descriptor, key);
@@ -1836,7 +1839,7 @@ export class ResourcePool {
 	static releaseBuffer(pool, buffer, key) {
 		ResourcePool._assertPool(pool);
 		if (!buffer) {
-			throw new TypeError("ResourcePool.releaseBuffer requires a buffer");
+			throw typeErrorWGPU("ResourcePool.releaseBuffer requires a buffer");
 		}
 		if (typeof key === "string" && key.length > 0) {
 			return ResourcePool._releaseByKey(pool.bufferBusy, pool.bufferFree, key, buffer, pool);
@@ -1855,7 +1858,7 @@ export class ResourcePool {
 	static acquireTexture(pool, device, descriptor, key) {
 		ResourcePool._assertPool(pool);
 		if (!device || !descriptor) {
-			throw new TypeError("ResourcePool.acquireTexture requires device and descriptor");
+			throw typeErrorWGPU("ResourcePool.acquireTexture requires device and descriptor");
 		}
 
 		const resolvedKey = ResourcePool._resolveKey("texture", descriptor, key);
@@ -1884,7 +1887,7 @@ export class ResourcePool {
 	static releaseTexture(pool, texture, key) {
 		ResourcePool._assertPool(pool);
 		if (!texture) {
-			throw new TypeError("ResourcePool.releaseTexture requires a texture");
+			throw typeErrorWGPU("ResourcePool.releaseTexture requires a texture");
 		}
 		if (typeof key === "string" && key.length > 0) {
 			return ResourcePool._releaseByKey(pool.textureBusy, pool.textureFree, key, texture, pool);
@@ -1949,7 +1952,7 @@ export class ResourcePool {
 	 */
 	static _assertPool(pool) {
 		if (!pool || !(pool.bufferFree instanceof Map) || !(pool.textureFree instanceof Map)) {
-			throw new TypeError("ResourcePool requires a pool from ResourcePool.create");
+			throw typeErrorWGPU("ResourcePool requires a pool from ResourcePool.create");
 		}
 	}
 
@@ -2069,7 +2072,7 @@ export class LayoutCache {
 	static getBindGroupLayout(cache, device, descriptor, key) {
 		LayoutCache._assertCache(cache);
 		if (!device || !descriptor) {
-			throw new TypeError("LayoutCache.getBindGroupLayout requires device and descriptor");
+			throw typeErrorWGPU("LayoutCache.getBindGroupLayout requires device and descriptor");
 		}
 
 		const resolvedKey = LayoutCache._resolveKey("bgl", descriptor, key);
@@ -2096,7 +2099,7 @@ export class LayoutCache {
 	static getPipelineLayout(cache, device, descriptor, key) {
 		LayoutCache._assertCache(cache);
 		if (!device || !descriptor) {
-			throw new TypeError("LayoutCache.getPipelineLayout requires device and descriptor");
+			throw typeErrorWGPU("LayoutCache.getPipelineLayout requires device and descriptor");
 		}
 
 		const resolvedKey = LayoutCache._resolveKey("pl", descriptor, key);
@@ -2145,7 +2148,7 @@ export class LayoutCache {
 	 */
 	static _assertCache(cache) {
 		if (!cache || !(cache.bindGroupLayouts instanceof Map) || !(cache.pipelineLayouts instanceof Map)) {
-			throw new TypeError("LayoutCache requires a cache from LayoutCache.create");
+			throw typeErrorWGPU("LayoutCache requires a cache from LayoutCache.create");
 		}
 	}
 
@@ -2241,7 +2244,7 @@ export class Timer {
 	 */
 	static create(device, options = {}) {
 		if (!device) {
-			throw new TypeError("Timer.create requires a GPUDevice");
+			throw typeErrorWGPU("Timer.create requires a GPUDevice");
 		}
 
 		const preferGpu = options.preferGpu ?? true;
@@ -2296,10 +2299,10 @@ export class Timer {
 	 */
 	static async measure(device, encode, options = {}) {
 		if (!device) {
-			throw new TypeError("Timer.measure requires a GPUDevice");
+			throw typeErrorWGPU("Timer.measure requires a GPUDevice");
 		}
 		if (typeof encode !== "function") {
-			throw new TypeError("Timer.measure requires an encode callback");
+			throw typeErrorWGPU("Timer.measure requires an encode callback");
 		}
 
 		const timer = options.timer ?? Timer.create(device, options);
@@ -2434,3 +2437,4 @@ if (typeof window !== "undefined") {
 }
 
 export default AzWGPU;
+

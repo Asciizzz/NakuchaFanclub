@@ -1,11 +1,11 @@
-/* WrWBackend
+/* AzWBackend
 By Asciiz
 
-Backend-only render foundation for WR2.
-This module does not know what a world, scene, mesh, skeleton, or material is.
+Backend-only render foundation
+This module does not know what a world, scene, mesh, skeleton, or material is
 
 #Base:
-* Shared backend base with canvas helpers and backend selection.
+* Shared backend base with canvas helpers and backend selection
 * Methods
 	+ setCanvas(canvasRef)
 	+ init()
@@ -21,30 +21,44 @@ This module does not know what a world, scene, mesh, skeleton, or material is.
 	+ choose(canvasRef, options = {})
 
 #WGPU:
-* WebGPU backend implementation.
+* WebGPU backend implementation
 * Methods
 	+ init()
 	+ resize(options = {})
+	+ createShaderModule(descriptor)
+	+ createRenderPipeline(descriptor)
+	+ createComputePipeline(descriptor)
+	+ createBindGroupLayout(descriptor)
+	+ createBindGroup(descriptor)
+	+ createBuffer(descriptor)
+	+ writeBuffer(buffer, data, offset = 0)
+	+ createTexture2D(options = {})
+	+ writeTexture(texture, source, layout, size)
+	+ createSampler(descriptor = {})
 	+ beginFrame(frameOptions = {})
 	+ beginRenderPass(options = {})
 	+ endFrame()
 	+ destroy()
 
 #WGL2:
-* WebGL2 backend implementation.
+* WebGL2 backend implementation
 * Methods
 	+ init()
 	+ resize(options = {})
+	+ createShaderProgram(descriptor)
+	+ createPipeline(options = {})
+	+ createTexture2D(options = {})
+	+ writeTexture2D(texture, source, options = {})
 	+ beginFrame(frameOptions = {})
 	+ beginRenderPass(options = {})
 	+ endFrame()
 	+ destroy()
 */
 
-import AzWGPU from "../../AzLib/AzWGPU.js";
-import AzWGL2 from "../../AzLib/AzWGL2.js";
+import AzWGPU from "./AzWGPU.js";
+import AzWGL2 from "./AzWGL2.js";
 
-const WR_WGPU_DEPTH_FORMAT = "depth24plus";
+const AZ_WGPU_DEPTH_FORMAT = "depth24plus";
 
 /**
  * Convert value to finite number with fallback
@@ -112,7 +126,7 @@ export class Base {
 	 * @returns {Promise<Base>}
 	 */
 	async init() {
-		throw new Error("[WrWBackend.Base] init() is required");
+		throw new Error("[AzWBackend.Base] init() is required");
 	}
 
 	/**
@@ -166,6 +180,7 @@ export class Base {
 
 	/**
 	 * Normalize clear color into rgba object
+	 * (needed cuz some dumbass tried passing in color as hex/rgb string as if this was css)
 	 * @param {ArrayLike<number>|null} value color input
 	 * @returns {{r:number,g:number,b:number,a:number}}
 	 */
@@ -225,7 +240,7 @@ export class Base {
 	 */
 	static async choose(canvasRef, options = {}) {
 		const canvas = Base.resolveCanvas(canvasRef);
-		if (!canvas) throw new Error("[WrWBackend] valid canvas is required");
+		if (!canvas) throw new Error("[AzWBackend] valid canvas is required");
 
 		const src = options && typeof options === "object" ? options : {};
 		const preferred = String(src.prefer ?? "webgpu").toLowerCase() === "webgl2"
@@ -279,7 +294,7 @@ export class Base {
 			}
 		}
 
-		throw new Error("[WrWBackend] choose() failed: " + JSON.stringify(report));
+		throw new Error("[AzWBackend] choose() failed: " + JSON.stringify(report));
 	}
 }
 
@@ -306,6 +321,14 @@ export class WGPU extends Base {
 		this.#depthHeight = 0;
 	}
 
+	#encoder;
+	#frame;
+	#colorView;
+	#depthTexture;
+	#depthView;
+	#depthWidth;
+	#depthHeight;
+
 	/**
 	 * Backend kind tag
 	 * @returns {string}
@@ -317,7 +340,7 @@ export class WGPU extends Base {
 	 * @returns {Promise<WGPU>}
 	 */
 	async init() {
-		if (!this.canvas) throw new Error("[WrWBackendWGPU] canvas is required");
+		if (!this.canvas) throw new Error("[AzWBackendWGPU] canvas is required");
 
 		const pick = await AzWGPU.Adapter.pickBest(this.options.pickBest ?? {});
 		const adapter = pick.adapter ?? pick;
@@ -379,13 +402,8 @@ export class WGPU extends Base {
 		if (this.#encoder) this.endFrame();
 
 		this.#frame = Base.normalizeFrameOptions(frameOptions);
-		this.#encoder = AzWGPU.Command.createEncoder(this.device, "Wr2Frame");
+		this.#encoder = AzWGPU.Command.createEncoder(this.device, "AzFrame");
 		this.#colorView = this.context.getCurrentTexture().createView();
-
-		if (this.#frame.clearColorEnabled || this.#frame.clearDepthEnabled) {
-			const pass = AzWGPU.Pass.beginRender(this.#encoder, this.#passDescriptor(this.#frame));
-			AzWGPU.Pass.end(pass);
-		}
 		return this.#frame;
 	}
 
@@ -480,10 +498,10 @@ export class WGPU extends Base {
 
 		this.#releaseDepthTarget();
 		this.#depthTexture = AzWGPU.Texture.create2D(this.device, {
-			label: "Wr2Depth",
+			label: "AzDepth",
 			width,
 			height,
-			format: WR_WGPU_DEPTH_FORMAT,
+			format: AZ_WGPU_DEPTH_FORMAT,
 			usage: globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10,
 		});
 		this.#depthView = AzWGPU.Texture.createView(this.#depthTexture, { dimension: "2d" });
@@ -504,13 +522,115 @@ export class WGPU extends Base {
 		this.#depthHeight = 0;
 	}
 
-	#encoder;
-	#frame;
-	#colorView;
-	#depthTexture;
-	#depthView;
-	#depthWidth;
-	#depthHeight;
+	// ----------
+
+	/**
+	 * Create WGSL shader module
+	 * @param {object} descriptor shader descriptor
+	 * @returns {GPUShaderModule|null}
+	 */
+	createShaderModule(descriptor) {
+		if (!this.device || !descriptor) return null;
+		return AzWGPU.Shader.create(this.device, descriptor);
+	}
+
+	/**
+	 * Create render pipeline
+	 * @param {object} descriptor render pipeline descriptor
+	 * @returns {GPURenderPipeline|null}
+	 */
+	createRenderPipeline(descriptor) {
+		if (!this.device || !descriptor) return null;
+		return AzWGPU.Pipeline.createRender(this.device, descriptor);
+	}
+
+	/**
+	 * Create compute pipeline
+	 * @param {object} descriptor compute pipeline descriptor
+	 * @returns {GPUComputePipeline|null}
+	 */
+	createComputePipeline(descriptor) {
+		if (!this.device || !descriptor) return null;
+		return AzWGPU.Pipeline.createCompute(this.device, descriptor);
+	}
+
+	/**
+	 * Create bind group layout
+	 * @param {object} descriptor layout descriptor
+	 * @returns {GPUBindGroupLayout|null}
+	 */
+	createBindGroupLayout(descriptor) {
+		if (!this.device || !descriptor) return null;
+		return AzWGPU.BindGroup.createLayout(this.device, descriptor);
+	}
+
+	/**
+	 * Create bind group
+	 * @param {object} descriptor bind group descriptor
+	 * @returns {GPUBindGroup|null}
+	 */
+	createBindGroup(descriptor) {
+		if (!this.device || !descriptor) return null;
+		return AzWGPU.BindGroup.create(this.device, descriptor);
+	}
+
+	/**
+	 * Create buffer
+	 * @param {object} descriptor buffer descriptor
+	 * @returns {GPUBuffer|null}
+	 */
+	createBuffer(descriptor) {
+		if (!this.device || !descriptor) return null;
+		return AzWGPU.Buffer.create(this.device, descriptor);
+	}
+
+	/**
+	 * Write data into GPU buffer
+	 * @param {GPUBuffer} buffer target buffer
+	 * @param {ArrayBuffer|ArrayBufferView} data source bytes
+	 * @param {number} [offset=0] buffer byte offset
+	 * @returns {boolean}
+	 */
+	writeBuffer(buffer, data, offset = 0) {
+		if (!this.device || !buffer || !data) return false;
+		AzWGPU.Buffer.write(this.device, buffer, data, offset);
+		return true;
+	}
+
+	/**
+	 * Create 2D texture
+	 * @param {object} [options={}] texture options
+	 * @returns {GPUTexture|null}
+	 */
+	createTexture2D(options = {}) {
+		if (!this.device) return null;
+		return AzWGPU.Texture.create2D(this.device, options);
+	}
+
+	/**
+	 * Write pixels into texture
+	 * @param {GPUTexture} texture target texture
+	 * @param {ArrayBuffer|ArrayBufferView} source source bytes
+	 * @param {GPUTexelCopyBufferLayout} layout bytes layout
+	 * @param {GPUExtent3D} size write size
+	 * @returns {boolean}
+	 */
+	writeTexture(texture, source, layout, size) {
+		if (!this.device || !texture || !source || !layout || !size) return false;
+		AzWGPU.Texture.write(this.device, texture, source, layout, size);
+		return true;
+	}
+
+	/**
+	 * Create sampler
+	 * @param {object} [descriptor={}] sampler descriptor
+	 * @returns {GPUSampler|null}
+	 */
+	createSampler(descriptor = {}) {
+		if (!this.device) return null;
+		return AzWGPU.Sampler.create(this.device, descriptor);
+	}
+
 }
 
 /**
@@ -527,6 +647,8 @@ export class WGL2 extends Base {
 		this.#frame = null;
 	}
 
+	#frame;
+
 	/**
 	 * Backend kind tag
 	 * @returns {string}
@@ -538,7 +660,7 @@ export class WGL2 extends Base {
 	 * @returns {Promise<WGL2>}
 	 */
 	async init() {
-		if (!this.canvas) throw new Error("[WrWBackendWGL2] canvas is required");
+		if (!this.canvas) throw new Error("[AzWBackendWGL2] canvas is required");
 
 		const gl = AzWGL2.Context.create(this.canvas, {
 			alpha: true,
@@ -644,20 +766,65 @@ export class WGL2 extends Base {
 		if (mask) gl.clear(mask);
 	}
 
-	#frame;
+	// ----------
+
+	/**
+	 * Create GLSL shader program
+	 * @param {object} descriptor shader descriptor
+	 * @returns {WebGLProgram|null}
+	 */
+	createShaderProgram(descriptor) {
+		if (!this.gl || !descriptor) return null;
+		return AzWGL2.Shader.create(this.gl, descriptor);
+	}
+
+	/**
+	 * Create pipeline bundle for WebGL2 draw path
+	 * @param {object} [options={}] pipeline options
+	 * @returns {object|null}
+	 */
+	createPipeline(options = {}) {
+		if (!this.gl) return null;
+		return AzWGL2.Pipeline.create(this.gl, options);
+	}
+
+	/**
+	 * Create 2D texture
+	 * @param {object} [options={}] texture options
+	 * @returns {WebGLTexture|null}
+	 */
+	createTexture2D(options = {}) {
+		if (!this.gl) return null;
+		return AzWGL2.Texture.create2D(this.gl, options);
+	}
+
+	/**
+	 * Write 2D texture pixels
+	 * @param {WebGLTexture} texture target texture
+	 * @param {TexImageSource|ArrayBufferView|null} source source pixels
+	 * @param {object} [options={}] upload options
+	 * @returns {boolean}
+	 */
+	writeTexture2D(texture, source, options = {}) {
+		if (!this.gl || !texture || !source) return false;
+		AzWGL2.Texture.write2D(this.gl, texture, source, options);
+		return true;
+	}
+
 }
 
-export const WrWBackend = Object.freeze({
+export const AzWBackend = Object.freeze({
 	Base,
 	WGPU,
 	WGL2,
 });
 
 if (typeof window !== "undefined") {
-	window.WrWBackend = WrWBackend;
-	window.WrWBackendBase = Base;
-	window.WrWBackendWGPU = WGPU;
-	window.WrWBackendWGL2 = WGL2;
+	window.AzWBackend = AzWBackend;
+	window.AzWBackendBase = Base;
+	window.AzWBackendWGPU = WGPU;
+	window.AzWBackendWGL2 = WGL2;
 }
 
-export default WrWBackend;
+export default AzWBackend;
+

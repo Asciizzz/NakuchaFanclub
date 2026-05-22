@@ -1,10 +1,3 @@
-export {
-	WrWBackend,
-	Base as WrWBackendBase,
-	WGPU as WrWBackendWGPU,
-	WGL2 as WrWBackendWGL2,
-} from "./WrWBackend/WrWBackend.js";
-
 export { WrWorld } from "./WrWorld/World.js";
 export { WrNode } from "./WrWorld/Node.js";
 export {

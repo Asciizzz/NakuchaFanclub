@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>AzWBackend WGPU Test</title>
+	<style>
+		:root {
+			--bg: #060a14;
+			--bg2: #0d1322;
+			--line: #1e293b;
+			--text: #dbe4ff;
+			--sub: #8ea0cf;
+			--acc: #7dd3fc;
+		}
+		* { box-sizing: border-box; }
+		html, body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			background: radial-gradient(circle at 25% 18%, var(--bg2), var(--bg));
+			color: var(--text);
+			font-family: Consolas, "Courier New", monospace;
+		}
+		#view {
+			display: block;
+			width: 100%;
+			height: 100%;
+		}
+		#panel {
+			position: fixed;
+			top: 12px;
+			left: 12px;
+			width: min(430px, calc(100vw - 24px));
+			padding: 12px;
+			border: 1px solid var(--line);
+			border-radius: 10px;
+			background: #050b19d9;
+			backdrop-filter: blur(5px);
+		}
+		h1 {
+			margin: 0 0 8px;
+			font-size: 14px;
+			color: var(--acc);
+		}
+		#status {
+			font-size: 12px;
+			color: var(--sub);
+			margin-bottom: 8px;
+			line-height: 1.4;
+		}
+		#stats {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 8px;
+			margin-bottom: 8px;
+		}
+		.card {
+			border: 1px solid var(--line);
+			border-radius: 7px;
+			padding: 8px;
+			background: #081021;
+		}
+		.card b {
+			display: block;
+			font-size: 12px;
+			color: #cbd9ff;
+			margin-bottom: 4px;
+		}
+		.card span {
+			display: block;
+			font-size: 12px;
+			color: var(--sub);
+			line-height: 1.35;
+		}
+		#fps {
+			margin-top: 4px;
+			font-size: 12px;
+			color: #a7f3d0;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="view"></canvas>
+	<section id="panel">
+		<h1>backendTest.html | AzWBackend.WGPU</h1>
+		<div id="status">Booting</div>
+		<div id="stats">
+			<div class="card">
+				<b>AzWBackend Flow</b>
+				<span>init backend</span>
+				<span>create shader/pipeline</span>
+				<span>create mesh + instance buffers</span>
+				<span>render loop</span>
+			</div>
+			<div class="card">
+				<b>Raw AzWGPU You Skip</b>
+				<span>manual adapter/device/context</span>
+				<span>manual depth target lifecycle</span>
+				<span>manual frame encoder boilerplate</span>
+				<span>manual clear pass management</span>
+			</div>
+		</div>
+		<div id="fps">FPS: -</div>
+	</section>
+
+	<script type="module">
+		import { AzWBackend } from "./resources/js/AzLib/AzWBackend.js";
+		import Azm from "./resources/js/AzLib/Azm.js";
+
+		const canvas = document.getElementById("view");
+		const statusEl = document.getElementById("status");
+		const fpsEl = document.getElementById("fps");
+
+		const Mat4 = Azm.Mat4;
+		const GPUBufferUsageRef = globalThis.GPUBufferUsage;
+		const GPUShaderStageRef = globalThis.GPUShaderStage ?? { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
+		const DEPTH_FORMAT = "depth24plus";
+
+		function setStatus(text) {
+			statusEl.textContent = text;
+		}
+
+		function resolveInstanceCount() {
+			const params = new URLSearchParams(globalThis.location?.search ?? "");
+			const raw = Number(params.get("n"));
+			if (!Number.isFinite(raw)) return 100;
+			return Math.max(1, Math.min(400, Math.floor(raw)));
+		}
+
+		function createCubeGeometry() {
+			const vertices = new Float32Array([
+				1, -1, -1, 0, 1, 1,  1, -1, 0, 0, 1,  1,  1, 1, 0, 1, -1,  1, 1, 1,
+				-1, -1,  1, 0, 1, -1,  1,  1, 0, 0, -1,  1, -1, 1, 0, -1, -1, -1, 1, 1,
+				-1, 1, -1, 0, 1, -1, 1,  1, 0, 0, 1,  1,  1, 1, 0, 1,  1, -1, 1, 1,
+				-1, -1,  1, 0, 1, -1, -1, -1, 0, 0, 1, -1, -1, 1, 0, 1, -1,  1, 1, 1,
+				1, -1, 1, 0, 1, 1,  1, 1, 0, 0, -1, 1, 1, 1, 0, -1, -1, 1, 1, 1,
+				-1, -1, -1, 0, 1, -1,  1, -1, 0, 0, 1,  1, -1, 1, 0, 1, -1, -1, 1, 1,
+			]);
+
+			const indices = new Uint16Array([
+				0, 1, 2, 0, 2, 3,
+				4, 5, 6, 4, 6, 7,
+				8, 9, 10, 8, 10, 11,
+				12, 13, 14, 12, 14, 15,
+				16, 17, 18, 16, 18, 19,
+				20, 21, 22, 20, 22, 23,
+			]);
+			return { vertices, indices };
+		}
+
+		function createInstanceData(instanceCount, spacing = 2.35) {
+			const out = new Float32Array(instanceCount * 5);
+			const grid = Math.ceil(Math.sqrt(instanceCount));
+			const half = (grid - 1) * 0.5;
+			const tau = Math.PI * 2;
+
+			for (let i = 0; i < instanceCount; i += 1) {
+				const gx = i % grid;
+				const gz = (i / grid) | 0;
+				const x = (gx - half) * spacing;
+				const z = (gz - half) * spacing;
+				const y = Math.sin(i * 0.37) * 0.55;
+				const speed = 0.35 + ((i * 17) % 29) * 0.04;
+				const phase = (i * 0.61803398875 % 1) * tau;
+
+				const base = i * 5;
+				out[base + 0] = x;
+				out[base + 1] = y;
+				out[base + 2] = z;
+				out[base + 3] = speed;
+				out[base + 4] = phase;
+			}
+			return out;
+		}
+
+		function createCheckerPixels(size = 64) {
+			const out = new Uint8Array(size * size * 4);
+			const tiles = 8;
+			const tileSize = size / tiles;
+
+			for (let y = 0; y < size; y += 1) {
+				for (let x = 0; x < size; x += 1) {
+					const i = (y * size + x) * 4;
+					const checker = ((x / tileSize) | 0) + ((y / tileSize) | 0);
+					const isLight = (checker & 1) === 0;
+					out[i + 0] = isLight ? 247 : 55;
+					out[i + 1] = isLight ? 246 : 98;
+					out[i + 2] = isLight ? 173 : 192;
+					out[i + 3] = 255;
+				}
+			}
+			return out;
+		}
+
+		async function main() {
+			if (!navigator.gpu) {
+				setStatus("WebGPU not available on this browser");
+				return;
+			}
+			if (!GPUBufferUsageRef) {
+				setStatus("GPUBufferUsage enum unavailable");
+				return;
+			}
+
+			const instanceCount = 100;
+			setStatus(`Creating backend for ${instanceCount} instances`);
+			const backend = new AzWBackend.WGPU(canvas, {
+				context: { alphaMode: "premultiplied" },
+			});
+			await backend.init();
+			backend.resize({ maxPixelRatio: 2 });
+
+			setStatus("Creating mesh and instance buffers");
+			const mesh = createCubeGeometry();
+			const instanceData = createInstanceData(instanceCount);
+
+			const vertexBuffer = backend.createBuffer({
+				label: "MeshVertexBuffer",
+				size: mesh.vertices.byteLength,
+				usage: GPUBufferUsageRef.VERTEX | GPUBufferUsageRef.COPY_DST,
+			});
+			const indexBuffer = backend.createBuffer({
+				label: "MeshIndexBuffer",
+				size: mesh.indices.byteLength,
+				usage: GPUBufferUsageRef.INDEX | GPUBufferUsageRef.COPY_DST,
+			});
+			const instanceBuffer = backend.createBuffer({
+				label: "MeshInstanceBuffer",
+				size: instanceData.byteLength,
+				usage: GPUBufferUsageRef.VERTEX | GPUBufferUsageRef.COPY_DST,
+			});
+			backend.writeBuffer(vertexBuffer, mesh.vertices);
+			backend.writeBuffer(indexBuffer, mesh.indices);
+			backend.writeBuffer(instanceBuffer, instanceData);
+
+			setStatus("Creating texture");
+			const textureSize = 64;
+			const texture = backend.createTexture2D({
+				label: "CheckerTexture",
+				width: textureSize,
+				height: textureSize,
+				format: "rgba8unorm",
+			});
+			const textureData = createCheckerPixels(textureSize);
+			backend.writeTexture(
+				texture,
+				textureData,
+				{ bytesPerRow: textureSize * 4, rowsPerImage: textureSize },
+				{ width: textureSize, height: textureSize, depthOrArrayLayers: 1 },
+			);
+			const textureView = texture.createView({ dimension: "2d" });
+			const sampler = backend.createSampler({
+				magFilter: "linear",
+				minFilter: "linear",
+				mipmapFilter: "linear",
+				addressModeU: "repeat",
+				addressModeV: "repeat",
+			});
+
+			setStatus("Creating instanced shader and pipeline");
+			const shader = backend.createShaderModule({
+				label: "backend-test-instanced-shader",
+				code: `
+struct Uniforms {
+	viewProj: mat4x4<f32>,
+	time: f32,
+	_pad: vec3<f32>,
+}
+
+struct VertexIn {
+	@location(0) position: vec3<f32>,
+	@location(1) uv: vec2<f32>,
+	@location(2) offset: vec3<f32>,
+	@location(3) motion: vec2<f32>,
+}
+
+struct VertexOut {
+	@builtin(position) clipPos: vec4<f32>,
+	@location(0) uv: vec2<f32>,
+}
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var texSampler: sampler;
+@group(0) @binding(2) var texColor: texture_2d<f32>;
+
+@vertex
+fn vs_main(input: VertexIn) -> VertexOut {
+	var p = input.position * 0.45;
+	let angle = uniforms.time * input.motion.x + input.motion.y;
+
+	let cy = cos(angle);
+	let sy = sin(angle);
+	p = vec3<f32>(
+		cy * p.x + sy * p.z,
+		p.y,
+		-sy * p.x + cy * p.z
+	);
+
+	let ax = angle * 0.63;
+	let cx = cos(ax);
+	let sx = sin(ax);
+	p = vec3<f32>(
+		p.x,
+		cx * p.y - sx * p.z,
+		sx * p.y + cx * p.z
+	);
+
+	let worldPos = p + input.offset;
+	var out: VertexOut;
+	out.clipPos = uniforms.viewProj * vec4<f32>(worldPos, 1.0);
+	out.uv = input.uv;
+	return out;
+}
+
+@fragment
+fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
+	return textureSample(texColor, texSampler, input.uv);
+}
+`,
+			});
+
+			const uniformBuffer = backend.createBuffer({
+				label: "CameraUniformBuffer",
+				size: 96,
+				usage: GPUBufferUsageRef.UNIFORM | GPUBufferUsageRef.COPY_DST,
+			});
+
+			const bindGroupLayout = backend.createBindGroupLayout({
+				label: "backend-test-bgl",
+				entries: [
+					{
+						binding: 0,
+						visibility: GPUShaderStageRef.VERTEX,
+						buffer: { type: "uniform" },
+					},
+					{
+						binding: 1,
+						visibility: GPUShaderStageRef.FRAGMENT,
+						sampler: { type: "filtering" },
+					},
+					{
+						binding: 2,
+						visibility: GPUShaderStageRef.FRAGMENT,
+						texture: { sampleType: "float", viewDimension: "2d", multisampled: false },
+					},
+				],
+			});
+
+			const pipelineLayout = backend.device.createPipelineLayout({
+				label: "backend-test-pl",
+				bindGroupLayouts: [bindGroupLayout],
+			});
+
+			const pipeline = backend.createRenderPipeline({
+				label: "backend-test-rp",
+				layout: pipelineLayout,
+				vertex: {
+					module: shader,
+					entryPoint: "vs_main",
+					buffers: [
+						{
+							arrayStride: 20,
+							stepMode: "vertex",
+							attributes: [
+								{ shaderLocation: 0, offset: 0, format: "float32x3" },
+								{ shaderLocation: 1, offset: 12, format: "float32x2" },
+							],
+						},
+						{
+							arrayStride: 20,
+							stepMode: "instance",
+							attributes: [
+								{ shaderLocation: 2, offset: 0, format: "float32x3" },
+								{ shaderLocation: 3, offset: 12, format: "float32x2" },
+							],
+						},
+					],
+				},
+				fragment: {
+					module: shader,
+					entryPoint: "fs_main",
+					targets: [{ format: backend.format }],
+				},
+				primitive: {
+					topology: "triangle-list",
+					cullMode: "back",
+					frontFace: "ccw",
+				},
+				depthStencil: {
+					format: DEPTH_FORMAT,
+					depthWriteEnabled: true,
+					depthCompare: "less",
+				},
+			});
+
+			const bindGroup = backend.createBindGroup({
+				label: "backend-test-bg",
+				layout: bindGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: uniformBuffer } },
+					{ binding: 1, resource: sampler },
+					{ binding: 2, resource: textureView },
+				],
+			});
+
+			const view = Mat4.makeIdentity();
+			const proj = Mat4.makeIdentity();
+			const viewProj = Mat4.makeIdentity();
+			const uniformData = new Float32Array(24);
+
+			let running = true;
+			let lastFpsTime = performance.now();
+			let frames = 0;
+
+			function frame(nowMs) {
+				if (!running) return;
+
+				backend.resize({ maxPixelRatio: 2 });
+
+				const t = nowMs * 0.001;
+				const grid = Math.ceil(Math.sqrt(instanceCount));
+				const camRadius = Math.max(10, grid * 2.2);
+				const eyeX = Math.sin(t * 0.27) * camRadius;
+				const eyeZ = Math.cos(t * 0.27) * camRadius;
+				const eyeY = camRadius * 0.54;
+
+				const aspect = Math.max(1e-5, canvas.width / canvas.height);
+				Mat4.perspective(Math.PI / 3, aspect, 0.1, 200, proj);
+				Mat4.lookAt([eyeX, eyeY, eyeZ], [0, 0, 0], [0, 1, 0], view);
+				Mat4.mul(proj, view, viewProj);
+
+				uniformData.set(viewProj, 0);
+				uniformData[16] = t;
+				backend.writeBuffer(uniformBuffer, uniformData, 0);
+
+				backend.beginFrame({
+					clearColorEnabled: false,
+					clearDepthEnabled: false,
+					useDepth: true,
+				});
+				const pass = backend.beginRenderPass({
+					clearColor: [0.03, 0.05, 0.09, 1],
+					clearDepth: 1,
+					clearColorEnabled: true,
+					clearDepthEnabled: true,
+					useDepth: true,
+				});
+
+				if (pass) {
+					pass.setPipeline(pipeline);
+					pass.setVertexBuffer(0, vertexBuffer);
+					pass.setVertexBuffer(1, instanceBuffer);
+					pass.setIndexBuffer(indexBuffer, "uint16");
+					pass.setBindGroup(0, bindGroup);
+					pass.drawIndexed(mesh.indices.length, instanceCount, 0, 0, 0);
+					pass.end();
+				}
+				backend.endFrame();
+
+				frames += 1;
+				if (nowMs - lastFpsTime >= 400) {
+					const fps = (frames * 1000) / (nowMs - lastFpsTime);
+					fpsEl.textContent = `FPS: ${fps.toFixed(1)} | instances: ${instanceCount} | indices: ${mesh.indices.length}`;
+					frames = 0;
+					lastFpsTime = nowMs;
+				}
+
+				requestAnimationFrame(frame);
+			}
+
+			window.addEventListener("beforeunload", () => {
+				running = false;
+				backend.destroy();
+			});
+
+			window.__backendTest = {
+				backend,
+				pipeline,
+				bindGroup,
+				mesh,
+				instanceCount,
+			};
+			setStatus(`Running on ${backend.kind} | format ${backend.format} | instances ${instanceCount}`);
+			requestAnimationFrame(frame);
+		}
+
+		main().catch((error) => {
+			console.error(error);
+			setStatus(`Failed: ${error?.message ?? error}`);
+		});
+	</script>
+</body>
+</html>

@@ -136,6 +136,9 @@ No compute wizardry here, just practical render helpers
 	+ measure(gl, encode, options = {})
 */
 
+function typeErrorWGL2(message) {
+	return new TypeError("[AzWGL2] " + String(message ?? "Type error"));
+}
 
 // ------ Context ------
 
@@ -148,7 +151,7 @@ export class Context {
 	 */
 	static create(canvas, options = {}) {
 		if (!(canvas instanceof HTMLCanvasElement)) {
-			throw new TypeError("Context.create needs a canvas element");
+			throw typeErrorWGL2("Context.create needs a canvas element");
 		}
 
 		const gl = canvas.getContext("webgl2", {
@@ -174,7 +177,7 @@ export class Context {
 	 */
 	static resize(gl, canvas, options = {}) {
 		if (!gl || !(canvas instanceof HTMLCanvasElement)) {
-			throw new TypeError("Context.resize needs gl and canvas");
+			throw typeErrorWGL2("Context.resize needs gl and canvas");
 		}
 
 		const dprCap = options.dprCap ?? 2;
@@ -198,7 +201,7 @@ export class Context {
 	 */
 	static info(gl) {
 		if (!gl) {
-			throw new TypeError("Context.info needs gl");
+			throw typeErrorWGL2("Context.info needs gl");
 		}
 
 		const ext = gl.getExtension("WEBGL_debug_renderer_info");
@@ -223,12 +226,12 @@ export class Shader {
 	 */
 	static create(gl, descriptor) {
 		if (!gl || !descriptor) {
-			throw new TypeError("Shader.create needs gl and descriptor");
+			throw typeErrorWGL2("Shader.create needs gl and descriptor");
 		}
 		const vsSource = descriptor.vertex;
 		const fsSource = descriptor.fragment;
 		if (typeof vsSource !== "string" || typeof fsSource !== "string") {
-			throw new TypeError("Shader.create expects vertex and fragment source strings");
+			throw typeErrorWGL2("Shader.create expects vertex and fragment source strings");
 		}
 
 		const vs = Shader._compile(gl, gl.VERTEX_SHADER, vsSource, descriptor.vertexLabel ?? "AzGL VS");
@@ -274,7 +277,7 @@ export class Shader {
 	 */
 	static use(gl, program) {
 		if (!gl || !program) {
-			throw new TypeError("Shader.use needs gl and program");
+			throw typeErrorWGL2("Shader.use needs gl and program");
 		}
 		gl.useProgram(program);
 	}
@@ -367,7 +370,7 @@ export class Buffer {
 	 */
 	static create(gl, target, dataOrSize, usage = null) {
 		if (!gl) {
-			throw new TypeError("Buffer.create needs gl");
+			throw typeErrorWGL2("Buffer.create needs gl");
 		}
 
 		const buffer = gl.createBuffer();
@@ -397,7 +400,7 @@ export class Buffer {
 	 */
 	static write(gl, target, buffer, data, offset = 0) {
 		if (!gl || !buffer || !data) {
-			throw new TypeError("Buffer.write needs gl, buffer, and data");
+			throw typeErrorWGL2("Buffer.write needs gl, buffer, and data");
 		}
 		gl.bindBuffer(target, buffer);
 		gl.bufferSubData(target, offset, data);
@@ -417,7 +420,7 @@ export class VertexArray {
 	 */
 	static create(gl, callback) {
 		if (!gl || typeof callback !== "function") {
-			throw new TypeError("VertexArray.create needs gl and callback");
+			throw typeErrorWGL2("VertexArray.create needs gl and callback");
 		}
 
 		const vao = gl.createVertexArray();
@@ -439,7 +442,7 @@ export class VertexArray {
 	 */
 	static bind(gl, vao) {
 		if (!gl) {
-			throw new TypeError("VertexArray.bind needs gl");
+			throw typeErrorWGL2("VertexArray.bind needs gl");
 		}
 		gl.bindVertexArray(vao);
 	}
@@ -510,7 +513,7 @@ export class Uniform {
 	 */
 	static _loc(gl, program, name) {
 		if (!gl || !program || typeof name !== "string") {
-			throw new TypeError("Uniform location lookup needs gl, program, and name");
+			throw typeErrorWGL2("Uniform location lookup needs gl, program, and name");
 		}
 		return gl.getUniformLocation(program, name);
 	}
@@ -530,7 +533,7 @@ export class UniformBlock {
 	 */
 	static create(gl, program, blockName, options = {}) {
 		if (!gl || !program || typeof blockName !== "string") {
-			throw new TypeError("UniformBlock.create needs gl, program, and blockName");
+			throw typeErrorWGL2("UniformBlock.create needs gl, program, and blockName");
 		}
 
 		const blockIndex = gl.getUniformBlockIndex(program, blockName);
@@ -566,11 +569,11 @@ export class UniformBlock {
 	 */
 	static write(gl, block, data, offset = 0) {
 		if (!gl || !block || !ArrayBuffer.isView(data)) {
-			throw new TypeError("UniformBlock.write needs gl, block, and typed array data");
+			throw typeErrorWGL2("UniformBlock.write needs gl, block, and typed array data");
 		}
 		const buffer = block.buffer ?? block;
 		if (!buffer) {
-			throw new TypeError("UniformBlock.write could not resolve target buffer");
+			throw typeErrorWGL2("UniformBlock.write could not resolve target buffer");
 		}
 		gl.bindBuffer(gl.UNIFORM_BUFFER, buffer);
 		gl.bufferSubData(gl.UNIFORM_BUFFER, offset, data);
@@ -586,7 +589,7 @@ export class UniformBlock {
 	 */
 	static bind(gl, block, binding = null) {
 		if (!gl || !block) {
-			throw new TypeError("UniformBlock.bind needs gl and block");
+			throw typeErrorWGL2("UniformBlock.bind needs gl and block");
 		}
 		const buffer = block.buffer ?? block;
 		const targetBinding = binding ?? block.binding ?? 0;
@@ -604,7 +607,7 @@ export class UniformBlock {
 	 */
 	static layout(gl, program, blockName, uniformNames) {
 		if (!gl || !program || typeof blockName !== "string" || !Array.isArray(uniformNames)) {
-			throw new TypeError("UniformBlock.layout needs gl, program, blockName, and uniformNames");
+			throw typeErrorWGL2("UniformBlock.layout needs gl, program, blockName, and uniformNames");
 		}
 
 		const blockIndex = gl.getUniformBlockIndex(program, blockName);
@@ -659,7 +662,7 @@ export class Texture {
 	 */
 	static create2D(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Texture.create2D needs gl");
+			throw typeErrorWGL2("Texture.create2D needs gl");
 		}
 
 		const texture = gl.createTexture();
@@ -698,7 +701,7 @@ export class Texture {
 	 */
 	static write2D(gl, texture, source, options = {}) {
 		if (!gl || !texture || !source) {
-			throw new TypeError("Texture.write2D needs gl, texture, and source");
+			throw typeErrorWGL2("Texture.write2D needs gl, texture, and source");
 		}
 		const target = gl.TEXTURE_2D;
 		gl.bindTexture(target, texture);
@@ -709,7 +712,7 @@ export class Texture {
 			const width = options.width;
 			const height = options.height;
 			if (!width || !height) {
-				throw new TypeError("Texture.write2D typed array upload needs width and height");
+				throw typeErrorWGL2("Texture.write2D typed array upload needs width and height");
 			}
 			gl.texSubImage2D(target, level, options.x ?? 0, options.y ?? 0, width, height, format, type, source);
 		} else {
@@ -726,7 +729,7 @@ export class Texture {
 	 */
 	static createCube(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Texture.createCube needs gl");
+			throw typeErrorWGL2("Texture.createCube needs gl");
 		}
 		const texture = gl.createTexture();
 		if (!texture) {
@@ -775,7 +778,7 @@ export class Texture {
 	 */
 	static writeCubeFace(gl, texture, face, source, options = {}) {
 		if (!gl || !texture || source === undefined || source === null) {
-			throw new TypeError("Texture.writeCubeFace needs gl, texture, face, and source");
+			throw typeErrorWGL2("Texture.writeCubeFace needs gl, texture, face, and source");
 		}
 		const target = gl.TEXTURE_CUBE_MAP;
 		gl.bindTexture(target, texture);
@@ -792,7 +795,7 @@ export class Texture {
 	 */
 	static create3D(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Texture.create3D needs gl");
+			throw typeErrorWGL2("Texture.create3D needs gl");
 		}
 		const texture = gl.createTexture();
 		if (!texture) {
@@ -838,13 +841,13 @@ export class Texture {
 	 */
 	static write3D(gl, texture, source, options = {}) {
 		if (!gl || !texture || !ArrayBuffer.isView(source)) {
-			throw new TypeError("Texture.write3D needs gl, texture, and typed array source");
+			throw typeErrorWGL2("Texture.write3D needs gl, texture, and typed array source");
 		}
 		const width = options.width;
 		const height = options.height;
 		const depth = options.depth;
 		if (!width || !height || !depth) {
-			throw new TypeError("Texture.write3D needs width, height, and depth");
+			throw typeErrorWGL2("Texture.write3D needs width, height, and depth");
 		}
 		const target = gl.TEXTURE_3D;
 		gl.bindTexture(target, texture);
@@ -874,7 +877,7 @@ export class Texture {
 	 */
 	static create2DArray(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Texture.create2DArray needs gl");
+			throw typeErrorWGL2("Texture.create2DArray needs gl");
 		}
 		const texture = gl.createTexture();
 		if (!texture) {
@@ -921,12 +924,12 @@ export class Texture {
 	 */
 	static write2DArrayLayer(gl, texture, layer, source, options = {}) {
 		if (!gl || !texture || !ArrayBuffer.isView(source) || typeof layer !== "number") {
-			throw new TypeError("Texture.write2DArrayLayer needs gl, texture, layer, and typed array source");
+			throw typeErrorWGL2("Texture.write2DArrayLayer needs gl, texture, layer, and typed array source");
 		}
 		const width = options.width;
 		const height = options.height;
 		if (!width || !height) {
-			throw new TypeError("Texture.write2DArrayLayer needs width and height");
+			throw typeErrorWGL2("Texture.write2DArrayLayer needs width and height");
 		}
 		const target = gl.TEXTURE_2D_ARRAY;
 		gl.bindTexture(target, texture);
@@ -956,7 +959,7 @@ export class Texture {
 	 */
 	static createDepth2D(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Texture.createDepth2D needs gl");
+			throw typeErrorWGL2("Texture.createDepth2D needs gl");
 		}
 		const texture = gl.createTexture();
 		if (!texture) {
@@ -1034,7 +1037,7 @@ export class Texture {
 			const width = options.width;
 			const height = options.height;
 			if (!width || !height) {
-				throw new TypeError("Typed array upload needs width and height");
+				throw typeErrorWGL2("Typed array upload needs width and height");
 			}
 			Texture._withUnpackState(gl, options, () => {
 				gl.texSubImage2D(target, level, options.x ?? 0, options.y ?? 0, width, height, format, type, source);
@@ -1091,7 +1094,7 @@ export class Draw {
 	 */
 	static clear(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Draw.clear needs gl");
+			throw typeErrorWGL2("Draw.clear needs gl");
 		}
 		const c = options.color ?? [0, 0, 0, 1];
 		gl.clearColor(c[0], c[1], c[2], c[3]);
@@ -1113,7 +1116,7 @@ export class Draw {
 	 */
 	static drawIndexed(gl, options) {
 		if (!gl || !options) {
-			throw new TypeError("Draw.drawIndexed needs gl and options");
+			throw typeErrorWGL2("Draw.drawIndexed needs gl and options");
 		}
 		gl.drawElements(
 			options.mode ?? gl.TRIANGLES,
@@ -1131,7 +1134,7 @@ export class Draw {
 	 */
 	static drawIndexedInstanced(gl, options) {
 		if (!gl || !options) {
-			throw new TypeError("Draw.drawIndexedInstanced needs gl and options");
+			throw typeErrorWGL2("Draw.drawIndexedInstanced needs gl and options");
 		}
 		gl.drawElementsInstanced(
 			options.mode ?? gl.TRIANGLES,
@@ -1154,7 +1157,7 @@ export class Limits {
 	 */
 	static inspect(gl) {
 		if (!gl) {
-			throw new TypeError("Limits.inspect needs gl");
+			throw typeErrorWGL2("Limits.inspect needs gl");
 		}
 		return {
 			maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
@@ -1184,7 +1187,7 @@ export class Ext {
 	 */
 	static get(gl, name, options = {}) {
 		if (!gl || typeof name !== "string") {
-			throw new TypeError("Ext.get needs gl and extension name");
+			throw typeErrorWGL2("Ext.get needs gl and extension name");
 		}
 
 		let byGl = _extCache.get(gl);
@@ -1223,7 +1226,7 @@ export class Ext {
 	 */
 	static require(gl, names) {
 		if (!Array.isArray(names)) {
-			throw new TypeError("Ext.require needs an extension name array");
+			throw typeErrorWGL2("Ext.require needs an extension name array");
 		}
 		const out = {};
 		const missing = [];
@@ -1263,7 +1266,7 @@ export class State {
 	 */
 	static apply(gl, state) {
 		if (!gl || !state) {
-			throw new TypeError("State.apply needs gl and state");
+			throw typeErrorWGL2("State.apply needs gl and state");
 		}
 
 		if (state.viewport) {
@@ -1346,7 +1349,7 @@ export class State {
 	 */
 	static capture(gl) {
 		if (!gl) {
-			throw new TypeError("State.capture needs gl");
+			throw typeErrorWGL2("State.capture needs gl");
 		}
 		return {
 			viewport: Array.from(gl.getParameter(gl.VIEWPORT)),
@@ -1424,7 +1427,7 @@ export class Framebuffer {
 	 */
 	static create(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Framebuffer.create needs gl");
+			throw typeErrorWGL2("Framebuffer.create needs gl");
 		}
 
 		const target = options.target ?? gl.FRAMEBUFFER;
@@ -1484,7 +1487,7 @@ export class Framebuffer {
 	 */
 	static createRenderbuffer(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Framebuffer.createRenderbuffer needs gl");
+			throw typeErrorWGL2("Framebuffer.createRenderbuffer needs gl");
 		}
 		const renderbuffer = gl.createRenderbuffer();
 		if (!renderbuffer) {
@@ -1511,7 +1514,7 @@ export class Framebuffer {
 	 */
 	static bind(gl, framebuffer, target = gl.FRAMEBUFFER) {
 		if (!gl) {
-			throw new TypeError("Framebuffer.bind needs gl");
+			throw typeErrorWGL2("Framebuffer.bind needs gl");
 		}
 		const fb = framebuffer && framebuffer.framebuffer ? framebuffer.framebuffer : framebuffer;
 		gl.bindFramebuffer(target, fb ?? null);
@@ -1525,7 +1528,7 @@ export class Framebuffer {
 	 */
 	static check(gl, target = gl.FRAMEBUFFER) {
 		if (!gl) {
-			throw new TypeError("Framebuffer.check needs gl");
+			throw typeErrorWGL2("Framebuffer.check needs gl");
 		}
 		return gl.checkFramebufferStatus(target);
 	}
@@ -1540,7 +1543,7 @@ export class Framebuffer {
 	 */
 	static with(gl, framebuffer, callback, options = {}) {
 		if (!gl || typeof callback !== "function") {
-			throw new TypeError("Framebuffer.with needs gl and callback");
+			throw typeErrorWGL2("Framebuffer.with needs gl and callback");
 		}
 		const target = options.target ?? gl.FRAMEBUFFER;
 		const prev = gl.getParameter(gl.FRAMEBUFFER_BINDING);
@@ -1580,7 +1583,7 @@ export class Framebuffer {
 			);
 			return;
 		}
-		throw new TypeError("Framebuffer attachment needs texture or renderbuffer");
+		throw typeErrorWGL2("Framebuffer attachment needs texture or renderbuffer");
 	}
 }
 
@@ -1596,7 +1599,7 @@ export class Pipeline {
 	 */
 	static create(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Pipeline.create needs gl");
+			throw typeErrorWGL2("Pipeline.create needs gl");
 		}
 
 		let program = options.program ?? null;
@@ -1604,7 +1607,7 @@ export class Pipeline {
 			program = Shader.create(gl, options.shader);
 		}
 		if (!program) {
-			throw new TypeError("Pipeline.create needs program or shader descriptor");
+			throw typeErrorWGL2("Pipeline.create needs program or shader descriptor");
 		}
 
 		return {
@@ -1624,7 +1627,7 @@ export class Pipeline {
 	 */
 	static createChecked(gl, options = {}, check = {}) {
 		if (!gl) {
-			throw new TypeError("Pipeline.createChecked needs gl");
+			throw typeErrorWGL2("Pipeline.createChecked needs gl");
 		}
 
 		if (check.clearErrorsBefore ?? true) {
@@ -1669,7 +1672,7 @@ export class Pipeline {
 	 */
 	static use(gl, pipeline, options = {}) {
 		if (!gl || !pipeline || !pipeline.program) {
-			throw new TypeError("Pipeline.use needs gl and pipeline");
+			throw typeErrorWGL2("Pipeline.use needs gl and pipeline");
 		}
 
 		Shader.use(gl, pipeline.program);
@@ -1732,7 +1735,7 @@ export class Readback {
 	 */
 	static pixels(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("Readback.pixels needs gl");
+			throw typeErrorWGL2("Readback.pixels needs gl");
 		}
 
 		const x = options.x ?? 0;
@@ -1783,7 +1786,7 @@ export class Readback {
 	 */
 	static sync(gl) {
 		if (!gl) {
-			throw new TypeError("Readback.sync needs gl");
+			throw typeErrorWGL2("Readback.sync needs gl");
 		}
 		gl.finish();
 	}
@@ -1818,7 +1821,7 @@ export class ResourcePool {
 	 */
 	static acquire(gl, kind, key, factory) {
 		if (!gl || typeof kind !== "string" || typeof factory !== "function") {
-			throw new TypeError("ResourcePool.acquire needs gl, kind, and factory");
+			throw typeErrorWGL2("ResourcePool.acquire needs gl, kind, and factory");
 		}
 		const bucketKey = key ?? "__default";
 		const state = ResourcePool._state(gl);
@@ -1841,7 +1844,7 @@ export class ResourcePool {
 	 */
 	static release(gl, kind, key, resource) {
 		if (!gl || typeof kind !== "string" || !resource) {
-			throw new TypeError("ResourcePool.release needs gl, kind, and resource");
+			throw typeErrorWGL2("ResourcePool.release needs gl, kind, and resource");
 		}
 		const bucketKey = key ?? "__default";
 		const state = ResourcePool._state(gl);
@@ -1861,7 +1864,7 @@ export class ResourcePool {
 	 */
 	static with(gl, kind, key, factory, callback) {
 		if (typeof callback !== "function") {
-			throw new TypeError("ResourcePool.with needs callback");
+			throw typeErrorWGL2("ResourcePool.with needs callback");
 		}
 		const resource = ResourcePool.acquire(gl, kind, key, factory);
 		try {
@@ -1878,7 +1881,7 @@ export class ResourcePool {
 	 */
 	static stats(gl) {
 		if (!gl) {
-			throw new TypeError("ResourcePool.stats needs gl");
+			throw typeErrorWGL2("ResourcePool.stats needs gl");
 		}
 		const state = ResourcePool._state(gl);
 		return {
@@ -1896,7 +1899,7 @@ export class ResourcePool {
 	 */
 	static clear(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("ResourcePool.clear needs gl");
+			throw typeErrorWGL2("ResourcePool.clear needs gl");
 		}
 		const state = _poolByGl.get(gl);
 		if (!state) {
@@ -2015,7 +2018,7 @@ export class LayoutCache {
 	 */
 	static keyFromAttributes(attributes, options = {}) {
 		if (!Array.isArray(attributes)) {
-			throw new TypeError("LayoutCache.keyFromAttributes needs attributes array");
+			throw typeErrorWGL2("LayoutCache.keyFromAttributes needs attributes array");
 		}
 		const attrs = attributes.map((a) => ({
 			index: a.index,
@@ -2046,7 +2049,7 @@ export class LayoutCache {
 	 */
 	static get(gl, key) {
 		if (!gl || typeof key !== "string") {
-			throw new TypeError("LayoutCache.get needs gl and key");
+			throw typeErrorWGL2("LayoutCache.get needs gl and key");
 		}
 		const map = _layoutCacheByGl.get(gl);
 		if (!map) {
@@ -2064,7 +2067,7 @@ export class LayoutCache {
 	 */
 	static set(gl, key, value) {
 		if (!gl || typeof key !== "string") {
-			throw new TypeError("LayoutCache.set needs gl and key");
+			throw typeErrorWGL2("LayoutCache.set needs gl and key");
 		}
 		let map = _layoutCacheByGl.get(gl);
 		if (!map) {
@@ -2083,11 +2086,11 @@ export class LayoutCache {
 	 */
 	static getOrCreate(gl, options = {}) {
 		if (!gl) {
-			throw new TypeError("LayoutCache.getOrCreate needs gl");
+			throw typeErrorWGL2("LayoutCache.getOrCreate needs gl");
 		}
 		const create = options.create;
 		if (typeof create !== "function") {
-			throw new TypeError("LayoutCache.getOrCreate needs create callback");
+			throw typeErrorWGL2("LayoutCache.getOrCreate needs create callback");
 		}
 		const key = options.key ?? LayoutCache.keyFromAttributes(options.attributes ?? [], options);
 		const cached = LayoutCache.get(gl, key);
@@ -2118,7 +2121,7 @@ export class LayoutCache {
 				gl.bindVertexArray(vao);
 				for (const a of attributes) {
 					if (!a || a.index === undefined || a.size === undefined) {
-						throw new TypeError("LayoutCache.createVAO got invalid attribute descriptor");
+						throw typeErrorWGL2("LayoutCache.createVAO got invalid attribute descriptor");
 					}
 					const target = a.target ?? gl.ARRAY_BUFFER;
 					if (a.buffer) {
@@ -2172,7 +2175,7 @@ export class LayoutCache {
 	 */
 	static clear(gl) {
 		if (!gl) {
-			throw new TypeError("LayoutCache.clear needs gl");
+			throw typeErrorWGL2("LayoutCache.clear needs gl");
 		}
 		const map = _layoutCacheByGl.get(gl);
 		if (!map) {
@@ -2288,10 +2291,10 @@ export class Timer {
 	 */
 	static async measure(gl, encode, options = {}) {
 		if (!gl) {
-			throw new TypeError("Timer.measure needs gl");
+			throw typeErrorWGL2("Timer.measure needs gl");
 		}
 		if (typeof encode !== "function") {
-			throw new TypeError("Timer.measure needs encode callback");
+			throw typeErrorWGL2("Timer.measure needs encode callback");
 		}
 
 		const timer = options.timer ?? Timer.create(gl, options);
@@ -2409,6 +2412,7 @@ if (typeof window !== "undefined") {
 }
 
 export default AzWGL2;
+
 
 
 
