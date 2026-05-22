@@ -1,11 +1,10 @@
 import { Ctx } from "../../AzLib/Azt.js";
-import WrBackend from "../WrBackends/Base.js";
 import {
 	WrMeshStore,
 	WrTextureStore,
 	WrShaderStore,
 	WrSkeletonStore,
-} from "./Assets.js";
+} from "../WrStore/index.js";
 import WrNode from "./Node.js";
 
 const WR_NODE_STATIC_KEYS = new Set(["ctx", "id", "parentId", "childIds", "components"]);
@@ -68,9 +67,8 @@ export class WrWorld extends Ctx {
 	constructor(options = {}) {
 		super(options.ctx ?? {});
 		this.options = options ?? {};
-		this.canvas = WrBackend.resolveCanvas(options.canvas ?? null);
-		this.backend = options.backend ?? null;
-		this.backendReport = null;
+		this.#backend = options.backend ?? null;
+		this.#camera = options.camera ?? null;
 
 		this.#roots = new Set();
 		this.#meshStore = new WrMeshStore(this, {
@@ -95,42 +93,21 @@ export class WrWorld extends Ctx {
 
 	get store() { return this.#store; }
 	get roots() { return Array.from(this.#roots); }
+	get backend() { return this.#backend; }
+	get camera() { return this.#camera; }
 
 	createNode(id) {
 		return new WrNode(this, id);
 	}
 
-	setCanvas(canvasRef) {
-		this.canvas = WrBackend.resolveCanvas(canvasRef);
-		return this.canvas;
+	setBackend(backend) {
+		this.#backend = backend ?? null;
+		return this.#backend;
 	}
 
-	setBackend(backend, report = null) {
-		this.backend = backend ?? null;
-		this.backendReport = report ?? null;
-		return this.backend;
-	}
-
-	resize(options = {}) {
-		if (!this.backend) return false;
-		return this.backend.resize(options);
-	}
-
-	render(frameOptions = {}, callback = null) {
-		if (!this.backend || !this.backend.ready) return false;
-		this.backend.beginFrame(frameOptions);
-		const fn = typeof callback === "function"
-			? callback
-			: (typeof frameOptions?.draw === "function" ? frameOptions.draw : null);
-		if (fn) fn(this.backend, this);
-		this.backend.endFrame();
-		return true;
-	}
-
-	destroy() {
-		if (this.backend?.destroy) this.backend.destroy();
-		this.backend = null;
-		this.backendReport = null;
+	setCamera(camera) {
+		this.#camera = camera ?? null;
+		return this.#camera;
 	}
 
 	addNode(parent = null, index = -1) {
@@ -233,6 +210,8 @@ export class WrWorld extends Ctx {
 	}
 
 	#roots;
+	#backend;
+	#camera;
 	#meshStore;
 	#textureStore;
 	#shaderStore;

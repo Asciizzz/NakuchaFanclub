@@ -5,7 +5,7 @@ export { WrRenderQueue } from "./Core/RenderQueue.js";
 
 export { WrBackendBase } from "./Backends/BackendBase.js";
 export { WrBackendWGPU } from "./Backends/WGPUBackend.js";
-export { WrBackendWGL } from "./Backends/WGLBackend.js";
+export { WrBackendWGL2 } from "./Backends/WGL2Backend.js";
 
 export { WrAssetStore, WrAssetKind, AssetKind } from "./Assets/AssetStore.js";
 export { WrMesh } from "./Assets/Mesh.js";

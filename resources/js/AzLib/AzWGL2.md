@@ -1,11 +1,11 @@
-# AzWGL Readiness Spec
+# AzWGL2 Readiness Spec
 
 ## Scope
 
-- library file: `azcore/AzWGL.js`
+- library file: `azcore/AzWGL2.js`
 - usage mode:
-  - ESM import: `import * as AzWGL from "../azcore/AzWGL.js"`
-  - global fallback: `window.AzWGL`
+  - ESM import: `import * as AzWGL2 from "../azcore/AzWGL2.js"`
+  - global fallback: `window.AzWGL2`
 - examples root: `ABzExamples/`
 
 ---
@@ -20,7 +20,7 @@ Keep this weighting stable so future percentage updates are comparable
 4. Validation evidence from examples (`15%`)
 5. Documentation maintainability (`10%`)
 
-`95%` for AzWGL means:
+`95%` for AzWGL2 means:
 
 - robust render workflow coverage for realistic WebGL2 use
 - clear capability/fallback handling for optional extensions
@@ -239,7 +239,7 @@ Keep this weighting stable so future percentage updates are comparable
 ### Core helper integration set
 
 - validated by:
-  - `ABzExamples/AzWGL_v2.html`
+  - `ABzExamples/AzWGL2_v2.html`
 - covers:
   - UBO flow
   - expanded texture helper coverage
@@ -249,7 +249,7 @@ Keep this weighting stable so future percentage updates are comparable
 ### Reliability and tooling gate set
 
 - validated by:
-  - `ABzExamples/AzWGL_v3.html`
+  - `ABzExamples/AzWGL2_v3.html`
 - covers:
   - long-run multipass reliability loop
   - checked shader/pipeline debug summary paths
@@ -266,7 +266,7 @@ Keep this weighting stable so future percentage updates are comparable
 
 ## Expected API Limits (Not Bugs)
 
-AzWGL must stay honest about WebGL2 constraints
+AzWGL2 must stay honest about WebGL2 constraints
 
 - no compute shader stage
 - no WebGPU storage-buffer/bind-group model
@@ -281,7 +281,7 @@ Helpers should expose this clearly, never pretend feature parity where it does n
 Main blockers are reliability proof + diagnostics depth, not missing baseline classes
 
 1. Reliability stress suite
-   - run and verify `AzWGL_v3` in target runtime, no warning cascade
+   - run and verify `AzWGL2_v3` in target runtime, no warning cascade
 2. Multipass confidence
    - verify multipass checksum stays stable in repeated runs
 3. Query/timing and fallback reporting
@@ -295,7 +295,7 @@ Main blockers are reliability proof + diagnostics depth, not missing baseline cl
 
 ## Change Protocol (For Future Me)
 
-When editing AzWGL:
+When editing AzWGL2:
 
 1. update component section here first
 2. add or extend one proof scenario in `ABzExamples/`

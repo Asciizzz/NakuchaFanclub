@@ -214,16 +214,16 @@ export class WrWorld extends Ctx {
             ...this.backendOptions,
             ...options,
         };
-        const webglOptions = {
-            ...(mergedBackendOpts.webgl ?? {}),
+        const webgl2Options = {
+            ...(mergedBackendOpts.webgl2 ?? {}),
         };
-        if (webglOptions.alpha == null && this.canvasOptions.alpha != null) {
-            webglOptions.alpha = !!this.canvasOptions.alpha;
+        if (webgl2Options.alpha == null && this.canvasOptions.alpha != null) {
+            webgl2Options.alpha = !!this.canvasOptions.alpha;
         }
-        if (webglOptions.premultipliedAlpha == null && this.canvasOptions.premultipliedAlpha != null) {
-            webglOptions.premultipliedAlpha = !!this.canvasOptions.premultipliedAlpha;
+        if (webgl2Options.premultipliedAlpha == null && this.canvasOptions.premultipliedAlpha != null) {
+            webgl2Options.premultipliedAlpha = !!this.canvasOptions.premultipliedAlpha;
         }
-        mergedBackendOpts.webgl = webglOptions;
+        mergedBackendOpts.webgl2 = webgl2Options;
 
         const { backend, report } = await WrBackendBase.choose(this.canvas, mergedBackendOpts);
         this.backend = backend;

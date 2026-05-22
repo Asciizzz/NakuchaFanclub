@@ -19,7 +19,7 @@ Primary source files:
 - `resources/js/WeebRender1/Core/RenderConfig.js`
 - `resources/js/WeebRender1/Core/RenderQueue.js`
 - `resources/js/WeebRender1/Backends/WGPUBackend.js`
-- `resources/js/WeebRender1/Backends/WGLBackend.js`
+- `resources/js/WeebRender1/Backends/WGL2Backend.js`
 
 ## 1) Registration Entry and Data Path
 
@@ -229,7 +229,7 @@ Registration precedence for render config is:
 Reason this model exists:
 
 - WebGPU render state is pipeline-baked
-- WebGL can toggle state dynamically
+- webgl2 can toggle state dynamically
 - WR1 forces both to use one normalized state object per shader/draw path so behavior stays aligned
 
 ## 8) Runtime Consumption Path
@@ -263,9 +263,9 @@ Result:
 - render state is truly baked per pipeline variant
 - changing config means a different cached pipeline instance
 
-### WebGL backend
+### webgl2 backend
 
-`Backends/WGLBackend.js`:
+`Backends/WGL2Backend.js`:
 
 - compiles program from `shaderAsset.resolved.vertex/fragment.glsl`
 - binds fixed attribute locations matching WR vertex ABI
@@ -305,7 +305,7 @@ render
   -> queue picks shader + shader renderCfg
   -> backend compiles/uses resolved source
   -> WGPU: pipeline cached by shaderId+format+renderCfgKey
-  -> WGL: GL state applied from same normalized renderCfg
+  -> WGL2: GL state applied from same normalized renderCfg
 ```
 
 ## 11) Short Summary
@@ -317,6 +317,6 @@ WR1 shader system is a strict dual-language contract with deterministic preproce
 - WR resolves template keys and link IO glue before runtime
 - WR stores shader with normalized baked `renderCfg`
 - render queue picks shader and passes baked config to backend
-- WGPU bakes it into pipeline variants, WGL applies equivalent GL state
+- WGPU bakes it into pipeline variants, WGL2 applies equivalent GL state
 
-This is why WR1 can keep WebGPU/WebGL behavior aligned even though pipeline/state models differ
+This is why WR1 can keep WebGPU/webgl2 behavior aligned even though pipeline/state models differ

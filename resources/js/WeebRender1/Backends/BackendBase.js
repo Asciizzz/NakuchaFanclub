@@ -106,7 +106,7 @@ export class WrBackendBase {
                     });
                     await backend.init();
                     report.chosen = "webgpu";
-                    report.reason = preferred === "webgl2" && report.details.webglError
+                    report.reason = preferred === "webgl2" && report.details.webgl2Error
                         ? "webgl2_failed_fallback_webgpu"
                         : null;
                     report.details.webgpu = backend.getCapabilities();
@@ -118,8 +118,8 @@ export class WrBackendBase {
             }
 
             try {
-                const { default: WrBackendWGL } = await import("./WGLBackend.js");
-                const backend = new WrBackendWGL(canvas, options.webgl ?? {});
+                const { default: WrBackendWGL2 } = await import("./WGL2Backend.js");
+                const backend = new WrBackendWGL2(canvas, options.webgl2 ?? {});
                 await backend.init();
                 report.chosen = "webgl2";
                 report.reason = preferred === "webgpu"
@@ -127,10 +127,10 @@ export class WrBackendBase {
                         ? "webgpu_failed_fallback_webgl2"
                         : "webgpu_unavailable")
                     : null;
-                report.details.webgl = backend.getCapabilities();
+                report.details.webgl2 = backend.getCapabilities();
                 return { backend, report };
             } catch (error) {
-                report.details.webglError = String(error?.message ?? error);
+                report.details.webgl2Error = String(error?.message ?? error);
             }
         }
 

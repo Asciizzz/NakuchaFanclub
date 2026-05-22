@@ -1,7 +1,7 @@
 /* AsczWGPU
 By Asciiz
 
-Ok guys, I'm moving on from WebGL to WebGPU now, isn't that exciting? (No, ts is literally Vulkan reincarnated)
+Ok guys, I'm moving on from webgl2 to WebGPU now, isn't that exciting? (No, ts is literally Vulkan reincarnated)
 
 Note:
 * Many methods here are just calling what WebGPU already provides, but it's nice to have an API/naming layer

@@ -1,7 +1,7 @@
-/* AzWGL
+/* AzWGL2
 By Asciiz
 
-WebGL sidekick for AzWGPU
+webgl2 sidekick for AzWGPU
 No compute wizardry here, just practical render helpers
 
 #Context:
@@ -1200,7 +1200,7 @@ export class Ext {
 		const ext = gl.getExtension(name);
 		byGl.set(name, ext);
 		if (!ext && (options.required ?? false)) {
-			throw new Error("Required WebGL extension is missing: " + name);
+			throw new Error("Required webgl2 extension is missing: " + name);
 		}
 		return ext;
 	}
@@ -1236,7 +1236,7 @@ export class Ext {
 			}
 		}
 		if (missing.length > 0) {
-			throw new Error("Missing required WebGL extensions: " + missing.join(", "));
+			throw new Error("Missing required webgl2 extensions: " + missing.join(", "));
 		}
 		return out;
 	}
@@ -2384,7 +2384,7 @@ export class Timer {
 }
 
 
-export const AzWGL = {
+export const AzWGL2 = {
 	Context,
 	Shader,
 	Buffer,
@@ -2405,10 +2405,10 @@ export const AzWGL = {
 };
 
 if (typeof window !== "undefined") {
-	window.AzWGL = AzWGL;
+	window.AzWGL2 = AzWGL2;
 }
 
-export default AzWGL;
+export default AzWGL2;
 
 
 

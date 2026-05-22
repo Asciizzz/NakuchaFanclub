@@ -1,4 +1,4 @@
-import AzWGL from "../../AzLib/AzWGL.js";
+import AzWGL2 from "../../AzLib/AzWGL2.js";
 import * as Azm from "../../AzLib/Azm.js";
 import WrBackendBase from "./BackendBase.js";
 import { WrMesh } from "../Assets/Mesh.js";
@@ -114,7 +114,7 @@ function wrResolveSubmeshMaterial(meshAsset, submeshIndex, assets) {
 }
 
 /**
- * Map render config depth compare to WebGL enum
+ * Map render config depth compare to webgl2 enum
  * @param {WebGL2RenderingContext} gl GL context
  * @param {string} depthCompare compare mode
  * @param {boolean} depthTest depth test toggle
@@ -137,7 +137,7 @@ function wrDepthFuncGL(gl, depthCompare, depthTest) {
 /**
  * WebGL2 backend implementation
  */
-export class WrBackendWGL extends WrBackendBase {
+export class WrBackendWGL2 extends WrBackendBase {
     /**
      * @param {HTMLCanvasElement} canvas target canvas
      * @param {object} [options={}] backend options
@@ -164,10 +164,10 @@ export class WrBackendWGL extends WrBackendBase {
 
     /**
      * Initialize WebGL2 context and capability report
-     * @returns {Promise<WrBackendWGL>}
+     * @returns {Promise<WrBackendWGL2>}
      */
     async init() {
-        if (!this.canvas) throw new Error("[WrBackendWGL] canvas is required");
+        if (!this.canvas) throw new Error("[WrBackendWGL2] canvas is required");
         const rawContextOptions = (this.options.context && typeof this.options.context === "object")
             ? this.options.context
             : this.options;
@@ -176,13 +176,13 @@ export class WrBackendWGL extends WrBackendBase {
             premultipliedAlpha: true,
             ...(rawContextOptions ?? {}),
         };
-        const gl = AzWGL.Context.create(this.canvas, contextOptions);
+        const gl = AzWGL2.Context.create(this.canvas, contextOptions);
         this.gl = gl;
         this.ready = true;
         this.report = {
-            info: AzWGL.Context.info(gl),
-            limits: AzWGL.Limits.inspect(gl),
-            timer: AzWGL.Timer.supportInfo(gl),
+            info: AzWGL2.Context.info(gl),
+            limits: AzWGL2.Limits.inspect(gl),
+            timer: AzWGL2.Timer.supportInfo(gl),
         };
         return this;
     }
@@ -350,7 +350,7 @@ export class WrBackendWGL extends WrBackendBase {
         const gl = this.gl;
         const state = { ok: false, program: null, error: null };
         try {
-            state.program = AzWGL.Shader.create(gl, {
+            state.program = AzWGL2.Shader.create(gl, {
                 vertex: shaderAsset.resolved?.vertex?.glsl ?? shaderAsset.vertex?.glsl,
                 fragment: shaderAsset.resolved?.fragment?.glsl ?? shaderAsset.fragment?.glsl,
                 attribLocations: WR_GL_ATTRIB_LOCATIONS,
@@ -359,7 +359,7 @@ export class WrBackendWGL extends WrBackendBase {
         } catch (error) {
             state.error = String(error?.message ?? error);
             if (!this.#warnedShaderIds.has(shaderId)) {
-                console.warn(`[WrBackendWGL] shader compile failed for "${shaderId}"`, state.error);
+                console.warn(`[WrBackendWGL2] shader compile failed for "${shaderId}"`, state.error);
                 this.#warnedShaderIds.add(shaderId);
             }
         }
@@ -532,7 +532,7 @@ export class WrBackendWGL extends WrBackendBase {
 
         const textureAsset = assets?.getTexture?.(key) ?? null;
         if (!textureAsset) {
-            this.#warnTextureOnce(`missing:${key}`, `[WrBackendWGL] texture "${key}" is missing; fallback white is used`);
+            this.#warnTextureOnce(`missing:${key}`, `[WrBackendWGL2] texture "${key}" is missing; fallback white is used`);
             return this.#ensureFallbackTexture();
         }
 
@@ -544,12 +544,12 @@ export class WrBackendWGL extends WrBackendBase {
         const bitmap = textureAsset.bitmap ?? null;
 
         if (!bitmap) {
-            this.#warnTextureOnce(`empty:${key}`, `[WrBackendWGL] texture "${key}" has no bitmap; fallback white is used`);
+            this.#warnTextureOnce(`empty:${key}`, `[WrBackendWGL2] texture "${key}" has no bitmap; fallback white is used`);
             return this.#ensureFallbackTexture();
         }
 
         try {
-            const texture = AzWGL.Texture.create2D(gl, {
+            const texture = AzWGL2.Texture.create2D(gl, {
                 width,
                 height,
                 wrapS: wrapMode,
@@ -557,14 +557,14 @@ export class WrBackendWGL extends WrBackendBase {
                 minFilter: gl.LINEAR,
                 magFilter: gl.LINEAR,
             });
-            AzWGL.Texture.write2D(gl, texture, bitmap, {
+            AzWGL2.Texture.write2D(gl, texture, bitmap, {
                 format: gl.RGBA,
                 type: gl.UNSIGNED_BYTE,
             });
             this.#textureCache.set(key, texture);
             return texture;
         } catch (error) {
-            this.#warnTextureOnce(`failed:${key}`, `[WrBackendWGL] texture upload failed for "${key}": ${String(error?.message ?? error)}`);
+            this.#warnTextureOnce(`failed:${key}`, `[WrBackendWGL2] texture upload failed for "${key}": ${String(error?.message ?? error)}`);
             return this.#ensureFallbackTexture();
         }
     }
@@ -576,7 +576,7 @@ export class WrBackendWGL extends WrBackendBase {
     #ensureFallbackTexture() {
         if (this.#fallbackTexture) return this.#fallbackTexture;
         const gl = this.gl;
-        this.#fallbackTexture = AzWGL.Texture.create2D(gl, {
+        this.#fallbackTexture = AzWGL2.Texture.create2D(gl, {
             width: 1,
             height: 1,
             wrapS: gl.CLAMP_TO_EDGE,
@@ -584,7 +584,7 @@ export class WrBackendWGL extends WrBackendBase {
             minFilter: gl.NEAREST,
             magFilter: gl.NEAREST,
         });
-        AzWGL.Texture.write2D(gl, this.#fallbackTexture, new Uint8Array([255, 255, 255, 255]), {
+        AzWGL2.Texture.write2D(gl, this.#fallbackTexture, new Uint8Array([255, 255, 255, 255]), {
             width: 1,
             height: 1,
             format: gl.RGBA,
@@ -603,5 +603,5 @@ export class WrBackendWGL extends WrBackendBase {
     #frameCtx;
 }
 
-export default WrBackendWGL;
+export default WrBackendWGL2;
 

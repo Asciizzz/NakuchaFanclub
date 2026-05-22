@@ -1,6 +1,9 @@
-export { WrBackend } from "./WrBackends/Base.js";
-export { WrBackendWGPU } from "./WrBackends/WGPU.js";
-export { WrBackendWGL } from "./WrBackends/WGL.js";
+export {
+	WrBackend,
+	Base as WrBackendBase,
+	WGPU as WrBackendWGPU,
+	WGL2 as WrBackendWGL2,
+} from "./WrWBackend/WrWBackend.js";
 
 export { WrWorld } from "./WrWorld/World.js";
 export { WrNode } from "./WrWorld/Node.js";
@@ -15,4 +18,4 @@ export {
 	WrTextureStore,
 	WrShaderStore,
 	WrSkeletonStore,
-} from "./WrWorld/Assets.js";
+} from "./WrStore/index.js";
