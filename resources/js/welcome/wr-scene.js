@@ -160,7 +160,6 @@ async function run() {
 	const rootNode = await world.loadModelFromURL("/Models/Agnes.glb", {
 		shaderId: "wr-default",
 	});
-	console.info("[WrScene] model loaded", rootNode.id);
 
 	const branchNodes = collectBranchNodes(rootNode);
 	const meshRenderers = branchNodes
@@ -195,15 +194,7 @@ async function run() {
 			hipDriver.live.set(hipDriver.bone, Azm.Mat4.fromRotationY(angle));
 		}
 
-		const queue = world.render(rootNode, { time: t });
-		if ((now | 0) % 2000 < 16) {
-			console.info("[WrScene] queue", {
-				from: queue.from,
-				count: queue.count,
-				groups: queue.groups,
-				backend: queue.backend,
-			});
-		}
+		world.render(rootNode, { time: t });
 
 		requestAnimationFrame(frame);
 	}

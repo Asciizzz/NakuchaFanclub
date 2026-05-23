@@ -1,4 +1,4 @@
-import WrWorldRuntime from "./WorldRuntime.js";
+import { LiveSkeleton, MeshRenderer } from "../WrWorld/Components.js";
 import { WrMesh } from "../Assets/Mesh.js";
 import { WR_DEFAULT_RENDER_CFG, wrNormalizeRenderCfg } from "./RenderConfig.js";
 
@@ -84,6 +84,81 @@ function wrBuildSceneNodeMap(scene) {
     return map;
 }
 
+function wrGetMeshRenderer(node) {
+    if (!node || typeof node !== "object") return null;
+    if (typeof node.getComp === "function") return node.getComp(MeshRenderer);
+    if (node.components instanceof Map) {
+        const direct = node.components.get(MeshRenderer);
+        if (direct) return direct;
+        for (const comp of node.components.values()) {
+            if (comp instanceof MeshRenderer) return comp;
+        }
+    }
+    return null;
+}
+
+function wrGetLiveSkeleton(node) {
+    if (!node || typeof node !== "object") return null;
+    if (typeof node.getComp === "function") return node.getComp(LiveSkeleton);
+    if (node.components instanceof Map) {
+        const direct = node.components.get(LiveSkeleton);
+        if (direct) return direct;
+        for (const comp of node.components.values()) {
+            if (comp instanceof LiveSkeleton) return comp;
+        }
+    }
+    return null;
+}
+
+function *wrIterNodes(scene, options = {}) {
+    if (!scene) return;
+    const fromId = String(options?.from ?? "").trim();
+    const mode = String(options?.mode ?? "dfs_pre");
+    const includeFrom = options?.includeFrom !== false;
+
+    if (fromId) {
+        if (typeof scene?.getNode === "function") {
+            const fromNode = scene.getNode(fromId);
+            if (fromNode && typeof fromNode.traverse === "function") {
+                yield* fromNode.traverse({ mode, includeFrom });
+                return;
+            }
+        }
+        if (typeof scene?.traverseRaw === "function") {
+            yield* scene.traverseRaw({ from: fromId, mode, includeFrom });
+            return;
+        }
+        if (typeof scene?.traverse === "function") {
+            yield* scene.traverse({ from: fromId, mode, includeFrom });
+            return;
+        }
+        return;
+    }
+
+    if (scene?.nodes instanceof Map) {
+        yield* scene.nodes.values();
+        return;
+    }
+    if (Array.isArray(scene?.nodes)) {
+        yield* scene.nodes;
+    }
+}
+
+function wrIterRenderableNodes(scene, options = {}) {
+    const out = [];
+    const includeHidden = options.includeHidden === true;
+    for (const node of wrIterNodes(scene, options)) {
+        const meshRenderer = wrGetMeshRenderer(node);
+        if (!meshRenderer) continue;
+        const visible = meshRenderer.cfg?.display ?? meshRenderer.active;
+        if (visible === false && !includeHidden) continue;
+        const meshId = meshRenderer.meshId ?? meshRenderer.meshID ?? null;
+        if (!meshId) continue;
+        out.push({ node, meshRenderer });
+    }
+    return out;
+}
+
 /**
  * Resolve skeleton palette from mesh renderer skeleton link
  * @param {object} scene active scene
@@ -92,19 +167,21 @@ function wrBuildSceneNodeMap(scene) {
  * @returns {Float32Array|null}
  */
 function wrResolveSkinPalette(scene, sceneNodeById, meshRenderer) {
+    if (typeof meshRenderer?.resolveLiveSkeleton === "function") {
+        const live = meshRenderer.resolveLiveSkeleton();
+        if (typeof live?.buildPalette === "function") {
+            return live.buildPalette(WR_SKIN_BONE_CAP);
+        }
+    }
+
     const skeletonNodeId = String(meshRenderer?.skeletonNode ?? "").trim();
     if (!skeletonNodeId) return null;
 
     const skeletonNode = sceneNodeById.get(skeletonNodeId);
     if (!skeletonNode) return null;
-
-    const skeletonComps = WrWorldRuntime.getNodeComponents(skeletonNode);
-    const skeletonComp = skeletonComps.Skeleton ?? skeletonComps.skeleton ?? null;
-    if (!skeletonComp || typeof skeletonComp !== "object") return null;
-
-    WrWorldRuntime.bindComponent(scene, skeletonNodeId, "Skeleton", skeletonComp);
-    if (typeof skeletonComp.buildPalette !== "function") return null;
-    return skeletonComp.buildPalette(WR_SKIN_BONE_CAP);
+    const live = wrGetLiveSkeleton(skeletonNode);
+    if (typeof live?.buildPalette === "function") return live.buildPalette(WR_SKIN_BONE_CAP);
+    return null;
 }
 
 /**
@@ -121,8 +198,11 @@ export class WrRenderQueue {
      */
     static build(scene, camera, assets, options = {}) {
         const drawList = [];
-        const items = WrWorldRuntime.iterRenderableNodes(scene, {
+        const items = wrIterRenderableNodes(scene, {
             from: options.from ?? null,
+            mode: options.mode ?? "dfs_pre",
+            includeFrom: options.includeFrom !== false,
+            includeHidden: options.includeHidden === true,
         });
         const sceneNodeById = wrBuildSceneNodeMap(scene);
         const defaultShaderId = options.defaultShaderId ?? null;
@@ -133,25 +213,32 @@ export class WrRenderQueue {
                 : meshRenderer.shaderKeys instanceof Set
                     ? Array.from(meshRenderer.shaderKeys.values())
                     : (meshRenderer.shaderKey ? [meshRenderer.shaderKey] : []);
-            const shaderId = shaderKeys[0] ?? defaultShaderId ?? null;
+            const shaderId = meshRenderer.cfg?.shaderId
+                ?? meshRenderer.shaderId
+                ?? shaderKeys[0]
+                ?? meshRenderer.shaderID
+                ?? defaultShaderId
+                ?? null;
             const shaderAsset = shaderId ? assets?.getShader?.(shaderId) : null;
             const renderCfg = shaderAsset?.renderCfg
                 ? wrNormalizeRenderCfg(shaderAsset.renderCfg)
                 : defaultRenderCfg;
-            const meshAsset = assets?.getMesh?.(meshRenderer.meshID) ?? null;
+            const meshId = String(meshRenderer.meshId ?? meshRenderer.meshID ?? "").trim();
+            if (!meshId) continue;
+            const meshAsset = assets?.getMesh?.(meshId) ?? null;
             const morph = wrResolveMorphSelection(meshRenderer, meshAsset);
             const skinPalette = wrResolveSkinPalette(scene, sceneNodeById, meshRenderer);
             drawList.push({
                 nodeId: String(node.id ?? ""),
-                meshID: String(meshRenderer.meshID),
-                shaderKeys,
+                meshID: meshId,
+                shaderKeys: shaderKeys.length > 0 ? shaderKeys : (shaderId ? [shaderId] : []),
                 shaderID: shaderId,
                 modelMatrix: WrMesh.resolveNodeModelMatrix(node),
                 morphWeight: morph.weight,
                 primaryMorphIndex: morph.index,
                 skinPalette,
                 renderCfg,
-                sortKey: `${shaderId ?? ""}|${meshRenderer.meshID}|${morph.index}`,
+                sortKey: `${shaderId ?? ""}|${meshId}|${morph.index}`,
             });
         }
 

@@ -523,41 +523,23 @@ export class WrWorld extends Ctx {
 			const comps = readSceneComponents(sourceNode);
 			const txSource = comps.Transform ?? comps.transform ?? null;
 			if (txSource) {
-				const tx = node.addComp(Transform);
-				tx.local = readMat4(txSource.local);
-				tx.world = readMat4(txSource.world, tx.local);
+				node.addComp(Transform).applyRaw(txSource);
 			}
 
 			const skeletonSource = comps.Skeleton ?? comps.skeleton ?? null;
 			if (skeletonSource) {
 				const live = node.addComp(LiveSkeleton);
-				const sourceSkeletonId = asId(skeletonSource.skeletonID ?? skeletonSource.skeletonId);
-				if (sourceSkeletonId && skeletonMap.has(sourceSkeletonId)) {
-					live.setSkeleton(skeletonMap.get(sourceSkeletonId));
-				}
-				const sourceBones = asList(skeletonSource.bones);
-				for (let i = 0; i < sourceBones.length; i += 1) {
-					live.setBonePose(i, readMat4(sourceBones[i]));
-				}
+				live.applyRaw(skeletonSource, {
+					resolveSkeletonId: (id) => (skeletonMap.has(id) ? skeletonMap.get(id) : id),
+				});
 			}
 
 			const meshSource = comps.MeshRenderer ?? comps.meshRenderer ?? null;
 			if (meshSource) {
 				const mr = node.addComp(MeshRenderer);
-				const sourceMeshId = asId(meshSource.meshID ?? meshSource.meshId);
-				if (sourceMeshId && meshMap.has(sourceMeshId)) mr.meshId = meshMap.get(sourceMeshId);
-
-				const sourceShader = asId(
-					meshSource.shaderId
-					?? meshSource.shaderID
-					?? (Array.isArray(meshSource.shaderKeys) ? meshSource.shaderKeys[0] : null)
-					?? options.shaderId
-					?? "wr-default"
-				);
-				mr.setCfg({
-					shaderId: sourceShader,
-					hasRig: meshSource.skeletonNode != null,
-					display: meshSource.active !== false,
+				mr.applyRaw(meshSource, {
+					resolveMeshId: (id) => (meshMap.has(id) ? meshMap.get(id) : id),
+					defaultShaderId: options.shaderId ?? "wr-default",
 				});
 
 				if (meshSource.skeletonNode != null) {
@@ -567,13 +549,7 @@ export class WrWorld extends Ctx {
 					});
 				}
 
-				if (ArrayBuffer.isView(meshSource.morphWeights) || Array.isArray(meshSource.morphWeights)) {
-					mr.morphWeights = new Float32Array(meshSource.morphWeights);
-				}
-
-				const mesh = mr.meshId ? this.#meshStore.get(mr.meshId) : null;
-				const firstMaterial = mesh?.submeshes?.[0]?.material ?? null;
-				if (firstMaterial?.albedoTex) mr.setTexture("albedo", firstMaterial.albedoTex);
+				if (mr.meshId) mr.bindMesh(mr.meshId);
 			}
 
 			sourceToWorld.set(sourceId, node.id);
