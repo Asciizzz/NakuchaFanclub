@@ -4,7 +4,7 @@ Wr is now fully world-centric.
 
 - No `WrScene`
 - No `WrNode` wrapper
-- One `WrWorld` graph (`Azt.Ctx`) with many branches
+- One `WrWorld` graph (`AzHie.Ctx`) with many branches
 - Components are direct node fields (`node.Transform`, `node.MeshRenderer`, etc)
 
 ## Exports

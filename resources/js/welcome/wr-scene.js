@@ -21,8 +21,8 @@ function wrIdentityM4() {
 
 /**
  * Iterate one branch into flat node list.
- * @param {import("../AzLib/Azt.js").Node|null} branchRoot branch root node
- * @returns {import("../AzLib/Azt.js").Node[]}
+ * @param {import("../AzLib/AzHie.js").Node|null} branchRoot branch root node
+ * @returns {import("../AzLib/AzHie.js").Node[]}
  */
 function wrCollectBranchNodes(branchRoot) {
     if (!branchRoot) return [];
@@ -39,7 +39,7 @@ function wrCollectBranchNodes(branchRoot) {
 /**
  * Create one empty composite root branch.
  * @param {WrWorld} world world context
- * @returns {import("../AzLib/Azt.js").Node}
+ * @returns {import("../AzLib/AzHie.js").Node}
  */
 function createEmptyCompositeRoot(world) {
     const root = world.addNode(null);
@@ -55,8 +55,8 @@ function createEmptyCompositeRoot(world) {
 /**
  * Create one copied branch bundle from model root.
  * @param {WrWorld} world world context
- * @param {import("../AzLib/Azt.js").Node} compositeRoot composite branch root
- * @param {import("../AzLib/Azt.js").Node} sourceRoot source model branch root
+ * @param {import("../AzLib/AzHie.js").Node} compositeRoot composite branch root
+ * @param {import("../AzLib/AzHie.js").Node} sourceRoot source model branch root
  * @param {number[]} [offset=[0,0,0]] translation offset
  * @param {number} [speed=1] animation speed
  * @returns {object|null}
@@ -111,7 +111,7 @@ function createInstanceBundle(world, compositeRoot, sourceRoot, offset = [0, 0, 
 /**
  * Print mesh morph target summary for one branch.
  * @param {WrWorld} world world context
- * @param {import("../AzLib/Azt.js").Node} branchRoot branch root node
+ * @param {import("../AzLib/AzHie.js").Node} branchRoot branch root node
  * @returns {void}
  */
 function logMeshMorphTargetNames(world, branchRoot) {
@@ -138,7 +138,7 @@ function logMeshMorphTargetNames(world, branchRoot) {
 /**
  * Dump branch hierarchy + component summary.
  * @param {WrWorld} world world context
- * @param {import("../AzLib/Azt.js").Node} branchRoot branch root node
+ * @param {import("../AzLib/AzHie.js").Node} branchRoot branch root node
  * @param {string} [label="branch"] label
  * @returns {void}
  */

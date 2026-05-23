@@ -1,5 +1,5 @@
 /*
-Azt (Tree)
+AzHie (Hierarchy, Tree, whatever you want to call it)
 By Asciiz
 
 Lightweight agnostic tree structure, you can do literally anything you want with it
@@ -381,13 +381,13 @@ export class Ctx {
 	}
 }
 
-export const Azt = {
+export const AzHie = {
 	Node,
 	Ctx,
 };
 
 if (typeof window !== "undefined") {
-	window.Azt = Azt;
+	window.AzHie = AzHie;
 }
 
-export default Azt;
+export default AzHie;

@@ -1,4 +1,4 @@
-import { Ctx } from "../../AzLib/Azt.js";
+import { Ctx } from "../../AzLib/AzHie.js";
 import {
 	WrMeshStore,
 	WrTextureStore,

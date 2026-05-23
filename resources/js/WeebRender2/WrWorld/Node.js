@@ -1,4 +1,4 @@
-import { Node } from "../../AzLib/Azt.js";
+import { Node } from "../../AzLib/AzHie.js";
 import {
 	Component,
 } from "./Components.js";
