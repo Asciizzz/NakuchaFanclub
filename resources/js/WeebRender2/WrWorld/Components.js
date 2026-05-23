@@ -83,7 +83,6 @@ export class MeshRenderer extends Component {
 		if (shaderId !== null) this.cfg.shaderId = shaderId;
 
 		if (src.hasRig !== undefined) this.cfg.hasRig = asBool(src.hasRig, this.cfg.hasRig);
-		if (src.skeletonNode != null) this.cfg.hasRig = true;
 
 		if (src.display !== undefined) this.cfg.display = asBool(src.display, this.cfg.display);
 		if (src.active !== undefined) this.cfg.display = asBool(src.active, this.cfg.display);

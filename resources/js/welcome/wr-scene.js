@@ -5,15 +5,16 @@ import {
 	WrWorld,
 	WrMeshRenderer,
 	WrLiveSkeleton,
+	WrTransform,
 } from "../WeebRender2/index.js";
 
 const EYE_CLOSE_MORPH = "Eye_2_R(CloseA)[M_Face]";
 const container = document.getElementById("main-canvas");
 
-function collectBranchNodes(rootNode) {
-	if (!rootNode) return [];
+function collectBranchNodes(modelRoot) {
+	if (!modelRoot) return [];
 	const out = [];
-	for (const node of rootNode.traverse({ mode: "dfs_pre", includeFrom: true })) {
+	for (const node of modelRoot.traverse({ mode: "dfs_pre", includeFrom: true })) {
 		out.push(node);
 	}
 	return out;
@@ -157,24 +158,55 @@ async function run() {
 		},
 	});
 
-	const rootNode = await world.loadModelFromURL("/Models/Agnes.glb", {
+	const modelRoot = await world.loadModelFromURL("/Models/Agnes.glb", {
 		shaderId: "wr-default",
 	});
 
-	const branchNodes = collectBranchNodes(rootNode);
+	const renderRoot = world.addNode(null);
+	if (!renderRoot) throw new Error("[WrScene] failed to create render root node");
+	renderRoot.name = "wr-copy-root";
+
+	const clones = [
+		world.copyBranch(modelRoot.id, renderRoot.id),
+		world.copyBranch(modelRoot.id, renderRoot.id),
+		world.copyBranch(modelRoot.id, renderRoot.id),
+	].filter(Boolean);
+
+	const spacing = 2.0;
+	const startX = -((clones.length - 1) * spacing) * 0.5;
+	for (let i = 0; i < clones.length; i++) {
+		const clone = clones[i];
+		const tx = clone.getComp(WrTransform) ?? clone.addComp(WrTransform);
+		Azm.Mat4.translate(tx.local, [startX + i * spacing, 0, 0], tx.local);
+		tx.world.set(tx.local);
+	}
+
+	const branchNodes = collectBranchNodes(renderRoot);
 	const meshRenderers = branchNodes
 		.map((node) => node.getComp(WrMeshRenderer))
 		.filter(Boolean);
-	const skeletons = branchNodes
-		.map((node) => node.getComp(WrLiveSkeleton))
-		.filter(Boolean);
-	const hipDriver = resolveHipDriver(skeletons);
+	const hipDrivers = clones
+		.map((clone) => {
+			const cloneSkeletons = collectBranchNodes(clone)
+				.map((node) => node.getComp(WrLiveSkeleton))
+				.filter(Boolean);
+			return resolveHipDriver(cloneSkeletons);
+		})
+		.filter(Boolean)
+		.map((driver, index) => ({
+			...driver,
+			speed: 1 + index * 0.6,
+			phase: index * 0.75,
+		}));
 
 	for (const meshRenderer of meshRenderers) {
 		const morphIndex = meshRenderer.resolveMorphIndex(EYE_CLOSE_MORPH);
 		if (morphIndex < 0) continue;
 		meshRenderer.setMorphWeight(EYE_CLOSE_MORPH, 0);
 	}
+
+	
+	console.log(world.nodes);
 
 	let last = performance.now();
 	let t = 0;
@@ -189,12 +221,14 @@ async function run() {
 			meshRenderer.setMorphWeight(EYE_CLOSE_MORPH, eye);
 		}
 
-		if (hipDriver) {
-			const angle = Math.sin(t * 2.0) * 0.35;
-			hipDriver.live.set(hipDriver.bone, Azm.Mat4.fromRotationY(angle));
+		if (hipDrivers.length > 0) {
+			for (const driver of hipDrivers) {
+				const angle = Math.sin((t * 2.0 * driver.speed) + driver.phase) * 0.35;
+				driver.live.set(driver.bone, Azm.Mat4.fromRotationY(angle));
+			}
 		}
 
-		world.render(rootNode, { time: t });
+		world.render(renderRoot, { time: t });
 
 		requestAnimationFrame(frame);
 	}

@@ -1,4 +1,4 @@
-import { LiveSkeleton, MeshRenderer } from "../WrWorld/Components.js";
+import { MeshRenderer } from "../WrWorld/Components.js";
 import { WrMesh } from "../Assets/Mesh.js";
 import { WR_DEFAULT_RENDER_CFG, wrNormalizeRenderCfg } from "./RenderConfig.js";
 
@@ -58,32 +58,6 @@ function wrResolveMorphSelection(meshRenderer, meshAsset) {
     return { index: 0, weight: 0 };
 }
 
-/**
- * Build fast scene node id map
- * @param {object} scene scene object
- * @returns {Map<string, object>}
- */
-function wrBuildSceneNodeMap(scene) {
-    const map = new Map();
-    if (scene?.nodes instanceof Map) {
-        for (const [idRaw, node] of scene.nodes.entries()) {
-            const id = String(idRaw ?? node?.id ?? "").trim();
-            if (!id) continue;
-            map.set(id, node);
-        }
-        return map;
-    }
-
-    if (Array.isArray(scene?.nodes)) {
-        for (const node of scene.nodes) {
-            const id = String(node?.id ?? "").trim();
-            if (!id) continue;
-            map.set(id, node);
-        }
-    }
-    return map;
-}
-
 function wrGetMeshRenderer(node) {
     if (!node || typeof node !== "object") return null;
     if (typeof node.getComp === "function") return node.getComp(MeshRenderer);
@@ -92,19 +66,6 @@ function wrGetMeshRenderer(node) {
         if (direct) return direct;
         for (const comp of node.components.values()) {
             if (comp instanceof MeshRenderer) return comp;
-        }
-    }
-    return null;
-}
-
-function wrGetLiveSkeleton(node) {
-    if (!node || typeof node !== "object") return null;
-    if (typeof node.getComp === "function") return node.getComp(LiveSkeleton);
-    if (node.components instanceof Map) {
-        const direct = node.components.get(LiveSkeleton);
-        if (direct) return direct;
-        for (const comp of node.components.values()) {
-            if (comp instanceof LiveSkeleton) return comp;
         }
     }
     return null;
@@ -160,27 +121,19 @@ function wrIterRenderableNodes(scene, options = {}) {
 }
 
 /**
- * Resolve skeleton palette from mesh renderer skeleton link
- * @param {object} scene active scene
- * @param {Map<string, object>} sceneNodeById node map
+ * Resolve skeleton palette from mesh renderer hierarchy
  * @param {object} meshRenderer mesh renderer component
  * @returns {Float32Array|null}
  */
-function wrResolveSkinPalette(scene, sceneNodeById, meshRenderer) {
+function wrResolveSkinPalette(meshRenderer) {
+    const hasRig = meshRenderer?.cfg?.hasRig === true;
+    if (!hasRig) return null;
     if (typeof meshRenderer?.resolveLiveSkeleton === "function") {
         const live = meshRenderer.resolveLiveSkeleton();
         if (typeof live?.buildPalette === "function") {
             return live.buildPalette(WR_SKIN_BONE_CAP);
         }
     }
-
-    const skeletonNodeId = String(meshRenderer?.skeletonNode ?? "").trim();
-    if (!skeletonNodeId) return null;
-
-    const skeletonNode = sceneNodeById.get(skeletonNodeId);
-    if (!skeletonNode) return null;
-    const live = wrGetLiveSkeleton(skeletonNode);
-    if (typeof live?.buildPalette === "function") return live.buildPalette(WR_SKIN_BONE_CAP);
     return null;
 }
 
@@ -204,7 +157,6 @@ export class WrRenderQueue {
             includeFrom: options.includeFrom !== false,
             includeHidden: options.includeHidden === true,
         });
-        const sceneNodeById = wrBuildSceneNodeMap(scene);
         const defaultShaderId = options.defaultShaderId ?? null;
         const defaultRenderCfg = wrNormalizeRenderCfg(options.defaultRenderCfg ?? WR_DEFAULT_RENDER_CFG);
         for (const { node, meshRenderer } of items) {
@@ -227,7 +179,7 @@ export class WrRenderQueue {
             if (!meshId) continue;
             const meshAsset = assets?.getMesh?.(meshId) ?? null;
             const morph = wrResolveMorphSelection(meshRenderer, meshAsset);
-            const skinPalette = wrResolveSkinPalette(scene, sceneNodeById, meshRenderer);
+            const skinPalette = wrResolveSkinPalette(meshRenderer);
             drawList.push({
                 nodeId: String(node.id ?? ""),
                 meshID: meshId,

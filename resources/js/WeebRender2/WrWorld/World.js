@@ -1,7 +1,7 @@
 import { Ctx } from "../../AzLib/AzHie.js";
 import * as Azm from "../../AzLib/Azm.js";
 import AzWGL2 from "../../AzLib/AzWGL2.js";
-import { load as wrLoadGLB } from "../../WeebRender1/Loaders/GLBLoader.js";
+import { load as wrLoadGLB } from "../WrLoader/GltfLoader.js";
 import {
 	WrMeshStore,
 	WrTextureStore,
@@ -507,7 +507,6 @@ export class WrWorld extends Ctx {
 		if (visitOrder.length <= 0) throw new Error("[WrWorld] loader scene traversal failed");
 
 		const sourceToWorld = new Map();
-		const pendingRigLinks = [];
 		for (const sourceId of visitOrder) {
 			const sourceNode = sourceById.get(sourceId);
 			const sourceParent = asId(sourceNode?.parent);
@@ -541,27 +540,10 @@ export class WrWorld extends Ctx {
 					resolveMeshId: (id) => (meshMap.has(id) ? meshMap.get(id) : id),
 					defaultShaderId: options.shaderId ?? "wr-default",
 				});
-
-				if (meshSource.skeletonNode != null) {
-					pendingRigLinks.push({
-						nodeId: node.id,
-						sourceSkeletonNode: asId(meshSource.skeletonNode),
-					});
-				}
-
 				if (mr.meshId) mr.bindMesh(mr.meshId);
 			}
 
 			sourceToWorld.set(sourceId, node.id);
-		}
-
-		for (const link of pendingRigLinks) {
-			const meshNode = this.getNode(link.nodeId);
-			const skeletonNodeId = sourceToWorld.get(link.sourceSkeletonNode) ?? null;
-			if (!meshNode || !skeletonNodeId) continue;
-			if (meshNode.id === skeletonNodeId) continue;
-			if (!canAttachBranch(meshNode, skeletonNodeId)) continue;
-			this.moveNode(meshNode.id, skeletonNodeId);
 		}
 
 		const rootNode = this.getNode(sourceToWorld.get(sourceRootId));
@@ -604,8 +586,9 @@ export class WrWorld extends Ctx {
 			const primaryMorph = typeof meshRenderer.getPrimaryMorph === "function"
 				? meshRenderer.getPrimaryMorph()
 				: { index: 0, weight: 0 };
-			const liveSkeleton = meshRenderer.resolveLiveSkeleton();
-			const skinPalette = liveSkeleton?.buildPalette(WR_SKIN_BONE_CAP) ?? null;
+			const hasRig = meshRenderer.cfg.hasRig === true;
+			const liveSkeleton = hasRig ? meshRenderer.resolveLiveSkeleton() : null;
+			const skinPalette = hasRig ? (liveSkeleton?.buildPalette(WR_SKIN_BONE_CAP) ?? null) : null;
 
 			const draw = {
 				node,
@@ -619,7 +602,7 @@ export class WrWorld extends Ctx {
 				primaryMorphIndex: Math.max(0, Number(primaryMorph?.index ?? 0) | 0),
 				morphWeight: Number(primaryMorph?.weight ?? 0) || 0,
 				skinPalette,
-				hasRig: meshRenderer.cfg.hasRig === true,
+				hasRig,
 			};
 			draws.push(draw);
 			groups.add(`${shaderId}|${meshId}|${draw.primaryMorphIndex}`);
