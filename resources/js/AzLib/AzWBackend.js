@@ -1,8 +1,8 @@
 /* AzWBackend
 By Asciiz
 
-Backend-only render foundation
-This module does not know what a world, scene, mesh, skeleton, or material is
+Backend foundation
+It doesn't give a fck what a 3d even it
 
 #Base:
 * Shared backend base with canvas helpers and backend selection
@@ -36,13 +36,14 @@ This module does not know what a world, scene, mesh, skeleton, or material is
 	+ writeTexture(texture, source, layout, size)
 	+ createSampler(descriptor = {})
 	+ beginFrame(frameOptions = {})
+	+ beginComputePass(options = {})
 	+ beginRenderPass(options = {})
 	+ endFrame()
 	+ destroy()
 
 #WGL2:
 * WebGL2 backend implementation
-* Methods
+* Methods (noticably fewer than WGPU because "fork found in kitchen")
 	+ init()
 	+ resize(options = {})
 	+ createShaderProgram(descriptor)
@@ -421,6 +422,16 @@ export class WGPU extends Base {
 			clearColor: options.clearColor ? Base.normalizeClearColor(options.clearColor) : frame.clearColor,
 		};
 		return AzWGPU.Pass.beginRender(this.#encoder, this.#passDescriptor(merged));
+	}
+
+	/**
+	 * Begin one compute pass on current frame
+	 * @param {GPUComputePassDescriptor} [options={}] pass options
+	 * @returns {GPUComputePassEncoder|null}
+	 */
+	beginComputePass(options = {}) {
+		if (!this.#encoder) return null;
+		return this.#encoder.beginComputePass(options);
 	}
 
 	/**
@@ -827,4 +838,3 @@ if (typeof window !== "undefined") {
 }
 
 export default AzWBackend;
-

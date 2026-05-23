@@ -130,12 +130,35 @@
 
 		function createCubeGeometry() {
 			const vertices = new Float32Array([
-				1, -1, -1, 0, 1, 1,  1, -1, 0, 0, 1,  1,  1, 1, 0, 1, -1,  1, 1, 1,
-				-1, -1,  1, 0, 1, -1,  1,  1, 0, 0, -1,  1, -1, 1, 0, -1, -1, -1, 1, 1,
-				-1, 1, -1, 0, 1, -1, 1,  1, 0, 0, 1,  1,  1, 1, 0, 1,  1, -1, 1, 1,
-				-1, -1,  1, 0, 1, -1, -1, -1, 0, 0, 1, -1, -1, 1, 0, 1, -1,  1, 1, 1,
-				1, -1, 1, 0, 1, 1,  1, 1, 0, 0, -1, 1, 1, 1, 0, -1, -1, 1, 1, 1,
-				-1, -1, -1, 0, 1, -1,  1, -1, 0, 0, 1,  1, -1, 1, 0, 1, -1, -1, 1, 1,
+				1, -1, -1, 1, 0, 0, 0, 1,
+				1, 1, -1, 1, 0, 0, 0, 0,
+				1, 1, 1, 1, 0, 0, 1, 0,
+				1, -1, 1, 1, 0, 0, 1, 1,
+
+				-1, -1, 1, -1, 0, 0, 0, 1,
+				-1, 1, 1, -1, 0, 0, 0, 0,
+				-1, 1, -1, -1, 0, 0, 1, 0,
+				-1, -1, -1, -1, 0, 0, 1, 1,
+
+				-1, 1, -1, 0, 1, 0, 0, 1,
+				-1, 1, 1, 0, 1, 0, 0, 0,
+				1, 1, 1, 0, 1, 0, 1, 0,
+				1, 1, -1, 0, 1, 0, 1, 1,
+
+				-1, -1, 1, 0, -1, 0, 0, 1,
+				-1, -1, -1, 0, -1, 0, 0, 0,
+				1, -1, -1, 0, -1, 0, 1, 0,
+				1, -1, 1, 0, -1, 0, 1, 1,
+
+				1, -1, 1, 0, 0, 1, 0, 1,
+				1, 1, 1, 0, 0, 1, 0, 0,
+				-1, 1, 1, 0, 0, 1, 1, 0,
+				-1, -1, 1, 0, 0, 1, 1, 1,
+
+				-1, -1, -1, 0, 0, -1, 0, 1,
+				-1, 1, -1, 0, 0, -1, 0, 0,
+				1, 1, -1, 0, 0, -1, 1, 0,
+				1, -1, -1, 0, 0, -1, 1, 1,
 			]);
 
 			const indices = new Uint16Array([
@@ -149,27 +172,19 @@
 			return { vertices, indices };
 		}
 
-		function createInstanceData(instanceCount, spacing = 2.35) {
-			const out = new Float32Array(instanceCount * 5);
-			const grid = Math.ceil(Math.sqrt(instanceCount));
-			const half = (grid - 1) * 0.5;
-			const tau = Math.PI * 2;
-
+		function createInstanceSeedData(instanceCount) {
+			const out = new Float32Array(instanceCount * 20);
 			for (let i = 0; i < instanceCount; i += 1) {
-				const gx = i % grid;
-				const gz = (i / grid) | 0;
-				const x = (gx - half) * spacing;
-				const z = (gz - half) * spacing;
-				const y = Math.sin(i * 0.37) * 0.55;
+				const base = i * 20;
+				out[base + 0] = 1;
+				out[base + 5] = 1;
+				out[base + 10] = 1;
+				out[base + 15] = 1;
+				out[base + 16] = 0.35 + ((i * 23) % 37) * 0.015;
+				out[base + 17] = 0.45 + ((i * 11) % 41) * 0.01;
+				out[base + 18] = 0.55 + ((i * 7) % 31) * 0.012;
 				const speed = 0.35 + ((i * 17) % 29) * 0.04;
-				const phase = (i * 0.61803398875 % 1) * tau;
-
-				const base = i * 5;
-				out[base + 0] = x;
-				out[base + 1] = y;
-				out[base + 2] = z;
-				out[base + 3] = speed;
-				out[base + 4] = phase;
+				out[base + 19] = speed;
 			}
 			return out;
 		}
@@ -203,7 +218,8 @@
 				return;
 			}
 
-			const instanceCount = 100;
+			const instanceCount = 1000;
+			const gridSize = Math.ceil(Math.sqrt(instanceCount));
 			setStatus(`Creating backend for ${instanceCount} instances`);
 			const backend = new AzWBackend.WGPU(canvas, {
 				context: { alphaMode: "premultiplied" },
@@ -211,9 +227,9 @@
 			await backend.init();
 			backend.resize({ maxPixelRatio: 2 });
 
-			setStatus("Creating mesh and instance buffers");
+			setStatus("Creating mesh + storage-backed instance buffer");
 			const mesh = createCubeGeometry();
-			const instanceData = createInstanceData(instanceCount);
+			const instanceData = createInstanceSeedData(instanceCount);
 
 			const vertexBuffer = backend.createBuffer({
 				label: "MeshVertexBuffer",
@@ -228,7 +244,7 @@
 			const instanceBuffer = backend.createBuffer({
 				label: "MeshInstanceBuffer",
 				size: instanceData.byteLength,
-				usage: GPUBufferUsageRef.VERTEX | GPUBufferUsageRef.COPY_DST,
+				usage: GPUBufferUsageRef.VERTEX | GPUBufferUsageRef.STORAGE | GPUBufferUsageRef.COPY_DST,
 			});
 			backend.writeBuffer(vertexBuffer, mesh.vertices);
 			backend.writeBuffer(indexBuffer, mesh.indices);
@@ -258,66 +274,125 @@
 				addressModeV: "repeat",
 			});
 
-			setStatus("Creating instanced shader and pipeline");
+			setStatus("Creating shared module with compute + render");
 			const shader = backend.createShaderModule({
-				label: "backend-test-instanced-shader",
+				label: "backend-test-shared-module",
 				code: `
-struct Uniforms {
-	viewProj: mat4x4<f32>,
-	time: f32,
-	_pad: vec3<f32>,
-}
+				struct Uniforms {
+					viewProj: mat4x4<f32>,
+					timeData: vec4<f32>,
+				}
 
-struct VertexIn {
-	@location(0) position: vec3<f32>,
-	@location(1) uv: vec2<f32>,
-	@location(2) offset: vec3<f32>,
-	@location(3) motion: vec2<f32>,
-}
+				struct InstanceData {
+					model0: vec4<f32>,
+					model1: vec4<f32>,
+					model2: vec4<f32>,
+					model3: vec4<f32>,
+					colorSpeed: vec4<f32>,
+				}
 
-struct VertexOut {
-	@builtin(position) clipPos: vec4<f32>,
-	@location(0) uv: vec2<f32>,
-}
+				struct VertexIn {
+					@location(0) position: vec3<f32>,
+					@location(1) normal: vec3<f32>,
+					@location(2) uv: vec2<f32>,
+					@location(3) model0: vec4<f32>,
+					@location(4) model1: vec4<f32>,
+					@location(5) model2: vec4<f32>,
+					@location(6) model3: vec4<f32>,
+					@location(7) colorSpeed: vec4<f32>,
+				}
 
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var texSampler: sampler;
-@group(0) @binding(2) var texColor: texture_2d<f32>;
+				struct VertexOut {
+					@builtin(position) clipPos: vec4<f32>,
+					@location(0) uv: vec2<f32>,
+					@location(1) tint: vec3<f32>,
+					@location(2) light: f32,
+				}
 
-@vertex
-fn vs_main(input: VertexIn) -> VertexOut {
-	var p = input.position * 0.45;
-	let angle = uniforms.time * input.motion.x + input.motion.y;
+				@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+				@group(0) @binding(1) var<storage, read_write> instances: array<InstanceData>;
+				@group(1) @binding(0) var texSampler: sampler;
+				@group(1) @binding(1) var texColor: texture_2d<f32>;
 
-	let cy = cos(angle);
-	let sy = sin(angle);
-	p = vec3<f32>(
-		cy * p.x + sy * p.z,
-		p.y,
-		-sy * p.x + cy * p.z
-	);
+				fn rotateY(v: vec3<f32>, angle: f32) -> vec3<f32> {
+					let c = cos(angle);
+					let s = sin(angle);
+					return vec3<f32>(c * v.x + s * v.z, v.y, -s * v.x + c * v.z);
+				}
 
-	let ax = angle * 0.63;
-	let cx = cos(ax);
-	let sx = sin(ax);
-	p = vec3<f32>(
-		p.x,
-		cx * p.y - sx * p.z,
-		sx * p.y + cx * p.z
-	);
+				fn rotateX(v: vec3<f32>, angle: f32) -> vec3<f32> {
+					let c = cos(angle);
+					let s = sin(angle);
+					return vec3<f32>(v.x, c * v.y - s * v.z, s * v.y + c * v.z);
+				}
 
-	let worldPos = p + input.offset;
-	var out: VertexOut;
-	out.clipPos = uniforms.viewProj * vec4<f32>(worldPos, 1.0);
-	out.uv = input.uv;
-	return out;
-}
+				fn buildModel(pos: vec3<f32>, angleY: f32, angleX: f32) -> mat4x4<f32> {
+					let ax = rotateX(rotateY(vec3<f32>(1.0, 0.0, 0.0), angleY), angleX);
+					let ay = rotateX(rotateY(vec3<f32>(0.0, 1.0, 0.0), angleY), angleX);
+					let az = rotateX(rotateY(vec3<f32>(0.0, 0.0, 1.0), angleY), angleX);
+					return mat4x4<f32>(
+						vec4<f32>(ax, 0.0),
+						vec4<f32>(ay, 0.0),
+						vec4<f32>(az, 0.0),
+						vec4<f32>(pos, 1.0),
+					);
+				}
 
-@fragment
-fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
-	return textureSample(texColor, texSampler, input.uv);
-}
-`,
+				@compute @workgroup_size(64)
+				fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+					let index = gid.x;
+					let instanceCount = u32(uniforms.timeData.z);
+					if (index >= instanceCount) {
+						return;
+					}
+
+					var instance = instances[index];
+					let speed = max(0.05, instance.colorSpeed.w);
+					let deltaTime = uniforms.timeData.x;
+					let totalTime = uniforms.timeData.y;
+					let grid = max(1u, u32(uniforms.timeData.w));
+					let half = (f32(grid) - 1.0) * 0.5;
+					let spacing = 2.35;
+
+					let gx = index % grid;
+					let gz = index / grid;
+					let pos = vec3<f32>(
+						(f32(gx) - half) * spacing,
+						sin(f32(index) * 0.37 + totalTime * 0.5) * 10.55,
+						(f32(gz) - half) * spacing
+					);
+
+					let angleY = (totalTime + deltaTime) * speed + f32(index) * 0.61;
+					let angleX = (totalTime + deltaTime) * speed * 0.63 + f32(index) * 0.17;
+					let model = buildModel(pos, angleY, angleX);
+
+					instance.model0 = model[0];
+					instance.model1 = model[1];
+					instance.model2 = model[2];
+					instance.model3 = model[3];
+					instances[index] = instance;
+				}
+
+				@vertex
+				fn vs_main(input: VertexIn) -> VertexOut {
+					let model = mat4x4<f32>(input.model0, input.model1, input.model2, input.model3);
+					let worldPos = model * vec4<f32>(input.position * 0.45, 1.0);
+					let worldNormal = normalize((model * vec4<f32>(input.normal, 0.0)).xyz);
+					let lightDir = normalize(vec3<f32>(0.35, 0.85, 0.4));
+					var out: VertexOut;
+					out.clipPos = uniforms.viewProj * worldPos;
+					out.uv = input.uv;
+					out.tint = input.colorSpeed.xyz;
+					out.light = max(dot(worldNormal, lightDir), 0.18);
+					return out;
+				}
+
+				@fragment
+				fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
+					let tex = textureSample(texColor, texSampler, input.uv);
+					return vec4<f32>(tex.rgb * input.tint * input.light, tex.a);
+				}
+				`,
 			});
 
 			const uniformBuffer = backend.createBuffer({
@@ -326,30 +401,52 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 				usage: GPUBufferUsageRef.UNIFORM | GPUBufferUsageRef.COPY_DST,
 			});
 
-			const bindGroupLayout = backend.createBindGroupLayout({
-				label: "backend-test-bgl",
+			const renderGlobalLayout = backend.createBindGroupLayout({
+				label: "backend-test-render-global",
 				entries: [
 					{
 						binding: 0,
 						visibility: GPUShaderStageRef.VERTEX,
 						buffer: { type: "uniform" },
 					},
+				],
+			});
+
+			const renderTextureLayout = backend.createBindGroupLayout({
+				label: "backend-test-render-texture",
+				entries: [
 					{
-						binding: 1,
+						binding: 0,
 						visibility: GPUShaderStageRef.FRAGMENT,
 						sampler: { type: "filtering" },
 					},
 					{
-						binding: 2,
+						binding: 1,
 						visibility: GPUShaderStageRef.FRAGMENT,
 						texture: { sampleType: "float", viewDimension: "2d", multisampled: false },
 					},
 				],
 			});
 
+			const computeLayout = backend.createBindGroupLayout({
+				label: "backend-test-compute",
+				entries: [
+					{
+						binding: 0,
+						visibility: GPUShaderStageRef.COMPUTE,
+						buffer: { type: "uniform" },
+					},
+					{
+						binding: 1,
+						visibility: GPUShaderStageRef.COMPUTE,
+						buffer: { type: "storage" },
+					},
+				],
+			});
+
 			const pipelineLayout = backend.device.createPipelineLayout({
 				label: "backend-test-pl",
-				bindGroupLayouts: [bindGroupLayout],
+				bindGroupLayouts: [renderGlobalLayout, renderTextureLayout],
 			});
 
 			const pipeline = backend.createRenderPipeline({
@@ -360,19 +457,23 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 					entryPoint: "vs_main",
 					buffers: [
 						{
-							arrayStride: 20,
+							arrayStride: 32,
 							stepMode: "vertex",
 							attributes: [
 								{ shaderLocation: 0, offset: 0, format: "float32x3" },
-								{ shaderLocation: 1, offset: 12, format: "float32x2" },
+								{ shaderLocation: 1, offset: 12, format: "float32x3" },
+								{ shaderLocation: 2, offset: 24, format: "float32x2" },
 							],
 						},
 						{
-							arrayStride: 20,
+							arrayStride: 80,
 							stepMode: "instance",
 							attributes: [
-								{ shaderLocation: 2, offset: 0, format: "float32x3" },
-								{ shaderLocation: 3, offset: 12, format: "float32x2" },
+								{ shaderLocation: 3, offset: 0, format: "float32x4" },
+								{ shaderLocation: 4, offset: 16, format: "float32x4" },
+								{ shaderLocation: 5, offset: 32, format: "float32x4" },
+								{ shaderLocation: 6, offset: 48, format: "float32x4" },
+								{ shaderLocation: 7, offset: 64, format: "float32x4" },
 							],
 						},
 					],
@@ -394,13 +495,43 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 				},
 			});
 
-			const bindGroup = backend.createBindGroup({
-				label: "backend-test-bg",
-				layout: bindGroupLayout,
+			const computePipelineLayout = backend.device.createPipelineLayout({
+				label: "backend-test-cp-layout",
+				bindGroupLayouts: [computeLayout],
+			});
+
+			const computePipeline = backend.createComputePipeline({
+				label: "backend-test-cp",
+				layout: computePipelineLayout,
+				compute: {
+					module: shader,
+					entryPoint: "cs_main",
+				},
+			});
+
+			const renderGlobalBG = backend.createBindGroup({
+				label: "backend-test-render-global-bg",
+				layout: renderGlobalLayout,
 				entries: [
 					{ binding: 0, resource: { buffer: uniformBuffer } },
-					{ binding: 1, resource: sampler },
-					{ binding: 2, resource: textureView },
+				],
+			});
+
+			const renderTextureBG = backend.createBindGroup({
+				label: "backend-test-render-texture-bg",
+				layout: renderTextureLayout,
+				entries: [
+					{ binding: 0, resource: sampler },
+					{ binding: 1, resource: textureView },
+				],
+			});
+
+			const computeBG = backend.createBindGroup({
+				label: "backend-test-compute-bg",
+				layout: computeLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: uniformBuffer } },
+					{ binding: 1, resource: { buffer: instanceBuffer } },
 				],
 			});
 
@@ -412,6 +543,7 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 			let running = true;
 			let lastFpsTime = performance.now();
 			let frames = 0;
+			let lastFrameTime = performance.now() * 0.001;
 
 			function frame(nowMs) {
 				if (!running) return;
@@ -419,19 +551,24 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 				backend.resize({ maxPixelRatio: 2 });
 
 				const t = nowMs * 0.001;
-				const grid = Math.ceil(Math.sqrt(instanceCount));
-				const camRadius = Math.max(10, grid * 2.2);
+				const dt = Math.max(0, Math.min(0.05, t - lastFrameTime));
+				lastFrameTime = t;
+
+				const camRadius = Math.max(10, gridSize * 2.2);
 				const eyeX = Math.sin(t * 0.27) * camRadius;
 				const eyeZ = Math.cos(t * 0.27) * camRadius;
 				const eyeY = camRadius * 0.54;
 
 				const aspect = Math.max(1e-5, canvas.width / canvas.height);
-				Mat4.perspective(Math.PI / 3, aspect, 0.1, 200, proj);
+				Mat4.perspective(Math.PI / 3, aspect, 0.1, 10000, proj);
 				Mat4.lookAt([eyeX, eyeY, eyeZ], [0, 0, 0], [0, 1, 0], view);
 				Mat4.mul(proj, view, viewProj);
 
 				uniformData.set(viewProj, 0);
-				uniformData[16] = t;
+				uniformData[16] = dt;
+				uniformData[17] = t;
+				uniformData[18] = instanceCount;
+				uniformData[19] = gridSize;
 				backend.writeBuffer(uniformBuffer, uniformData, 0);
 
 				backend.beginFrame({
@@ -439,6 +576,15 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 					clearDepthEnabled: false,
 					useDepth: true,
 				});
+
+				const computePass = backend.beginComputePass();
+				if (computePass) {
+					computePass.setPipeline(computePipeline);
+					computePass.setBindGroup(0, computeBG);
+					computePass.dispatchWorkgroups(Math.ceil(instanceCount / 64));
+					computePass.end();
+				}
+
 				const pass = backend.beginRenderPass({
 					clearColor: [0.03, 0.05, 0.09, 1],
 					clearDepth: 1,
@@ -452,7 +598,8 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 					pass.setVertexBuffer(0, vertexBuffer);
 					pass.setVertexBuffer(1, instanceBuffer);
 					pass.setIndexBuffer(indexBuffer, "uint16");
-					pass.setBindGroup(0, bindGroup);
+					pass.setBindGroup(0, renderGlobalBG);
+					pass.setBindGroup(1, renderTextureBG);
 					pass.drawIndexed(mesh.indices.length, instanceCount, 0, 0, 0);
 					pass.end();
 				}
@@ -477,11 +624,14 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
 			window.__backendTest = {
 				backend,
 				pipeline,
-				bindGroup,
+				computePipeline,
+				renderGlobalBG,
+				renderTextureBG,
+				computeBG,
 				mesh,
 				instanceCount,
 			};
-			setStatus(`Running on ${backend.kind} | format ${backend.format} | instances ${instanceCount}`);
+			setStatus(`Running compute+render on ${backend.kind} | format ${backend.format} | instances ${instanceCount}`);
 			requestAnimationFrame(frame);
 		}
 

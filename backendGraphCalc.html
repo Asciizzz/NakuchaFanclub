@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Graph Calc</title>
+	<style>
+		html, body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			background: #000000;
+			color: #d8e4ff;
+			font-family: Consolas, "Courier New", monospace;
+		}
+		#view {
+			display: block;
+			width: 100%;
+			height: 100%;
+		}
+		#panel {
+			position: fixed;
+			top: 12px;
+			left: 12px;
+			padding: 10px;
+			border: 1px solid #24364f;
+			border-radius: 8px;
+			background: #050d1ad8;
+			backdrop-filter: blur(4px);
+			min-width: 250px;
+		}
+		h1 {
+			margin: 0 0 8px;
+			font-size: 14px;
+		}
+		label {
+			display: block;
+			font-size: 12px;
+			margin-bottom: 8px;
+		}
+		select,
+		input[type="range"] {
+			width: 100%;
+			margin-top: 4px;
+			background: #0b1628;
+			color: #d8e4ff;
+			border: 1px solid #2b3f5d;
+			border-radius: 6px;
+			padding: 4px;
+		}
+		#hint,
+		#fps {
+			font-size: 12px;
+			opacity: 0.9;
+		}
+		#hint { margin-bottom: 6px; }
+	</style>
+</head>
+<body>
+	<canvas id="view"></canvas>
+	<section id="panel">
+		<h1>Graph Calc</h1>
+		<label>
+			Graph
+			<select id="graphSelect">
+				<option value="wave">Wave</option>
+				<option value="ripple">Ripple</option>
+				<option value="saddle">Saddle</option>
+			</select>
+		</label>
+		<label>
+			Easing Seconds
+			<input id="easeRange" type="range" min="0.20" max="3.00" step="0.05" value="1.20" />
+		</label>
+		<div id="fps">FPS: -</div>
+	</section>
+
+	<script type="module">
+		import { AzWBackend } from "./resources/js/AzLib/AzWBackend.js";
+		import Azm from "./resources/js/AzLib/Azm.js";
+		import AzCamera from "./resources/js/AzLib/AzCamera.js";
+
+		const canvas = document.getElementById("view");
+		const graphSelectEl = document.getElementById("graphSelect");
+		const easeRangeEl = document.getElementById("easeRange");
+		const fpsEl = document.getElementById("fps");
+
+		const Mat4 = Azm.Mat4;
+		const GPUBufferUsageRef = globalThis.GPUBufferUsage;
+		const GPUTextureUsageRef = globalThis.GPUTextureUsage;
+		const GPUShaderStageRef = globalThis.GPUShaderStage;
+
+		const GRID_LEN_X = 2000;
+		const GRID_LEN_Z = 2000;
+		const GRID_SIZE = 0.5;
+		const HEIGHT_TEX_SIZE = 2048;
+		const HEIGHT_AMPLITUDE = 2.0;
+
+		const MOVE_SPEED = 12;
+		const SHIFT_SPEED_MULT = 3.5;
+		const LOOK_SENSITIVITY = 0.0022;
+		const MAX_PITCH = Math.PI * 0.495;
+
+		const DEPTH_FORMAT = "depth24plus";
+		const HEIGHT_FORMAT = "r32float";
+
+		const shaderCode = `
+		struct Params {
+			viewProj: mat4x4<f32>,
+			meta0: vec4<f32>,
+			meta1: vec4<f32>,
+		}
+
+		@group(0) @binding(0) var<uniform> p0: Params;
+		@group(0) @binding(1) var outHeight: texture_storage_2d<r32float, write>;
+
+		@group(1) @binding(0) var<uniform> p1: Params;
+		@group(1) @binding(1) var inHeight: texture_2d<f32>;
+		@group(1) @binding(2) var targetHeight: texture_2d<f32>;
+		@group(1) @binding(3) var outBlend: texture_storage_2d<r32float, write>;
+
+		@group(2) @binding(0) var<uniform> p2: Params;
+		@group(2) @binding(1) var renderHeight: texture_2d<f32>;
+
+		struct VertexIn {
+			@location(0) xz: vec2<f32>,
+			@location(1) uv: vec2<f32>,
+		}
+
+		struct VertexOut {
+			@builtin(position) clipPos: vec4<f32>,
+			@location(0) worldPos: vec3<f32>,
+			@location(1) worldNormal: vec3<f32>,
+			@location(2) h: f32,
+		}
+
+		fn sampleH(uv: vec2<f32>) -> f32 {
+			let ts = i32(p2.meta1.x);
+			let maxTex = f32(ts - 1);
+			let u = clamp(uv.x, 0.0, 1.0);
+			let v = clamp(uv.y, 0.0, 1.0);
+			let ix = i32(round(u * maxTex));
+			let iy = i32(round(v * maxTex));
+			return textureLoad(renderHeight, vec2<i32>(ix, iy), 0).x;
+		}
+
+		@compute @workgroup_size(8, 8, 1)
+		fn cs_graph_wave(@builtin(global_invocation_id) gid: vec3<u32>) {
+			let ts = u32(p0.meta1.x);
+			if (gid.x >= ts || gid.y >= ts) {
+				return;
+			}
+
+			let inv = 1.0 / f32(ts - 1u);
+			let uv = vec2<f32>(f32(gid.x) * inv, f32(gid.y) * inv);
+			let x = (uv.x - 0.5) * p0.meta1.y * p0.meta0.z;
+			let z = (uv.y - 0.5) * p0.meta1.z * p0.meta0.z;
+			let t = p0.meta0.x;
+			let amp = p0.meta0.w;
+
+			let h = sin(x * 0.58 + t * 1.10) * cos(z * 0.46 - t * 0.85) * amp;
+			textureStore(outHeight, gid.xy, vec4<f32>(h, 0.0, 0.0, 1.0));
+		}
+
+		@compute @workgroup_size(8, 8, 1)
+		fn cs_graph_ripple(@builtin(global_invocation_id) gid: vec3<u32>) {
+			let ts = u32(p0.meta1.x);
+			if (gid.x >= ts || gid.y >= ts) {
+				return;
+			}
+
+			let inv = 1.0 / f32(ts - 1u);
+			let uv = vec2<f32>(f32(gid.x) * inv, f32(gid.y) * inv);
+			let x = (uv.x - 0.5) * p0.meta1.y * p0.meta0.z;
+			let z = (uv.y - 0.5) * p0.meta1.z * p0.meta0.z;
+			let t = p0.meta0.x;
+			let amp = p0.meta0.w;
+
+			let d = length(vec2<f32>(x, z));
+			let h = sin(d * 2.2 - t * 1.9) / (1.0 + d * 0.32) * amp * 1.8;
+			textureStore(outHeight, gid.xy, vec4<f32>(h, 0.0, 0.0, 1.0));
+		}
+
+		@compute @workgroup_size(8, 8, 1)
+		fn cs_graph_saddle(@builtin(global_invocation_id) gid: vec3<u32>) {
+			let ts = u32(p0.meta1.x);
+			if (gid.x >= ts || gid.y >= ts) {
+				return;
+			}
+
+			let inv = 1.0 / f32(ts - 1u);
+			let uv = vec2<f32>(f32(gid.x) * inv, f32(gid.y) * inv);
+			let x = (uv.x - 0.5) * p0.meta1.y * p0.meta0.z;
+			let z = (uv.y - 0.5) * p0.meta1.z * p0.meta0.z;
+			let t = p0.meta0.x;
+			let amp = p0.meta0.w;
+
+			let h = ((x * x - z * z) * 0.03 + sin((x + z) * 0.55 + t) * 0.45) * amp;
+			textureStore(outHeight, gid.xy, vec4<f32>(h, 0.0, 0.0, 1.0));
+		}
+
+		@compute @workgroup_size(8, 8, 1)
+		fn cs_blend(@builtin(global_invocation_id) gid: vec3<u32>) {
+			let ts = u32(p1.meta1.x);
+			if (gid.x >= ts || gid.y >= ts) {
+				return;
+			}
+
+			let a = textureLoad(inHeight, vec2<i32>(gid.xy), 0).x;
+			let b = textureLoad(targetHeight, vec2<i32>(gid.xy), 0).x;
+			let x = clamp(p1.meta0.y, 0.0, 1.0);
+			let k = x * x * (3.0 - 2.0 * x);
+			let h = a + (b - a) * k;
+			textureStore(outBlend, gid.xy, vec4<f32>(h, 0.0, 0.0, 1.0));
+		}
+
+		@vertex
+		fn vs_main(input: VertexIn) -> VertexOut {
+			let h = sampleH(input.uv);
+			let texel = 1.0 / p2.meta1.x;
+			let hx0 = sampleH(input.uv - vec2<f32>(texel, 0.0));
+			let hx1 = sampleH(input.uv + vec2<f32>(texel, 0.0));
+			let hz0 = sampleH(input.uv - vec2<f32>(0.0, texel));
+			let hz1 = sampleH(input.uv + vec2<f32>(0.0, texel));
+			let dx = vec3<f32>(2.0 * p2.meta0.z, hx1 - hx0, 0.0);
+			let dz = vec3<f32>(0.0, hz1 - hz0, 2.0 * p2.meta0.z);
+			let n = normalize(cross(dz, dx));
+
+			let worldPos = vec3<f32>(input.xz.x, h, input.xz.y);
+			var out: VertexOut;
+			out.clipPos = p2.viewProj * vec4<f32>(worldPos, 1.0);
+			out.worldPos = worldPos;
+			out.worldNormal = n;
+			out.h = h;
+			return out;
+		}
+
+		@fragment
+		fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
+			let lightDir = normalize(vec3<f32>(0.35, 0.92, 0.18));
+			let ndl = max(dot(input.worldNormal, lightDir), 0.15);
+			let hN = clamp(input.h * 0.25 + 0.5, 0.0, 1.0);
+			let lowColor = vec3<f32>(0.08, 0.22, 0.42);
+			let highColor = vec3<f32>(0.84, 0.90, 0.72);
+			let base = lowColor + (highColor - lowColor) * hN;
+			return vec4<f32>(base * ndl, 1.0);
+		}
+		`;
+
+		const backend = new AzWBackend.WGPU(canvas, { context: { alphaMode: "premultiplied" } });
+		await backend.init();
+		backend.resize({ maxPixelRatio: 2 });
+
+		const vxCountX = GRID_LEN_X + 1;
+		const vxCountZ = GRID_LEN_Z + 1;
+		const vertexCount = vxCountX * vxCountZ;
+		const vertices = new Float32Array(vertexCount * 4);
+		let vi = 0;
+		for (let z = 0; z <= GRID_LEN_Z; z += 1) {
+			for (let x = 0; x <= GRID_LEN_X; x += 1) {
+				vertices[vi + 0] = x * GRID_SIZE;
+				vertices[vi + 1] = z * GRID_SIZE;
+				vertices[vi + 2] = x / GRID_LEN_X;
+				vertices[vi + 3] = z / GRID_LEN_Z;
+				vi += 4;
+			}
+		}
+
+		const indexCount = GRID_LEN_X * GRID_LEN_Z * 6;
+		const indices = new Uint32Array(indexCount);
+		let ii = 0;
+		for (let z = 0; z < GRID_LEN_Z; z += 1) {
+			for (let x = 0; x < GRID_LEN_X; x += 1) {
+				const i0 = z * vxCountX + x;
+				const i1 = i0 + 1;
+				const i2 = i0 + vxCountX;
+				const i3 = i2 + 1;
+				indices[ii + 0] = i0;
+				indices[ii + 1] = i2;
+				indices[ii + 2] = i1;
+				indices[ii + 3] = i1;
+				indices[ii + 4] = i2;
+				indices[ii + 5] = i3;
+				ii += 6;
+			}
+		}
+
+		const vertexBuffer = backend.createBuffer({
+			label: "GraphVertexBuffer",
+			size: vertices.byteLength,
+			usage: GPUBufferUsageRef.VERTEX | GPUBufferUsageRef.COPY_DST,
+		});
+		backend.writeBuffer(vertexBuffer, vertices);
+
+		const indexBuffer = backend.createBuffer({
+			label: "GraphIndexBuffer",
+			size: indices.byteLength,
+			usage: GPUBufferUsageRef.INDEX | GPUBufferUsageRef.COPY_DST,
+		});
+		backend.writeBuffer(indexBuffer, indices);
+
+		const heightUsage = GPUTextureUsageRef.TEXTURE_BINDING | GPUTextureUsageRef.STORAGE_BINDING | GPUTextureUsageRef.COPY_DST;
+		const texA = backend.createTexture2D({ width: HEIGHT_TEX_SIZE, height: HEIGHT_TEX_SIZE, format: HEIGHT_FORMAT, usage: heightUsage });
+		const texB = backend.createTexture2D({ width: HEIGHT_TEX_SIZE, height: HEIGHT_TEX_SIZE, format: HEIGHT_FORMAT, usage: heightUsage });
+		const texTarget = backend.createTexture2D({ width: HEIGHT_TEX_SIZE, height: HEIGHT_TEX_SIZE, format: HEIGHT_FORMAT, usage: heightUsage });
+		const viewA = texA.createView({ dimension: "2d" });
+		const viewB = texB.createView({ dimension: "2d" });
+		const viewTarget = texTarget.createView({ dimension: "2d" });
+
+		const shader = backend.createShaderModule({ code: shaderCode, label: "graph-calc" });
+
+		const uniformBuffer = backend.createBuffer({
+			label: "GraphUniforms",
+			size: 96,
+			usage: GPUBufferUsageRef.UNIFORM | GPUBufferUsageRef.COPY_DST,
+		});
+
+		const graphBGL = backend.createBindGroupLayout({
+			entries: [
+				{ binding: 0, visibility: GPUShaderStageRef.COMPUTE, buffer: { type: "uniform" } },
+				{ binding: 1, visibility: GPUShaderStageRef.COMPUTE, storageTexture: { access: "write-only", format: HEIGHT_FORMAT, viewDimension: "2d" } },
+			],
+		});
+
+		const blendBGL = backend.createBindGroupLayout({
+			entries: [
+				{ binding: 0, visibility: GPUShaderStageRef.COMPUTE, buffer: { type: "uniform" } },
+				{ binding: 1, visibility: GPUShaderStageRef.COMPUTE, texture: { sampleType: "unfilterable-float", viewDimension: "2d", multisampled: false } },
+				{ binding: 2, visibility: GPUShaderStageRef.COMPUTE, texture: { sampleType: "unfilterable-float", viewDimension: "2d", multisampled: false } },
+				{ binding: 3, visibility: GPUShaderStageRef.COMPUTE, storageTexture: { access: "write-only", format: HEIGHT_FORMAT, viewDimension: "2d" } },
+			],
+		});
+
+		const renderBGL = backend.createBindGroupLayout({
+			entries: [
+				{ binding: 0, visibility: GPUShaderStageRef.VERTEX | GPUShaderStageRef.FRAGMENT, buffer: { type: "uniform" } },
+				{ binding: 1, visibility: GPUShaderStageRef.VERTEX, texture: { sampleType: "unfilterable-float", viewDimension: "2d", multisampled: false } },
+			],
+		});
+
+		const emptyBGL = backend.createBindGroupLayout({ entries: [] });
+
+		const graphPipelineLayout = backend.device.createPipelineLayout({ bindGroupLayouts: [graphBGL] });
+		const blendPipelineLayout = backend.device.createPipelineLayout({ bindGroupLayouts: [emptyBGL, blendBGL] });
+		const renderPipelineLayout = backend.device.createPipelineLayout({ bindGroupLayouts: [emptyBGL, emptyBGL, renderBGL] });
+
+		const graphPipelines = {
+			wave: backend.createComputePipeline({ layout: graphPipelineLayout, compute: { module: shader, entryPoint: "cs_graph_wave" } }),
+			ripple: backend.createComputePipeline({ layout: graphPipelineLayout, compute: { module: shader, entryPoint: "cs_graph_ripple" } }),
+			saddle: backend.createComputePipeline({ layout: graphPipelineLayout, compute: { module: shader, entryPoint: "cs_graph_saddle" } }),
+		};
+
+		const blendPipeline = backend.createComputePipeline({
+			layout: blendPipelineLayout,
+			compute: { module: shader, entryPoint: "cs_blend" },
+		});
+
+		const renderPipeline = backend.createRenderPipeline({
+			layout: renderPipelineLayout,
+			vertex: {
+				module: shader,
+				entryPoint: "vs_main",
+				buffers: [{
+					arrayStride: 16,
+					stepMode: "vertex",
+					attributes: [
+						{ shaderLocation: 0, offset: 0, format: "float32x2" },
+						{ shaderLocation: 1, offset: 8, format: "float32x2" },
+					],
+				}],
+			},
+			fragment: {
+				module: shader,
+				entryPoint: "fs_main",
+				targets: [{ format: backend.format }],
+			},
+			primitive: {
+				topology: "triangle-list",
+				cullMode: "back",
+				frontFace: "ccw",
+			},
+			depthStencil: {
+				format: DEPTH_FORMAT,
+				depthWriteEnabled: true,
+				depthCompare: "less",
+			},
+		});
+
+		const graphBG = backend.createBindGroup({
+			layout: graphBGL,
+			entries: [
+				{ binding: 0, resource: { buffer: uniformBuffer } },
+				{ binding: 1, resource: viewTarget },
+			],
+		});
+
+		const blendBG_A_to_B = backend.createBindGroup({
+			layout: blendBGL,
+			entries: [
+				{ binding: 0, resource: { buffer: uniformBuffer } },
+				{ binding: 1, resource: viewA },
+				{ binding: 2, resource: viewTarget },
+				{ binding: 3, resource: viewB },
+			],
+		});
+
+		const blendBG_B_to_A = backend.createBindGroup({
+			layout: blendBGL,
+			entries: [
+				{ binding: 0, resource: { buffer: uniformBuffer } },
+				{ binding: 1, resource: viewB },
+				{ binding: 2, resource: viewTarget },
+				{ binding: 3, resource: viewA },
+			],
+		});
+
+		const renderBG_A = backend.createBindGroup({
+			layout: renderBGL,
+			entries: [
+				{ binding: 0, resource: { buffer: uniformBuffer } },
+				{ binding: 1, resource: viewA },
+			],
+		});
+
+		const renderBG_B = backend.createBindGroup({
+			layout: renderBGL,
+			entries: [
+				{ binding: 0, resource: { buffer: uniformBuffer } },
+				{ binding: 1, resource: viewB },
+			],
+		});
+
+		const centerX = GRID_LEN_X * GRID_SIZE * 0.5;
+		const centerZ = GRID_LEN_Z * GRID_SIZE * 0.5;
+		const uniformData = new Float32Array(24);
+		const viewProj = Mat4.makeIdentity();
+		const camera = new AzCamera({
+			position: [centerX, GRID_LEN_X * GRID_SIZE * 0.4 + 8, centerZ + GRID_LEN_Z * GRID_SIZE * 0.55 + 10],
+			fov: 58,
+			near: 0.1,
+			far: 2000,
+			aspect: 1,
+		});
+		camera.lookAt([centerX, 0, centerZ]);
+
+		let yaw = 0;
+		let pitch = 0;
+		{
+			const f = camera.forward;
+			yaw = Math.atan2(-f[0], -f[2]);
+			pitch = Math.asin(Math.max(-1, Math.min(1, f[1])));
+			camera.setYawPitch(yaw, pitch, 0);
+		}
+
+		const keys = { w: false, a: false, s: false, d: false, shift: false };
+		let pointerLocked = false;
+		document.addEventListener("keydown", (e) => {
+			if (e.code === "KeyW") keys.w = true;
+			if (e.code === "KeyA") keys.a = true;
+			if (e.code === "KeyS") keys.s = true;
+			if (e.code === "KeyD") keys.d = true;
+			if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
+		});
+		document.addEventListener("keyup", (e) => {
+			if (e.code === "KeyW") keys.w = false;
+			if (e.code === "KeyA") keys.a = false;
+			if (e.code === "KeyS") keys.s = false;
+			if (e.code === "KeyD") keys.d = false;
+			if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
+		});
+		document.addEventListener("pointerlockchange", () => {
+			pointerLocked = document.pointerLockElement === canvas;
+		});
+		document.addEventListener("mousemove", (e) => {
+			if (!pointerLocked) return;
+			yaw -= e.movementX * LOOK_SENSITIVITY;
+			pitch -= e.movementY * LOOK_SENSITIVITY;
+			if (pitch > MAX_PITCH) pitch = MAX_PITCH;
+			if (pitch < -MAX_PITCH) pitch = -MAX_PITCH;
+			camera.setYawPitch(yaw, pitch, 0);
+		});
+		canvas.addEventListener("click", () => {
+			if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+		});
+
+		let currentIsA = true;
+		let activeGraph = graphSelectEl.value;
+		let transitionT = 1;
+		let lastTime = performance.now() * 0.001;
+		let lastFpsTime = performance.now();
+		let frames = 0;
+		const workgroups = Math.ceil(HEIGHT_TEX_SIZE / 8);
+
+		graphSelectEl.addEventListener("change", () => {
+			if (graphSelectEl.value !== activeGraph) {
+				activeGraph = graphSelectEl.value;
+				transitionT = 0;
+			}
+		});
+
+		function frame(nowMs) {
+			backend.resize({ maxPixelRatio: 2 });
+
+			const now = nowMs * 0.001;
+			const dt = Math.max(0, Math.min(0.05, now - lastTime));
+			lastTime = now;
+
+			if (transitionT < 1) transitionT = Math.min(1, transitionT + dt / Math.max(0.001, Number(easeRangeEl.value)));
+
+			let moveForward = 0;
+			let moveRight = 0;
+			if (keys.w) moveForward += 1;
+			if (keys.s) moveForward -= 1;
+			if (keys.d) moveRight += 1;
+			if (keys.a) moveRight -= 1;
+			if (moveForward !== 0 || moveRight !== 0) {
+				const speed = MOVE_SPEED * (keys.shift ? SHIFT_SPEED_MULT : 1) * dt;
+				const f = camera.forward;
+				const r = camera.right;
+				camera.position[0] += (f[0] * moveForward + r[0] * moveRight) * speed;
+				camera.position[1] += (f[1] * moveForward + r[1] * moveRight) * speed;
+				camera.position[2] += (f[2] * moveForward + r[2] * moveRight) * speed;
+			}
+
+			camera.aspect = Math.max(1e-5, canvas.width / canvas.height);
+			Mat4.mul(camera.projection, camera.view, viewProj);
+
+			uniformData.set(viewProj, 0);
+			uniformData[16] = now;
+			uniformData[17] = transitionT;
+			uniformData[18] = GRID_SIZE;
+			uniformData[19] = HEIGHT_AMPLITUDE;
+			uniformData[20] = HEIGHT_TEX_SIZE;
+			uniformData[21] = GRID_LEN_X;
+			uniformData[22] = GRID_LEN_Z;
+			uniformData[23] = 0;
+			backend.writeBuffer(uniformBuffer, uniformData);
+
+			backend.beginFrame({ useDepth: true, clearColorEnabled: false, clearDepthEnabled: false });
+
+			const graphPass = backend.beginComputePass();
+			graphPass.setPipeline(graphPipelines[activeGraph] ?? graphPipelines.wave);
+			graphPass.setBindGroup(0, graphBG);
+			graphPass.dispatchWorkgroups(workgroups, workgroups, 1);
+			graphPass.end();
+
+			const blendPass = backend.beginComputePass();
+			blendPass.setPipeline(blendPipeline);
+			blendPass.setBindGroup(1, currentIsA ? blendBG_A_to_B : blendBG_B_to_A);
+			blendPass.dispatchWorkgroups(workgroups, workgroups, 1);
+			blendPass.end();
+
+			const renderPass = backend.beginRenderPass({
+				clearColor: [0, 0, 0, 0],
+				clearDepth: 1,
+				clearColorEnabled: true,
+				clearDepthEnabled: true,
+				useDepth: true,
+			});
+			renderPass.setPipeline(renderPipeline);
+			renderPass.setVertexBuffer(0, vertexBuffer);
+			renderPass.setIndexBuffer(indexBuffer, "uint32");
+			renderPass.setBindGroup(2, currentIsA ? renderBG_B : renderBG_A);
+			renderPass.drawIndexed(indexCount, 1, 0, 0, 0);
+			renderPass.end();
+
+			backend.endFrame();
+			currentIsA = !currentIsA;
+
+			frames += 1;
+			if (nowMs - lastFpsTime >= 400) {
+				const fps = (frames * 1000) / (nowMs - lastFpsTime);
+				fpsEl.textContent = `FPS: ${fps.toFixed(1)}`;
+				frames = 0;
+				lastFpsTime = nowMs;
+			}
+
+			requestAnimationFrame(frame);
+		}
+
+		window.addEventListener("beforeunload", () => backend.destroy());
+
+		window.__backendGraphCalc = {
+			backend,
+			camera,
+			graphPipelines,
+			blendPipeline,
+			renderPipeline,
+			moveSpeed: MOVE_SPEED,
+			shiftSpeedMult: SHIFT_SPEED_MULT,
+		};
+
+		requestAnimationFrame(frame);
+	</script>
+</body>
+</html>
