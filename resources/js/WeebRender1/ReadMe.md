@@ -1,3 +1,5 @@
-# Obsolete
+# WeebRender1
 
-- Use WeebRender2 instead, many APIs were broken after the great library purge.
+## Obsolete (gg)
+
+- Use WeebRender2 instead, many APIs were broken after the great library purge

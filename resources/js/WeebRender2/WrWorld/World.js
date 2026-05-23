@@ -1,6 +1,5 @@
 import { Ctx } from "../../AzLib/AzHie.js";
 import * as Azm from "../../AzLib/Azm.js";
-import AzWGL2 from "../../AzLib/AzWGL2.js";
 import { load as wrLoadGLB } from "../WrLoader/GltfLoader.js";
 import {
 	WrMeshStore,
@@ -8,7 +7,7 @@ import {
 	WrShaderStore,
 	WrSkeletonStore,
 } from "../WrStore/index.js";
-import { WrMesh } from "../WrAssets/Mesh.js";
+
 import WrNode from "./Node.js";
 import {
 	Transform,
