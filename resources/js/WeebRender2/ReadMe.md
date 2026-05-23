@@ -25,7 +25,7 @@ Pick a backend, create a world, set a camera
 
 * Creates a backend for the canvas
 * `options`:
-	* `prefer`: "webgpu" or "webgl2"
+	* `prefer`: "webgpu" or "webgl2" - fallback to the other if the preferred is unavailable (99% of the time it will fall back to webgl2)
 * Call `backend.resize` when the canvas size changes
 
 ## World
@@ -272,7 +272,4 @@ If `hasRig` is false it will not look
 	requestAnimationFrame(frame);
 ```
 
-## Quick fixes
-
-If nothing shows, check shaderId first
-If a rigged mesh is static, confirm `hasRig` is true and the LiveSkeleton is an ancestor
+* Note: you can store references to nodes, components or assets and apply modifications directly if you wish
