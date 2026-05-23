@@ -1,4 +1,11 @@
 import AzStore from "../../AzLib/AzStore.js";
+import { WrShader } from "../WrShader/WrShader.js";
+
+function asId(value) {
+	if (value == null) return null;
+	const id = String(value).trim();
+	return id || null;
+}
 
 export class WrShaderStore extends AzStore {
 	#world = null;
@@ -13,23 +20,43 @@ export class WrShaderStore extends AzStore {
 	}
 
 	add(shader) {
-		this.buildBackendVariants(shader);
-		return super.add(shader);
+		const value = shader instanceof WrShader ? shader : new WrShader(shader ?? {});
+		const explicitId = asId(value.id);
+		if (explicitId && !this.has(explicitId)) {
+			super.add(value);
+			const autoId = Array.from(this.map.keys()).pop();
+			if (autoId && autoId !== explicitId) this.map.delete(autoId);
+			this.map.set(explicitId, value);
+			value.id = explicitId;
+			this.buildBackendVariants(value);
+			return explicitId;
+		}
+
+		const id = super.add(value);
+		value.id = id;
+		this.buildBackendVariants(value);
+		return id;
 	}
 
 	remove(id) {
 		const shader = super.get(id);
-		if (shader == null) return false;
+		if (!shader) return false;
 		this.dropBackendVariants(shader);
 		return super.remove(id);
 	}
 
-	buildBackendVariants(_shader) {
-		// TODO WR2 shader transform path
+	rebuildBackendVariants() {
+		for (const shader of this.map.values()) this.buildBackendVariants(shader);
 	}
 
-	dropBackendVariants(_shader) {
-		// TODO WR2 shader transform path
+	buildBackendVariants(shader) {
+		const backend = this.#world?.backend ?? null;
+		if (!backend || !shader || typeof shader.buildBackend !== "function") return null;
+		return shader.buildBackend(backend, { createPipeline: true });
+	}
+
+	dropBackendVariants(shader) {
+		if (shader && typeof shader.dropBackend === "function") shader.dropBackend();
 	}
 }
 

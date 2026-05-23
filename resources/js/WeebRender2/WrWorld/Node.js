@@ -1,7 +1,5 @@
 import { Node } from "../../AzLib/AzHie.js";
-import {
-	Component,
-} from "./Components.js";
+import { Component } from "./Components.js";
 
 function isCompType(Type) {
 	return typeof Type === "function" && (Type === Component || Type.prototype instanceof Component);
@@ -30,6 +28,11 @@ export class WrNode extends Node {
 		if (!value) return null;
 		this.components.delete(Type);
 		return value;
+	}
+
+	render(options = {}) {
+		if (!this.ctx || typeof this.ctx.render !== "function") return null;
+		return this.ctx.render(this, options);
 	}
 }
 

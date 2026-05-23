@@ -20,6 +20,43 @@ Define a shader structure that is world-specialized but backend-aligned
 
 User code does not call raw WGPU/WGL2 shader creation directly
 
+## Backend vs WrShader Boundary
+
+Important distinction:
+
+- `AzWBackend` backends are agnostic and independent
+- `WrShader` backends are parity-constrained by WR2 rules
+
+`AzWBackend` is free to expose backend-native capabilities:
+
+- WGPU can support compute pipelines
+- WGL2 can mutate many states at runtime
+- WGPU uses shader module + pipeline objects
+- WGL2 uses program-centric flow
+
+`WrShader` does not mirror all backend-native freedom.
+`WrShader` enforces one shared render subset so WR2 shader behavior is portable.
+
+## WrShader Parity Restrictions
+
+Within `WrShader`:
+
+- no compute shader support
+- render-only shader path (vertex + fragment)
+- render state is baked from `renderCfg`
+- no per-draw runtime enable/disable state mutation from `WrShader` API
+
+Reason:
+
+- WGL2 has no compute
+- WGPU state is largely pipeline-baked
+- WR2 wants deterministic cross-backend behavior from one shader asset
+
+So:
+
+- WGPU `WrShader` path intentionally does not expose compute
+- WGL2 `WrShader` path intentionally does not expose loose runtime state toggles
+
 ## Folder Direction
 
 Dedicated folder:
@@ -43,8 +80,8 @@ New authoring shape is language-first
 {
   id: "wr-default",
   renderCfg: {
-    clearColor: [0, 0, 0, 0],
-    clearDepth: 1,
+    topology: "triangle-list",
+    frontFace: "ccw",
     depthTest: true,
     depthWrite: true,
     cull: "back",
@@ -179,16 +216,42 @@ Keys remain template-based
 ### WebGPU
 
 - compile resolved WGSL
+- build render pipeline from `renderCfg` + fixed layout + stage entry points
 - pipeline key includes shader id + render target + `renderCfg` key
-- depth/cull/blend baked in pipeline descriptor
+- baked fields include primitive/depth/blend/multisample/target formats
 
 ### WebGL2
 
 - compile resolved GLSL
-- apply state from baked `renderCfg`
-- cache last applied config key to avoid redundant state changes
+- build program variant metadata from same `renderCfg`
+- apply equivalent state at bind/use time from baked config only
+- cache applied config key to avoid redundant state calls
 
 Even though mechanism differs, both follow one baked config source
+
+## WrShader State Model
+
+`renderCfg` is the single WR2 state source and maps to both backends:
+
+- cull mode / front face
+- blend on/off and blend factors
+- depth test on/off
+- depth write on/off
+- depth compare
+- color write mask
+
+Pass-time values are not shader-owned:
+
+- clear color/depth
+- load/store ops
+- attachment views
+
+Those belong to backend pass begin, not shader registration.
+
+Recommended split:
+
+- `renderCfg` in `WrShader`: pipeline/program state only
+- pass/frame options in world render flow: clear/load/store/attachments
 
 ## Why This Structure
 

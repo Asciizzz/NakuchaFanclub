@@ -12,3 +12,8 @@ export {
 	WrShaderStore,
 	WrSkeletonStore,
 } from "./WrStore/index.js";
+
+export { WrMesh } from "./WrAssets/Mesh.js";
+export { WrTexture } from "./WrAssets/Texture.js";
+export { WrSkeleton } from "./WrAssets/Skeleton.js";
+export { WrShader } from "./WrShader/WrShader.js";
