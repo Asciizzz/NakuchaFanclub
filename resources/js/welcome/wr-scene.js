@@ -30,6 +30,61 @@ function resolveHipDriver(skeletons) {
 	return null;
 }
 
+function buildWorldAABB(localAABB, modelMatrix) {
+	if (!localAABB?.min || !localAABB?.max || !modelMatrix) return null;
+	const min = localAABB.min;
+	const max = localAABB.max;
+	const corners = [
+		[min[0], min[1], min[2]],
+		[max[0], min[1], min[2]],
+		[min[0], max[1], min[2]],
+		[max[0], max[1], min[2]],
+		[min[0], min[1], max[2]],
+		[max[0], min[1], max[2]],
+		[min[0], max[1], max[2]],
+		[max[0], max[1], max[2]],
+	];
+
+	let outMin = null;
+	let outMax = null;
+	for (const corner of corners) {
+		const p = Azm.Mat4.transformV3(modelMatrix, corner);
+		if (!outMin) {
+			outMin = Azm.Vec3.copy(p);
+			outMax = Azm.Vec3.copy(p);
+			continue;
+		}
+		if (p[0] < outMin[0]) outMin[0] = p[0];
+		if (p[1] < outMin[1]) outMin[1] = p[1];
+		if (p[2] < outMin[2]) outMin[2] = p[2];
+		if (p[0] > outMax[0]) outMax[0] = p[0];
+		if (p[1] > outMax[1]) outMax[1] = p[1];
+		if (p[2] > outMax[2]) outMax[2] = p[2];
+	}
+	if (!outMin || !outMax) return null;
+	return { min: outMin, max: outMax };
+}
+
+function raycastBranchMeshAABB(world, rootNode, ray, time) {
+	const queue = world.render(rootNode, { collectOnly: true, time });
+	let nearest = null;
+	for (const draw of queue.draws) {
+		const meshBounds = draw.mesh?.getAABB?.();
+		if (!meshBounds) continue;
+		const worldBounds = buildWorldAABB(meshBounds, draw.modelMatrix);
+		if (!worldBounds) continue;
+		const hit = AzCamera.hitAABB(ray, worldBounds.min, worldBounds.max);
+		if (!hit.hit) continue;
+		if (!nearest || hit.distance < nearest.distance) {
+			nearest = {
+				nodeId: draw.nodeId,
+				distance: hit.distance,
+			};
+		}
+	}
+	return nearest;
+}
+
 if (!container) {
 	console.warn("[WrScene] #main-canvas is missing");
 } else {
@@ -205,11 +260,22 @@ async function run() {
 		meshRenderer.setMorphWeight(EYE_CLOSE_MORPH, 0);
 	}
 
-	
 	console.log(world.nodes);
 
 	let last = performance.now();
 	let t = 0;
+
+	canvas.addEventListener("pointerdown", (event) => {
+		if (event.button !== 0) return;
+		const rect = canvas.getBoundingClientRect();
+		const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+		const y = 1 - ((event.clientY - rect.top) / Math.max(1, rect.height)) * 2;
+		const ray = camera.raytrace([x, y]);
+		const hit = raycastBranchMeshAABB(world, renderRoot, ray, t);
+		if (!hit) return;
+		alert(`${hit.nodeId} hit!`);
+	});
+
 	function frame(now) {
 		const dt = Math.max(0, (now - last) * 0.001);
 		last = now;

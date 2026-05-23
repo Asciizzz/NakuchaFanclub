@@ -69,6 +69,45 @@ function toIndexArray(value) {
 	return null;
 }
 
+function computeAABBFromPositions(positions) {
+	const src = toF32(positions);
+	if (!src || src.length < 3) return null;
+	const min = new Float32Array([src[0], src[1], src[2]]);
+	const max = new Float32Array([src[0], src[1], src[2]]);
+	for (let i = 3; i + 2 < src.length; i += 3) {
+		const x = src[i + 0];
+		const y = src[i + 1];
+		const z = src[i + 2];
+		if (x < min[0]) min[0] = x;
+		if (y < min[1]) min[1] = y;
+		if (z < min[2]) min[2] = z;
+		if (x > max[0]) max[0] = x;
+		if (y > max[1]) max[1] = y;
+		if (z > max[2]) max[2] = z;
+	}
+	return { min, max };
+}
+
+function cloneAABB(aabb) {
+	if (!aabb || !aabb.min || !aabb.max) return null;
+	return {
+		min: new Float32Array(aabb.min),
+		max: new Float32Array(aabb.max),
+	};
+}
+
+function mergeAABB(base, other) {
+	if (!other) return base;
+	if (!base) return cloneAABB(other);
+	base.min[0] = Math.min(base.min[0], other.min[0]);
+	base.min[1] = Math.min(base.min[1], other.min[1]);
+	base.min[2] = Math.min(base.min[2], other.min[2]);
+	base.max[0] = Math.max(base.max[0], other.max[0]);
+	base.max[1] = Math.max(base.max[1], other.max[1]);
+	base.max[2] = Math.max(base.max[2], other.max[2]);
+	return base;
+}
+
 function readMat4(value) {
 	if (ArrayBuffer.isView(value) || Array.isArray(value)) {
 		if (value.length >= 16) {
@@ -90,8 +129,11 @@ export class WrMesh {
 			? source.morphTargetNames.slice()
 			: [];
 		this.morphTargetMap = new Map();
+		this.submeshAABB = [];
+		this.aabb = null;
 		this.#packCache = new Map();
 		this.rebuildMorphCache();
+		this.rebuildAABBCache();
 	}
 
 	static from(raw = {}) {
@@ -195,6 +237,8 @@ export class WrMesh {
 		const out = {};
 		for (const key of Object.keys(this)) {
 			if (key === "morphTargetMap") continue;
+			if (key === "submeshAABB") continue;
+			if (key === "aabb") continue;
 			out[key] = cloneData(this[key]);
 		}
 		return out;
@@ -237,6 +281,27 @@ export class WrMesh {
 			return Float32Array.from(this.defaultMorphWeights);
 		}
 		return null;
+	}
+
+	rebuildAABBCache() {
+		const source = Array.isArray(this.submeshes) ? this.submeshes : [];
+		this.submeshAABB = source.map((submesh) => {
+			const staticPart = submesh?.static ?? {};
+			return computeAABBFromPositions(staticPart.positions ?? staticPart.position ?? staticPart.pos);
+		});
+		let merged = null;
+		for (const submeshBounds of this.submeshAABB) merged = mergeAABB(merged, submeshBounds);
+		this.aabb = merged;
+		return this;
+	}
+
+	getAABB() {
+		return cloneAABB(this.aabb);
+	}
+
+	getSubmeshAABB(index) {
+		const i = Math.max(0, Number(index) | 0);
+		return cloneAABB(this.submeshAABB[i] ?? null);
 	}
 
 	packSubmeshes(options = {}) {

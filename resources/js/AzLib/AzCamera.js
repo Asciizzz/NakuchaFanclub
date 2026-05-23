@@ -126,6 +126,57 @@ export class AzCamera {
 		};
 	}
 
+	static hitAABB(ray, min, max) {
+		const origin = ray?.origin;
+		const direction = ray?.direction;
+		if (!origin || !direction || !min || !max) {
+			return { hit: false, distance: Infinity, near: Infinity, far: -Infinity, point: null };
+		}
+
+		let tMin = -Infinity;
+		let tMax = Infinity;
+		for (let axis = 0; axis < 3; axis += 1) {
+			const o = Number(origin[axis] ?? 0) || 0;
+			const d = Number(direction[axis] ?? 0) || 0;
+			const aMin = Number(min[axis] ?? 0) || 0;
+			const aMax = Number(max[axis] ?? 0) || 0;
+
+			if (Math.abs(d) <= Azm.EPSILON) {
+				if (o < aMin || o > aMax) {
+					return { hit: false, distance: Infinity, near: Infinity, far: -Infinity, point: null };
+				}
+				continue;
+			}
+
+			let t1 = (aMin - o) / d;
+			let t2 = (aMax - o) / d;
+			if (t1 > t2) {
+				const swap = t1;
+				t1 = t2;
+				t2 = swap;
+			}
+			if (t1 > tMin) tMin = t1;
+			if (t2 < tMax) tMax = t2;
+			if (tMax < tMin) {
+				return { hit: false, distance: Infinity, near: Infinity, far: -Infinity, point: null };
+			}
+		}
+
+		if (tMax < 0) return { hit: false, distance: Infinity, near: tMin, far: tMax, point: null };
+		const distance = tMin >= 0 ? tMin : tMax;
+		return {
+			hit: true,
+			distance,
+			near: tMin,
+			far: tMax,
+			point: Azm.Vec3.set(
+				origin[0] + direction[0] * distance,
+				origin[1] + direction[1] * distance,
+				origin[2] + direction[2] * distance,
+			),
+		};
+	}
+
 	static eulerToQuat(eulerRad, out = null) {
 		// Fixed, explicit Y-X-Z composition:
 		// yaw around Y, then pitch around X, then roll around Z.

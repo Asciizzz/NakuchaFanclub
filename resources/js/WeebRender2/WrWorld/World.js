@@ -202,6 +202,7 @@ function rewriteLoaderMesh(sourceMesh, materialMap, textureMap) {
 		return next;
 	});
 	mesh.rebuildMorphCache();
+	mesh.rebuildAABBCache();
 	return mesh;
 }
 
