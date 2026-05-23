@@ -1,12 +1,12 @@
 import { Ctx } from "../../AzLib/AzHie.js";
 import * as Azm from "../../AzLib/Azm.js";
-import { load as wrLoadGLB } from "../WrLoader/GltfLoader.js";
 import {
 	WrMeshStore,
 	WrTextureStore,
 	WrShaderStore,
-	WrSkeletonStore,
-} from "../WrStore/index.js";
+	WrSkeletonStore
+} from "./Store.js";
+import { load as wrLoadGLB } from "../WrLoader/GltfLoader.js";
 
 import WrNode from "./Node.js";
 import {

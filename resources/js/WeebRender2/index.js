@@ -6,12 +6,6 @@ export {
 	MeshRenderer as WrMeshRenderer,
 	LiveSkeleton as WrLiveSkeleton,
 } from "./WrWorld/Components.js";
-export {
-	WrMeshStore,
-	WrTextureStore,
-	WrShaderStore,
-	WrSkeletonStore,
-} from "./WrStore/index.js";
 
 export { WrMesh } from "./WrAssets/Mesh.js";
 export { WrTexture } from "./WrAssets/Texture.js";
