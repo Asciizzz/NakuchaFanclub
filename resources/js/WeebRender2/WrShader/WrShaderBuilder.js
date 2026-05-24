@@ -1,4 +1,3 @@
-const WR_LINK_KEY_CAP = 8;
 const WR_LINK_RESERVED = new Set([
     "input",
     "output",
@@ -13,21 +12,6 @@ const WR_LINK_RESERVED = new Set([
     "gl_Position",
     "fragColor",
 ]);
-
-/**
- * Parse legacy numeric link slot from number or name suffix
- * @param {number|string} value slot input
- * @returns {number}
- */
-function wrLegacyLinkSlot(value) {
-    if (typeof value === "number" && Number.isInteger(value)) return value;
-    if (typeof value === "string") {
-        const lowered = value.trim().toLowerCase();
-        const match = lowered.match(/(\d+)$/);
-        if (match) return Number(match[1]);
-    }
-    return -1;
-}
 
 /**
  * Infer WGSL type from GLSL type
@@ -174,8 +158,7 @@ function wrCollectLinks(shaderDesc = {}) {
 
     const withOrder = rawList.map((raw, index) => {
         const source = (raw && typeof raw === "object") ? raw : { name: raw };
-        const slot = wrLegacyLinkSlot(source.slot ?? source.index ?? source.link);
-        const fallbackName = slot >= 0 ? `link${slot}` : `link${index}`;
+        const fallbackName = `link${index}`;
         const name = wrAssertLinkName(source.name ?? fallbackName);
         const { wgslType, glslType } = wrResolveLinkTypes(source);
         const defaultWgsl = typeof source.defaultWgsl === "string" && source.defaultWgsl.trim().length > 0
@@ -187,7 +170,6 @@ function wrCollectLinks(shaderDesc = {}) {
 
         return {
             name,
-            slot,
             order: index,
             wgslType,
             glslType,
@@ -196,12 +178,7 @@ function wrCollectLinks(shaderDesc = {}) {
         };
     });
 
-    withOrder.sort((a, b) => {
-        const aSlot = a.slot >= 0 ? a.slot : Number.MAX_SAFE_INTEGER;
-        const bSlot = b.slot >= 0 ? b.slot : Number.MAX_SAFE_INTEGER;
-        if (aSlot !== bSlot) return aSlot - bSlot;
-        return a.order - b.order;
-    });
+    withOrder.sort((a, b) => a.order - b.order);
 
     const seen = new Set();
     const links = [];
@@ -220,23 +197,6 @@ function wrCollectLinks(shaderDesc = {}) {
         });
     }
     return links;
-}
-
-/**
- * Build compatibility key map for $LINK0$$LINK7$
- * @param {object[]} links link list
- * @returns {{wgsl: object, glsl: object}}
- */
-function wrBuildLinkKeyMap(links) {
-    const wgsl = {};
-    const glsl = {};
-    for (let i = 0; i < links.length && i < WR_LINK_KEY_CAP; i++) {
-        const key = `$LINK${i}$`;
-        const replacement = { vertex: links[i].name, fragment: links[i].name };
-        wgsl[key] = replacement;
-        glsl[key] = replacement;
-    }
-    return { wgsl, glsl };
 }
 
 /**
@@ -490,7 +450,6 @@ ${fragmentMainGlsl}
         mode: "template",
         links,
         linkage: links,
-        linkKeyMap: wrBuildLinkKeyMap(links),
         vertex: {
             ...(shaderDesc.vertex ?? {}),
             wgsl: vertexWgsl,

@@ -624,28 +624,42 @@ export class WrWorld extends Ctx {
 		const firstCfg = queue.draws[0]?.shader?.renderCfg ?? null;
 		const clearColor = options.clearColor ?? firstCfg?.clearColor ?? [0.62, 0.72, 0.92, 1];
 		const clearDepth = Number(options.clearDepth ?? firstCfg?.clearDepth ?? 1) || 1;
+		const beginFrame = options.beginFrame !== false;
+		const endFrame = options.endFrame !== false;
+		const useDepth = options.useDepth !== false;
+		const shouldStartFrame = beginFrame || !this.#gpu.frameActive;
+		const clearColorEnabled = options.clearColorEnabled ?? shouldStartFrame;
+		const clearDepthEnabled = options.clearDepthEnabled ?? shouldStartFrame;
 
-		backend.beginFrame({
-			clearColor,
-			clearColorEnabled: true,
-			clearDepth,
-			clearDepthEnabled: true,
-			useDepth: true,
-		});
+		if (shouldStartFrame) {
+			backend.beginFrame({
+				clearColor,
+				clearColorEnabled: false,
+				clearDepth,
+				clearDepthEnabled: false,
+				useDepth,
+			});
+			this.#gpu.frameActive = true;
+		}
+
 		const pass = backend.beginRenderPass({
 			clearColor,
-			clearColorEnabled: true,
+			clearColorEnabled,
 			clearDepth,
-			clearDepthEnabled: true,
-			useDepth: true,
+			clearDepthEnabled,
+			useDepth,
 		});
 		if (!pass) {
-			backend.endFrame();
+			if (endFrame) {
+				backend.endFrame();
+				this.#gpu.frameActive = false;
+			}
 			return;
 		}
 
 		const now = Number(options.time ?? performance.now() * 0.001) || 0;
-		this.#updateSceneScratch(this.#camera, now);
+		const deltaTime = Number(options.deltaTime ?? 0) || 0;
+		this.#updateSceneScratch(this.#camera, now, deltaTime);
 
 		for (const draw of queue.draws) {
 			const backendState = this.#ensureWgpuShader(draw.shader);
@@ -669,6 +683,7 @@ export class WrWorld extends Ctx {
 					submeshIndex,
 					material,
 					now,
+					deltaTime,
 				);
 				if (!objectBindGroup) continue;
 				pass.setBindGroup(1, objectBindGroup);
@@ -679,7 +694,10 @@ export class WrWorld extends Ctx {
 		}
 
 		pass.end();
-		backend.endFrame();
+		if (endFrame) {
+			backend.endFrame();
+			this.#gpu.frameActive = false;
+		}
 	}
 
 	#renderWgl2(queue, options = {}) {
@@ -690,19 +708,37 @@ export class WrWorld extends Ctx {
 		const firstCfg = queue.draws[0]?.shader?.renderCfg ?? null;
 		const clearColor = options.clearColor ?? firstCfg?.clearColor ?? [0.62, 0.72, 0.92, 1];
 		const clearDepth = Number(options.clearDepth ?? firstCfg?.clearDepth ?? 1) || 1;
+		const beginFrame = options.beginFrame !== false;
+		const endFrame = options.endFrame !== false;
+		const useDepth = options.useDepth !== false;
+		const shouldStartFrame = beginFrame || !this.#gpu.frameActive;
+		const clearColorEnabled = options.clearColorEnabled ?? shouldStartFrame;
+		const clearDepthEnabled = options.clearDepthEnabled ?? shouldStartFrame;
 
-		backend.beginFrame({
+		if (shouldStartFrame) {
+			backend.beginFrame({
+				clearColor,
+				clearColorEnabled: false,
+				clearDepth,
+				clearDepthEnabled: false,
+				useDepth,
+			});
+			this.#gpu.frameActive = true;
+		}
+
+		backend.beginRenderPass({
 			clearColor,
-			clearColorEnabled: true,
+			clearColorEnabled,
 			clearDepth,
-			clearDepthEnabled: true,
-			useDepth: true,
+			clearDepthEnabled,
+			useDepth,
 		});
 
 		const view = this.#camera?.view ?? Azm.Mat4.makeIdentity();
 		const projection = this.#camera?.projection ?? Azm.Mat4.makeIdentity();
 		const vp = viewProj(this.#camera);
 		const now = Number(options.time ?? performance.now() * 0.001) || 0;
+		const deltaTime = Number(options.deltaTime ?? 0) || 0;
 
 		for (const draw of queue.draws) {
 			const backendState = this.#ensureWglShader(draw.shader);
@@ -726,7 +762,7 @@ export class WrWorld extends Ctx {
 					1,
 				);
 			}
-			if (uniform.u_time) gl.uniform4f(uniform.u_time, now, 0, 0, 0);
+			if (uniform.u_time) gl.uniform4f(uniform.u_time, now, deltaTime, 0, 0);
 			if (uniform.u_model) gl.uniformMatrix4fv(uniform.u_model, false, draw.modelMatrix);
 
 			const meshGpu = this.#ensureWglMesh(draw.meshId, draw.mesh, draw.primaryMorphIndex);
@@ -765,7 +801,10 @@ export class WrWorld extends Ctx {
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		gl.bindVertexArray(null);
 		gl.useProgram(null);
-		backend.endFrame();
+		if (endFrame) {
+			backend.endFrame();
+			this.#gpu.frameActive = false;
+		}
 	}
 
 	#ensureWgpuShader(shader) {
@@ -866,7 +905,7 @@ export class WrWorld extends Ctx {
 		return out;
 	}
 
-	#updateSceneScratch(camera, time) {
+	#updateSceneScratch(camera, time, deltaTime = 0) {
 		const scene = this.#gpu.sceneScratch;
 		scene.fill(0);
 		const v = camera?.view ?? Azm.Mat4.makeIdentity();
@@ -882,7 +921,7 @@ export class WrWorld extends Ctx {
 			scene[51] = 1;
 		}
 		scene[52] = Number(time) || 0;
-		scene[53] = 0;
+		scene[53] = Number(deltaTime) || 0;
 		scene[54] = 0;
 		scene[55] = 0;
 
@@ -927,7 +966,7 @@ export class WrWorld extends Ctx {
 		return bindGroup;
 	}
 
-	#ensureWgpuObjectBindGroup(pipeline, draw, submeshIndex, material, time) {
+	#ensureWgpuObjectBindGroup(pipeline, draw, submeshIndex, material, time, deltaTime = 0) {
 		let byPipeline = this.#gpu.objectBindGroups.get(pipeline);
 		if (!byPipeline) {
 			byPipeline = new Map();
@@ -939,11 +978,11 @@ export class WrWorld extends Ctx {
 		const key = `${objectKey}|${texKey}`;
 		const cached = byPipeline.get(key);
 		if (cached) {
-			this.#updateObjectScratch(objectKey, draw, material, time);
+			this.#updateObjectScratch(objectKey, draw, material, time, deltaTime);
 			return cached;
 		}
 
-		this.#updateObjectScratch(objectKey, draw, material, time);
+		this.#updateObjectScratch(objectKey, draw, material, time, deltaTime);
 		const objectBuffer = this.#ensureWgpuObjectBuffer(objectKey);
 		const texture = this.#ensureWgpuTexture(texKey);
 		const layout = pipeline.getBindGroupLayout(1);
@@ -961,7 +1000,7 @@ export class WrWorld extends Ctx {
 		return bindGroup;
 	}
 
-	#updateObjectScratch(objectKey, draw, material, time) {
+	#updateObjectScratch(objectKey, draw, material, time, deltaTime = 0) {
 		const object = this.#gpu.objectScratch;
 		object.fill(0);
 		object.set(draw.modelMatrix, 0);
@@ -978,6 +1017,7 @@ export class WrWorld extends Ctx {
 		object[25] = draw.morphWeight !== 0 ? 1 : 0;
 		object[28] = draw.morphWeight;
 		object[29] = Number(time) || 0;
+		object[30] = Number(deltaTime) || 0;
 
 		object.set(this.#identityPalette(), WR_SKIN_BASE_F32);
 		if (draw.skinPalette && (ArrayBuffer.isView(draw.skinPalette) || Array.isArray(draw.skinPalette))) {
@@ -1173,6 +1213,11 @@ export class WrWorld extends Ctx {
 
 	#dropGpuState() {
 		if (!this.#gpu) return;
+		if (this.#gpu.frameActive && this.#backend?.endFrame) {
+			try {
+				this.#backend.endFrame();
+			} catch (_error) {}
+		}
 
 		for (const mesh of this.#gpu.wgpuMeshCache.values()) {
 			for (const submesh of mesh?.submeshes ?? []) {
@@ -1203,6 +1248,7 @@ export class WrWorld extends Ctx {
 
 	#newGpuState() {
 		return {
+			frameActive: false,
 			sceneScratch: new Float32Array(WR_SCENE_UBO_F32),
 			objectScratch: new Float32Array(WR_OBJECT_UBO_F32),
 			sceneBuffer: null,

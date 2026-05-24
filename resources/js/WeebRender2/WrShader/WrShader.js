@@ -1,4 +1,3 @@
-const WR_LINK_KEY_CAP = 8;
 const WR_LINK_RESERVED = new Set([
 	"input",
 	"output",
@@ -30,6 +29,8 @@ const WR_SHADER_KEYS = Object.freeze([
 	"$INST_DATA3$",
 	"$VIEW$",
 	"$PROJECTION$",
+	"$TIME$",
+	"$DELTA_TIME$",
 	"$SKIN_PALETTE$",
 	"$VTX_FLAGS$",
 	"$HAS_RIG$",
@@ -37,14 +38,6 @@ const WR_SHADER_KEYS = Object.freeze([
 	"$ALBEDO_TEX$",
 	"$ALBEDO_COLOR$",
 	"$OUT_COLOR$",
-	"$LINK0$",
-	"$LINK1$",
-	"$LINK2$",
-	"$LINK3$",
-	"$LINK4$",
-	"$LINK5$",
-	"$LINK6$",
-	"$LINK7$",
 ]);
 
 const WR_KEY_SET = new Set(WR_SHADER_KEYS);
@@ -66,23 +59,19 @@ const WR_STAGE_KEYS = Object.freeze({
 		"$INST_DATA3$",
 		"$VIEW$",
 		"$PROJECTION$",
+		"$TIME$",
+		"$DELTA_TIME$",
 		"$SKIN_PALETTE$",
 		"$VTX_FLAGS$",
 		"$HAS_RIG$",
 		"$HAS_MORPH$",
-		"$LINK0$",
-		"$LINK1$",
-		"$LINK2$",
-		"$LINK3$",
-		"$LINK4$",
-		"$LINK5$",
-		"$LINK6$",
-		"$LINK7$",
 	]),
 	fragment: new Set([
 		"$UV$",
 		"$VIEW$",
 		"$PROJECTION$",
+		"$TIME$",
+		"$DELTA_TIME$",
 		"$ALBEDO_TEX$",
 		"$ALBEDO_COLOR$",
 		"$OUT_COLOR$",
@@ -93,14 +82,6 @@ const WR_STAGE_KEYS = Object.freeze({
 		"$INST_DATA1$",
 		"$INST_DATA2$",
 		"$INST_DATA3$",
-		"$LINK0$",
-		"$LINK1$",
-		"$LINK2$",
-		"$LINK3$",
-		"$LINK4$",
-		"$LINK5$",
-		"$LINK6$",
-		"$LINK7$",
 	]),
 });
 
@@ -429,18 +410,6 @@ function replaceTemplateKeys(source, stage, keyMap) {
 	return out;
 }
 
-function makeAutoLinkKeyMap(links) {
-	const wgsl = {};
-	const glsl = {};
-	for (let i = 0; i < links.length && i < WR_LINK_KEY_CAP; i += 1) {
-		const key = `$LINK${i}$`;
-		const value = { vertex: links[i].name, fragment: links[i].name };
-		wgsl[key] = value;
-		glsl[key] = value;
-	}
-	return { wgsl, glsl };
-}
-
 function defaultKeyMapWgsl() {
 	return {
 		"$POSITION$": "wr_position",
@@ -458,6 +427,8 @@ function defaultKeyMapWgsl() {
 		"$INST_DATA3$": "objectUBO.extras",
 		"$VIEW$": "sceneUBO.view",
 		"$PROJECTION$": "sceneUBO.projection",
+		"$TIME$": "sceneUBO.time.x",
+		"$DELTA_TIME$": "sceneUBO.time.y",
 		"$SKIN_PALETTE$": "objectUBO.skinPalette",
 		"$VTX_FLAGS$": "objectUBO.vtxFlags",
 		"$HAS_RIG$": "(objectUBO.vtxFlags.x > 0.5)",
@@ -485,6 +456,8 @@ function defaultKeyMapGlsl() {
 		"$INST_DATA3$": "u_extras",
 		"$VIEW$": "u_view",
 		"$PROJECTION$": "u_projection",
+		"$TIME$": "u_time.x",
+		"$DELTA_TIME$": "u_time.y",
 		"$SKIN_PALETTE$": "u_skinPalette",
 		"$VTX_FLAGS$": "u_vtxFlags",
 		"$HAS_RIG$": "(u_vtxFlags.x > 0.5)",
@@ -813,15 +786,12 @@ function renderCfgKey(renderCfg = null) {
 }
 
 function buildResolvedSources(norm) {
-	const autoMap = makeAutoLinkKeyMap(norm.links);
 	const keyMapWgsl = {
 		...defaultKeyMapWgsl(),
-		...(autoMap.wgsl ?? {}),
 		...(norm.keyMap.wgsl ?? {}),
 	};
 	const keyMapGlsl = {
 		...defaultKeyMapGlsl(),
-		...(autoMap.glsl ?? {}),
 		...(norm.keyMap.glsl ?? {}),
 	};
 

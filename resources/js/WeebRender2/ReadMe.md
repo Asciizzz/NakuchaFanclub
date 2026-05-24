@@ -81,11 +81,46 @@ Pick a backend, create a world, set a camera
 
 * Builds a draw queue and renders it
 * `options`:
-	* `time`: time value passed to shaders
-	* `includeHidden`: render nodes with display false
-	* `collectOnly`: build queue but do not draw
+	* `time`:
+		* Time value passed to shaders
+		* Default: `performance.now() * 0.001` (second)
+	* `deltaTime`:
+		* Delta time passed to shaders
+		* Default: `0` (calculation is your responsibility)
+	* `includeHidden`:
+		* Render nodes with `display = false`
+		* Default: `false`
+	* `collectOnly`:
+		* Build queue but do not draw
+		* Default: `false`
+	* `beginFrame`:
+		* Start a backend frame before drawing
+		* Default: `true`
+	* `endFrame`:
+		* Submit/end backend frame after drawing
+		* Default: `true`
+	* `clearColor`:
+		* RGBA clear color
+		* Default: `shader.renderCfg.clearColor` or `[0.62, 0.72, 0.92, 1]`
+	* `clearDepth`:
+		* Depth clear value
+		* Default: `shader.renderCfg.clearDepth` or `1`
+	* `useDepth`:
+		* Enable depth attachment for this pass
+		* Default: `true`
+	* `clearColorEnabled`:
+		* Clear color in this render pass
+		* Default: `true` when starting a frame, `false` for chained passes in the same frame
+	* `clearDepthEnabled`:
+		* Clear depth in this render pass
+		* Default: `true` when starting a frame, `false` for chained passes in the same frame
 
 ## Shaders
+
+Time keys:
+
+* `$TIME$` maps to `u_time.x` (GLSL) / `sceneUBO.time.x` (WGSL)
+* `$DELTA_TIME$` maps to `u_time.y` (GLSL) / `sceneUBO.time.y` (WGSL)
 
 ```js
 	world.registerShader("wr-default", {
@@ -270,6 +305,26 @@ If `hasRig` is false it will not look
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);
+```
+
+Render multiple roots in one frame without clearing between them
+
+```js
+	world.render(rootA, {
+		time: t,
+		beginFrame: true,
+		endFrame: false,
+		clearColorEnabled: true,
+		clearDepthEnabled: true,
+	});
+
+	world.render(rootB, {
+		time: t,
+		beginFrame: false,
+		endFrame: true,
+		clearColorEnabled: false,
+		clearDepthEnabled: false,
+	});
 ```
 
 * Note: you can store references to nodes, components or assets and apply modifications directly if you wish

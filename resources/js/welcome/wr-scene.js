@@ -30,8 +30,8 @@ function resolveHipDriver(skeletons) {
 	return null;
 }
 
-function raycastBranchMeshAABB(world, rootNode, ray, time) {
-	const queue = world.render(rootNode, { collectOnly: true, time });
+function raycastBranchMeshAABB(rootNode, time, deltaTime, ray) {
+	const queue = rootNode.render({ collectOnly: true, time, deltaTime });
 	let nearest = null;
 	for (const draw of queue.draws) {
 		const meshBounds = draw.mesh?.getAABB?.();
@@ -226,6 +226,7 @@ async function run() {
 
 	let last = performance.now();
 	let t = 0;
+	let dt = 0;
 
 	canvas.addEventListener("pointerdown", (event) => {
 		if (event.button !== 0) return;
@@ -233,13 +234,13 @@ async function run() {
 		const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
 		const y = 1 - ((event.clientY - rect.top) / Math.max(1, rect.height)) * 2;
 		const ray = camera.raytrace([x, y]);
-		const hit = raycastBranchMeshAABB(world, renderRoot, ray, t);
+		const hit = raycastBranchMeshAABB(renderRoot, t, dt, ray);
 		if (!hit) return;
 		alert(`${hit.nodeId} hit!`);
 	});
 
 	function frame(now) {
-		const dt = Math.max(0, (now - last) * 0.001);
+		dt = Math.max(0, (now - last) * 0.001);
 		last = now;
 		t += dt;
 
@@ -256,11 +257,22 @@ async function run() {
 			}
 		}
 
-		// world.render(renderRoot, { time: t });
-		renderRoot.render({time: t});
-
-
-		modelRoot.render({time: t});
+		modelRoot.render({
+			time: t,
+			deltaTime: dt,
+			beginFrame: true,
+			endFrame: false,
+			clearColorEnabled: true,
+			clearDepthEnabled: true,
+		});
+		renderRoot.render({
+			time: t,
+			deltaTime: dt,
+			beginFrame: false,
+			endFrame: true,
+			clearColorEnabled: false,
+			clearDepthEnabled: false,
+		});
 
 		requestAnimationFrame(frame);
 	}
