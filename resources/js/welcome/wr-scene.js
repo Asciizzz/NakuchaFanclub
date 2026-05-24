@@ -30,50 +30,13 @@ function resolveHipDriver(skeletons) {
 	return null;
 }
 
-function buildWorldAABB(localAABB, modelMatrix) {
-	if (!localAABB?.min || !localAABB?.max || !modelMatrix) return null;
-	const min = localAABB.min;
-	const max = localAABB.max;
-	const corners = [
-		[min[0], min[1], min[2]],
-		[max[0], min[1], min[2]],
-		[min[0], max[1], min[2]],
-		[max[0], max[1], min[2]],
-		[min[0], min[1], max[2]],
-		[max[0], min[1], max[2]],
-		[min[0], max[1], max[2]],
-		[max[0], max[1], max[2]],
-	];
-
-	let outMin = null;
-	let outMax = null;
-	for (const corner of corners) {
-		const p = Azm.Mat4.transformV3(modelMatrix, corner);
-		if (!outMin) {
-			outMin = Azm.Vec3.copy(p);
-			outMax = Azm.Vec3.copy(p);
-			continue;
-		}
-		if (p[0] < outMin[0]) outMin[0] = p[0];
-		if (p[1] < outMin[1]) outMin[1] = p[1];
-		if (p[2] < outMin[2]) outMin[2] = p[2];
-		if (p[0] > outMax[0]) outMax[0] = p[0];
-		if (p[1] > outMax[1]) outMax[1] = p[1];
-		if (p[2] > outMax[2]) outMax[2] = p[2];
-	}
-	if (!outMin || !outMax) return null;
-	return { min: outMin, max: outMax };
-}
-
 function raycastBranchMeshAABB(world, rootNode, ray, time) {
 	const queue = world.render(rootNode, { collectOnly: true, time });
 	let nearest = null;
 	for (const draw of queue.draws) {
 		const meshBounds = draw.mesh?.getAABB?.();
 		if (!meshBounds) continue;
-		const worldBounds = buildWorldAABB(meshBounds, draw.modelMatrix);
-		if (!worldBounds) continue;
-		const hit = AzCamera.hitAABB(ray, worldBounds.min, worldBounds.max);
+		const hit = AzCamera.hitAABB(ray, meshBounds.min, meshBounds.max, draw.modelMatrix);
 		if (!hit.hit) continue;
 		if (!nearest || hit.distance < nearest.distance) {
 			nearest = {
@@ -130,7 +93,7 @@ async function run() {
 	resize();
 	new ResizeObserver(resize).observe(container);
 
-	world.registerShader("wr-default", {
+	world.registerShader("main-shader", {
 		renderCfg: {
 			depthTest: true,
 			depthWrite: true,
@@ -158,10 +121,10 @@ async function run() {
 						if (wsum > 0.00001) {
 							let ids = vec4i($BONE_ID$);
 							let skin =
-								weights.x * $SKIN_PALETTE$[clamp(ids.x, 0, 127)] +
-								weights.y * $SKIN_PALETTE$[clamp(ids.y, 0, 127)] +
-								weights.z * $SKIN_PALETTE$[clamp(ids.z, 0, 127)] +
-								weights.w * $SKIN_PALETTE$[clamp(ids.w, 0, 127)];
+								weights.x * $SKIN_PALETTE$[ids.x] +
+								weights.y * $SKIN_PALETTE$[ids.y] +
+								weights.z * $SKIN_PALETTE$[ids.z] +
+								weights.w * $SKIN_PALETTE$[ids.w];
 							skinned = skin * vec4f(localPos, 1.0);
 						}
 					}
@@ -194,10 +157,10 @@ async function run() {
 						if (wsum > 0.00001) {
 							ivec4 ids = ivec4($BONE_ID$);
 							mat4 skin =
-								weights.x * $SKIN_PALETTE$[clamp(ids.x, 0, 127)] +
-								weights.y * $SKIN_PALETTE$[clamp(ids.y, 0, 127)] +
-								weights.z * $SKIN_PALETTE$[clamp(ids.z, 0, 127)] +
-								weights.w * $SKIN_PALETTE$[clamp(ids.w, 0, 127)];
+								weights.x * $SKIN_PALETTE$[ids.x] +
+								weights.y * $SKIN_PALETTE$[ids.y] +
+								weights.z * $SKIN_PALETTE$[ids.z] +
+								weights.w * $SKIN_PALETTE$[ids.w];
 							skinned = skin * vec4(localPos, 1.0);
 						}
 					}
@@ -213,13 +176,12 @@ async function run() {
 		},
 	});
 
-	const modelRoot = await world.loadModelFromURL("/Models/Agnes.glb", {
-		shaderId: "wr-default",
+	const modelRoot = await world.loadModelFromURL("/Models/Nakurin.glb", {
+		shaderId: "main-shader",
 	});
 
 	const renderRoot = world.addNode(null);
-	if (!renderRoot) throw new Error("[WrScene] failed to create render root node");
-	renderRoot.name = "wr-copy-root";
+	renderRoot.name = "world";
 
 	const clones = [
 		world.copyBranch(modelRoot.id, renderRoot.id),
@@ -294,7 +256,11 @@ async function run() {
 			}
 		}
 
-		world.render(renderRoot, { time: t });
+		// world.render(renderRoot, { time: t });
+		renderRoot.render({time: t});
+
+
+		modelRoot.render({time: t});
 
 		requestAnimationFrame(frame);
 	}

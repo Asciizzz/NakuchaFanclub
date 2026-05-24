@@ -1,4 +1,4 @@
-# WeebRender2
+# WeebRender2 - By Asciiz
 
 Usage guide for the runtime side
 Keep it simple and use the parts you need

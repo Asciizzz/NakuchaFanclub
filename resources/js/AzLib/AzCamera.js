@@ -126,18 +126,30 @@ export class AzCamera {
 		};
 	}
 
-	static hitAABB(ray, min, max) {
+	static hitAABB(ray, min, max, modelMatrix = null) {
 		const origin = ray?.origin;
 		const direction = ray?.direction;
 		if (!origin || !direction || !min || !max) {
 			return { hit: false, distance: Infinity, near: Infinity, far: -Infinity, point: null };
 		}
 
+		let localOrigin = origin;
+		let localDirection = direction;
+		if (modelMatrix && (ArrayBuffer.isView(modelMatrix) || Array.isArray(modelMatrix)) && modelMatrix.length >= 16) {
+			const invModel = Azm.Mat4.invert(modelMatrix);
+			if (!invModel) return { hit: false, distance: Infinity, near: Infinity, far: -Infinity, point: null };
+
+			const localOrigin4 = Azm.Mat4.transformV4(invModel, [origin[0], origin[1], origin[2], 1]);
+			const localDir4 = Azm.Mat4.transformV4(invModel, [direction[0], direction[1], direction[2], 0]);
+			localOrigin = Azm.Vec3.set(localOrigin4[0], localOrigin4[1], localOrigin4[2]);
+			localDirection = Azm.Vec3.set(localDir4[0], localDir4[1], localDir4[2]);
+		}
+
 		let tMin = -Infinity;
 		let tMax = Infinity;
 		for (let axis = 0; axis < 3; axis += 1) {
-			const o = Number(origin[axis] ?? 0) || 0;
-			const d = Number(direction[axis] ?? 0) || 0;
+			const o = Number(localOrigin[axis] ?? 0) || 0;
+			const d = Number(localDirection[axis] ?? 0) || 0;
 			const aMin = Number(min[axis] ?? 0) || 0;
 			const aMax = Number(max[axis] ?? 0) || 0;
 
