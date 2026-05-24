@@ -92,6 +92,40 @@ function readColor4(value, fallback = [1, 1, 1, 1]) {
 	];
 }
 
+function hasData(value, minCount = 1) {
+	if (ArrayBuffer.isView(value) || Array.isArray(value)) return value.length >= minCount;
+	return false;
+}
+
+function collectSubmeshFlags(draw, submeshIndex) {
+	const submesh = draw?.mesh?.submeshes?.[submeshIndex] ?? null;
+	const staticPart = submesh?.static ?? {};
+	const rigPart = submesh?.rigged ?? submesh?.rig ?? {};
+	const morphPart = submesh?.morph ?? {};
+
+	const hasUV = hasData(staticPart.uvs ?? staticPart.uv, 2);
+	const hasNormal = hasData(staticPart.normals, 3);
+	const hasColor = hasData(staticPart.colors ?? staticPart.color, 3);
+	const hasTangent = hasData(staticPart.tangents, 4);
+	const hasBoneIDs = hasData(rigPart.boneIDs ?? rigPart.ids ?? rigPart.bones, 4);
+	const hasBoneWeights = hasData(rigPart.boneWeights ?? rigPart.weights, 4);
+	const hasBone = hasBoneIDs && hasBoneWeights;
+	const morphHasPos = hasData(morphPart.dPositions ?? morphPart.dPos, 3);
+	const morphHasNormal = hasData(morphPart.dNormals, 3);
+	const morphHasTangent = hasData(morphPart.dTangents, 4);
+
+	return {
+		hasUV,
+		hasNormal,
+		hasColor,
+		hasTangent,
+		hasBone,
+		morphHasPos,
+		morphHasNormal,
+		morphHasTangent,
+	};
+}
+
 function copyNodeData(source, target) {
 	for (const key of Object.keys(source)) {
 		if (WR_NODE_STATIC_KEYS.has(key)) continue;
@@ -771,16 +805,40 @@ export class WrWorld extends Ctx {
 			for (let submeshIndex = 0; submeshIndex < meshGpu.submeshes.length; submeshIndex += 1) {
 				const submeshGpu = meshGpu.submeshes[submeshIndex];
 				const material = draw.mesh.submeshes?.[submeshIndex]?.material ?? { albedoColor: [1, 1, 1, 1], albedoTex: null };
-				if (uniform.u_slot0) gl.uniform4f(uniform.u_slot0, 1, 1, 1, 1);
+				const submeshFlags = collectSubmeshFlags(draw, submeshIndex);
+				if (uniform.u_slot0) {
+					gl.uniform4f(
+						uniform.u_slot0,
+						submeshFlags.hasColor ? 1 : 0,
+						submeshFlags.hasBone ? 1 : 0,
+						submeshFlags.hasTangent ? 1 : 0,
+						0,
+					);
+				}
 				if (uniform.u_albedoColor) {
 					const color = readColor4(material.albedoColor, [1, 1, 1, 1]);
 					gl.uniform4f(uniform.u_albedoColor, color[0], color[1], color[2], color[3]);
 				}
 				if (uniform.u_vtxFlags) {
-					const hasMorph = draw.morphWeight !== 0 ? 1 : 0;
-					gl.uniform4f(uniform.u_vtxFlags, draw.hasRig ? 1 : 0, hasMorph, 0, 0);
+					const hasRig = draw.hasRig && submeshFlags.hasBone ? 1 : 0;
+					const hasMorph = submeshFlags.morphHasPos ? 1 : 0;
+					gl.uniform4f(
+						uniform.u_vtxFlags,
+						hasRig,
+						hasMorph,
+						submeshFlags.hasUV ? 1 : 0,
+						submeshFlags.hasNormal ? 1 : 0,
+					);
 				}
-				if (uniform.u_extras) gl.uniform4f(uniform.u_extras, draw.morphWeight, 0, 0, 0);
+				if (uniform.u_extras) {
+					gl.uniform4f(
+						uniform.u_extras,
+						draw.morphWeight,
+						submeshFlags.morphHasPos ? 1 : 0,
+						submeshFlags.morphHasNormal ? 1 : 0,
+						submeshFlags.morphHasTangent ? 1 : 0,
+					);
+				}
 				if (uniform.u_skinPalette) {
 					const palette = draw.skinPalette instanceof Float32Array ? draw.skinPalette : this.#identityPalette();
 					gl.uniformMatrix4fv(uniform.u_skinPalette, false, palette);
@@ -978,11 +1036,11 @@ export class WrWorld extends Ctx {
 		const key = `${objectKey}|${texKey}`;
 		const cached = byPipeline.get(key);
 		if (cached) {
-			this.#updateObjectScratch(objectKey, draw, material, time, deltaTime);
+			this.#updateObjectScratch(objectKey, draw, submeshIndex, material, time, deltaTime);
 			return cached;
 		}
 
-		this.#updateObjectScratch(objectKey, draw, material, time, deltaTime);
+		this.#updateObjectScratch(objectKey, draw, submeshIndex, material, time, deltaTime);
 		const objectBuffer = this.#ensureWgpuObjectBuffer(objectKey);
 		const texture = this.#ensureWgpuTexture(texKey);
 		const layout = pipeline.getBindGroupLayout(1);
@@ -1000,24 +1058,28 @@ export class WrWorld extends Ctx {
 		return bindGroup;
 	}
 
-	#updateObjectScratch(objectKey, draw, material, time, deltaTime = 0) {
+	#updateObjectScratch(objectKey, draw, submeshIndex, material, time, deltaTime = 0) {
 		const object = this.#gpu.objectScratch;
+		const submeshFlags = collectSubmeshFlags(draw, submeshIndex);
 		object.fill(0);
 		object.set(draw.modelMatrix, 0);
-		object[16] = 1;
-		object[17] = 1;
-		object[18] = 1;
-		object[19] = 1;
+		object[16] = submeshFlags.hasColor ? 1 : 0;
+		object[17] = submeshFlags.hasBone ? 1 : 0;
+		object[18] = submeshFlags.hasTangent ? 1 : 0;
+		object[19] = 0;
 		const color = readColor4(material?.albedoColor, [1, 1, 1, 1]);
 		object[20] = color[0];
 		object[21] = color[1];
 		object[22] = color[2];
 		object[23] = color[3];
-		object[24] = draw.hasRig ? 1 : 0;
-		object[25] = draw.morphWeight !== 0 ? 1 : 0;
+		object[24] = draw.hasRig && submeshFlags.hasBone ? 1 : 0;
+		object[25] = submeshFlags.morphHasPos ? 1 : 0;
+		object[26] = submeshFlags.hasUV ? 1 : 0;
+		object[27] = submeshFlags.hasNormal ? 1 : 0;
 		object[28] = draw.morphWeight;
-		object[29] = Number(time) || 0;
-		object[30] = Number(deltaTime) || 0;
+		object[29] = submeshFlags.morphHasPos ? 1 : 0;
+		object[30] = submeshFlags.morphHasNormal ? 1 : 0;
+		object[31] = submeshFlags.morphHasTangent ? 1 : 0;
 
 		object.set(this.#identityPalette(), WR_SKIN_BASE_F32);
 		if (draw.skinPalette && (ArrayBuffer.isView(draw.skinPalette) || Array.isArray(draw.skinPalette))) {
