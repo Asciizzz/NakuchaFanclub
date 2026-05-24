@@ -18,10 +18,10 @@ import {
 const WR_NODE_STATIC_KEYS = new Set(["ctx", "id", "parentId", "childIds", "components"]);
 const WR_SCENE_SKIP_KEYS = new Set(["id", "parent", "children", "components", "$"]);
 const WR_SCENE_UBO_F32 = 56;
-const WR_OBJECT_UBO_F32 = 2080;
+const WR_OBJECT_UBO_F32 = 2096;
 const WR_OBJECT_UBO_BYTES = WR_OBJECT_UBO_F32 * 4;
 const WR_SKIN_BONE_CAP = 128;
-const WR_SKIN_BASE_F32 = 32;
+const WR_SKIN_BASE_F32 = 48;
 const WR_VERTEX_STRIDE = 76;
 const WR_VERTEX_ATTRS = Object.freeze([
 	Object.freeze({ location: 0, size: 3, offset: 0 }),
@@ -539,6 +539,7 @@ export class WrWorld extends Ctx {
 		const childrenMap = buildChildrenMap(sourceById);
 		const visitOrder = buildVisitOrder(sourceById, childrenMap, sourceRootId);
 		if (visitOrder.length <= 0) throw new Error("[WrWorld] loader scene traversal failed");
+		const optionShaderIds = Array.isArray(options.shaderIds) ? options.shaderIds : [options.shaderIds];
 
 		const sourceToWorld = new Map();
 		for (const sourceId of visitOrder) {
@@ -572,8 +573,8 @@ export class WrWorld extends Ctx {
 				const mr = node.addComp(MeshRenderer);
 				mr.applyRaw(meshSource, {
 					resolveMeshId: (id) => (meshMap.has(id) ? meshMap.get(id) : id),
-					defaultShaderId: options.shaderId ?? "wr-default",
 				});
+				for (const shaderId of optionShaderIds) mr.useShader(shaderId);
 				if (mr.meshId) mr.bindMesh(mr.meshId);
 			}
 
@@ -610,12 +611,14 @@ export class WrWorld extends Ctx {
 			if (!meshRenderer.cfg.display && !includeHidden) continue;
 
 			const meshId = asId(meshRenderer.meshId);
-			const shaderId = asId(meshRenderer.cfg.shaderId ?? meshRenderer.shaderId);
-			if (!meshId || !shaderId) continue;
+			if (!meshId) continue;
+			const shaderIds = Array.isArray(meshRenderer.cfg.shaderIds) && meshRenderer.cfg.shaderIds.length > 0
+				? meshRenderer.cfg.shaderIds
+				: [];
+			if (shaderIds.length <= 0) continue;
 
 			const mesh = this.#meshStore.get(meshId);
-			const shader = this.#shaderStore.get(shaderId);
-			if (!mesh || !shader) continue;
+			if (!mesh) continue;
 
 			const primaryMorph = typeof meshRenderer.getPrimaryMorph === "function"
 				? meshRenderer.getPrimaryMorph()
@@ -624,22 +627,28 @@ export class WrWorld extends Ctx {
 			const liveSkeleton = hasRig ? meshRenderer.resolveLiveSkeleton() : null;
 			const skinPalette = hasRig ? (liveSkeleton?.buildPalette(WR_SKIN_BONE_CAP) ?? null) : null;
 
-			const draw = {
-				node,
-				nodeId: node.id,
-				mesh,
-				meshId,
-				shader,
-				shaderId,
-				meshRenderer,
-				modelMatrix: new Float32Array(nodeWorld),
-				primaryMorphIndex: Math.max(0, Number(primaryMorph?.index ?? 0) | 0),
-				morphWeight: Number(primaryMorph?.weight ?? 0) || 0,
-				skinPalette,
-				hasRig,
-			};
-			draws.push(draw);
-			groups.add(`${shaderId}|${meshId}|${draw.primaryMorphIndex}`);
+			for (const shaderIdRaw of shaderIds) {
+				const shaderId = asId(shaderIdRaw);
+				if (!shaderId) continue;
+				const shader = this.#shaderStore.get(shaderId);
+				if (!shader) continue;
+				const draw = {
+					node,
+					nodeId: node.id,
+					mesh,
+					meshId,
+					shader,
+					shaderId,
+					meshRenderer,
+					modelMatrix: new Float32Array(nodeWorld),
+					primaryMorphIndex: Math.max(0, Number(primaryMorph?.index ?? 0) | 0),
+					morphWeight: Number(primaryMorph?.weight ?? 0) || 0,
+					skinPalette,
+					hasRig,
+				};
+				draws.push(draw);
+				groups.add(`${shaderId}|${meshId}|${draw.primaryMorphIndex}`);
+			}
 		}
 
 		return {
@@ -806,37 +815,46 @@ export class WrWorld extends Ctx {
 				const submeshGpu = meshGpu.submeshes[submeshIndex];
 				const material = draw.mesh.submeshes?.[submeshIndex]?.material ?? { albedoColor: [1, 1, 1, 1], albedoTex: null };
 				const submeshFlags = collectSubmeshFlags(draw, submeshIndex);
-				if (uniform.u_slot0) {
-					gl.uniform4f(
-						uniform.u_slot0,
-						submeshFlags.hasColor ? 1 : 0,
-						submeshFlags.hasBone ? 1 : 0,
-						submeshFlags.hasTangent ? 1 : 0,
-						0,
-					);
-				}
+				const inst = draw.meshRenderer?.instData ?? {};
+				const inst0 = inst.slot0 ?? [0, 0, 0, 0];
+				const inst1 = inst.slot1 ?? [0, 0, 0, 0];
+				const inst2 = inst.slot2 ?? [0, 0, 0, 0];
+				const inst3 = inst.slot3 ?? [0, 0, 0, 0];
+				if (uniform.u_instData0) gl.uniform4f(uniform.u_instData0, inst0[0] ?? 0, inst0[1] ?? 0, inst0[2] ?? 0, inst0[3] ?? 0);
+				if (uniform.u_instData1) gl.uniform4f(uniform.u_instData1, inst1[0] ?? 0, inst1[1] ?? 0, inst1[2] ?? 0, inst1[3] ?? 0);
+				if (uniform.u_instData2) gl.uniform4f(uniform.u_instData2, inst2[0] ?? 0, inst2[1] ?? 0, inst2[2] ?? 0, inst2[3] ?? 0);
+				if (uniform.u_instData3) gl.uniform4f(uniform.u_instData3, inst3[0] ?? 0, inst3[1] ?? 0, inst3[2] ?? 0, inst3[3] ?? 0);
 				if (uniform.u_albedoColor) {
 					const color = readColor4(material.albedoColor, [1, 1, 1, 1]);
 					gl.uniform4f(uniform.u_albedoColor, color[0], color[1], color[2], color[3]);
 				}
-				if (uniform.u_vtxFlags) {
+				if (uniform.u_vtxFlags0) {
 					const hasRig = draw.hasRig && submeshFlags.hasBone ? 1 : 0;
 					const hasMorph = submeshFlags.morphHasPos ? 1 : 0;
 					gl.uniform4f(
-						uniform.u_vtxFlags,
+						uniform.u_vtxFlags0,
 						hasRig,
 						hasMorph,
 						submeshFlags.hasUV ? 1 : 0,
 						submeshFlags.hasNormal ? 1 : 0,
 					);
 				}
+				if (uniform.u_vtxFlags1) {
+					gl.uniform4f(
+						uniform.u_vtxFlags1,
+						submeshFlags.hasColor ? 1 : 0,
+						submeshFlags.hasBone ? 1 : 0,
+						submeshFlags.hasTangent ? 1 : 0,
+						submeshFlags.morphHasPos ? 1 : 0,
+					);
+				}
 				if (uniform.u_extras) {
 					gl.uniform4f(
 						uniform.u_extras,
 						draw.morphWeight,
-						submeshFlags.morphHasPos ? 1 : 0,
 						submeshFlags.morphHasNormal ? 1 : 0,
 						submeshFlags.morphHasTangent ? 1 : 0,
+						0,
 					);
 				}
 				if (uniform.u_skinPalette) {
@@ -1061,25 +1079,46 @@ export class WrWorld extends Ctx {
 	#updateObjectScratch(objectKey, draw, submeshIndex, material, time, deltaTime = 0) {
 		const object = this.#gpu.objectScratch;
 		const submeshFlags = collectSubmeshFlags(draw, submeshIndex);
+		const inst = draw.meshRenderer?.instData ?? {};
+		const inst0 = inst.slot0 ?? [0, 0, 0, 0];
+		const inst1 = inst.slot1 ?? [0, 0, 0, 0];
+		const inst2 = inst.slot2 ?? [0, 0, 0, 0];
+		const inst3 = inst.slot3 ?? [0, 0, 0, 0];
 		object.fill(0);
 		object.set(draw.modelMatrix, 0);
-		object[16] = submeshFlags.hasColor ? 1 : 0;
-		object[17] = submeshFlags.hasBone ? 1 : 0;
-		object[18] = submeshFlags.hasTangent ? 1 : 0;
-		object[19] = 0;
+		object[16] = Number(inst0[0] ?? 0) || 0;
+		object[17] = Number(inst0[1] ?? 0) || 0;
+		object[18] = Number(inst0[2] ?? 0) || 0;
+		object[19] = Number(inst0[3] ?? 0) || 0;
+		object[20] = Number(inst1[0] ?? 0) || 0;
+		object[21] = Number(inst1[1] ?? 0) || 0;
+		object[22] = Number(inst1[2] ?? 0) || 0;
+		object[23] = Number(inst1[3] ?? 0) || 0;
+		object[24] = Number(inst2[0] ?? 0) || 0;
+		object[25] = Number(inst2[1] ?? 0) || 0;
+		object[26] = Number(inst2[2] ?? 0) || 0;
+		object[27] = Number(inst2[3] ?? 0) || 0;
+		object[28] = Number(inst3[0] ?? 0) || 0;
+		object[29] = Number(inst3[1] ?? 0) || 0;
+		object[30] = Number(inst3[2] ?? 0) || 0;
+		object[31] = Number(inst3[3] ?? 0) || 0;
 		const color = readColor4(material?.albedoColor, [1, 1, 1, 1]);
-		object[20] = color[0];
-		object[21] = color[1];
-		object[22] = color[2];
-		object[23] = color[3];
-		object[24] = draw.hasRig && submeshFlags.hasBone ? 1 : 0;
-		object[25] = submeshFlags.morphHasPos ? 1 : 0;
-		object[26] = submeshFlags.hasUV ? 1 : 0;
-		object[27] = submeshFlags.hasNormal ? 1 : 0;
-		object[28] = draw.morphWeight;
-		object[29] = submeshFlags.morphHasPos ? 1 : 0;
-		object[30] = submeshFlags.morphHasNormal ? 1 : 0;
-		object[31] = submeshFlags.morphHasTangent ? 1 : 0;
+		object[32] = color[0];
+		object[33] = color[1];
+		object[34] = color[2];
+		object[35] = color[3];
+		object[36] = draw.hasRig && submeshFlags.hasBone ? 1 : 0;
+		object[37] = submeshFlags.morphHasPos ? 1 : 0;
+		object[38] = submeshFlags.hasUV ? 1 : 0;
+		object[39] = submeshFlags.hasNormal ? 1 : 0;
+		object[40] = submeshFlags.hasColor ? 1 : 0;
+		object[41] = submeshFlags.hasBone ? 1 : 0;
+		object[42] = submeshFlags.hasTangent ? 1 : 0;
+		object[43] = submeshFlags.morphHasPos ? 1 : 0;
+		object[44] = draw.morphWeight;
+		object[45] = submeshFlags.morphHasNormal ? 1 : 0;
+		object[46] = submeshFlags.morphHasTangent ? 1 : 0;
+		object[47] = 0;
 
 		object.set(this.#identityPalette(), WR_SKIN_BASE_F32);
 		if (draw.skinPalette && (ArrayBuffer.isView(draw.skinPalette) || Array.isArray(draw.skinPalette))) {
@@ -1197,9 +1236,13 @@ export class WrWorld extends Ctx {
 			u_cameraPos: gl.getUniformLocation(program, "u_cameraPos"),
 			u_time: gl.getUniformLocation(program, "u_time"),
 			u_model: gl.getUniformLocation(program, "u_model"),
-			u_slot0: gl.getUniformLocation(program, "u_slot0"),
+			u_instData0: gl.getUniformLocation(program, "u_instData0"),
+			u_instData1: gl.getUniformLocation(program, "u_instData1"),
+			u_instData2: gl.getUniformLocation(program, "u_instData2"),
+			u_instData3: gl.getUniformLocation(program, "u_instData3"),
 			u_albedoColor: gl.getUniformLocation(program, "u_albedoColor"),
-			u_vtxFlags: gl.getUniformLocation(program, "u_vtxFlags"),
+			u_vtxFlags0: gl.getUniformLocation(program, "u_vtxFlags0"),
+			u_vtxFlags1: gl.getUniformLocation(program, "u_vtxFlags1"),
 			u_extras: gl.getUniformLocation(program, "u_extras"),
 			u_skinPalette: gl.getUniformLocation(program, "u_skinPalette[0]"),
 			u_albedoTex: gl.getUniformLocation(program, "u_albedoTex"),

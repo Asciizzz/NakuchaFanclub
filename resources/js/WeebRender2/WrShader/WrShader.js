@@ -33,7 +33,7 @@ const WR_SHADER_KEYS = Object.freeze([
 	"$DELTA_TIME$",
 	"$SKIN_PALETTE$",
 	"$VTX_FLAGS$",
-	"$HAS_RIG$",
+	"$SKIN_ENABLED$",
 	"$HAS_MORPH$",
 	"$HAS_UV$",
 	"$HAS_NORMAL$",
@@ -70,8 +70,9 @@ const WR_STAGE_KEYS = Object.freeze({
 		"$TIME$",
 		"$DELTA_TIME$",
 		"$SKIN_PALETTE$",
+		// Flags
 		"$VTX_FLAGS$",
-		"$HAS_RIG$",
+		"$SKIN_ENABLED$",
 		"$HAS_MORPH$",
 		"$HAS_UV$",
 		"$HAS_NORMAL$",
@@ -88,11 +89,13 @@ const WR_STAGE_KEYS = Object.freeze({
 		"$PROJECTION$",
 		"$TIME$",
 		"$DELTA_TIME$",
+		// Material data
 		"$ALBEDO_TEX$",
 		"$ALBEDO_COLOR$",
-		"$OUT_COLOR$",
+		"$OUT_COLOR$", // Output color
+		// Flags
 		"$VTX_FLAGS$",
-		"$HAS_RIG$",
+		"$SKIN_ENABLED$",
 		"$HAS_MORPH$",
 		"$HAS_UV$",
 		"$HAS_NORMAL$",
@@ -102,10 +105,6 @@ const WR_STAGE_KEYS = Object.freeze({
 		"$MORPH_HAS_POS$",
 		"$MORPH_HAS_NORMAL$",
 		"$MORPH_HAS_TANGENT$",
-		"$INST_DATA0$",
-		"$INST_DATA1$",
-		"$INST_DATA2$",
-		"$INST_DATA3$",
 	]),
 });
 
@@ -445,26 +444,26 @@ function defaultKeyMapWgsl() {
 		"$MORPH_POS$": "wr_morphPos",
 		"$MORPH_WEIGHT$": "objectUBO.extras.x",
 		"$INST_MODEL$": "objectUBO.model",
-		"$INST_DATA0$": "objectUBO.slot0",
-		"$INST_DATA1$": "objectUBO.albedoColor",
-		"$INST_DATA2$": "objectUBO.vtxFlags",
-		"$INST_DATA3$": "objectUBO.extras",
+		"$INST_DATA0$": "objectUBO.instData0",
+		"$INST_DATA1$": "objectUBO.instData1",
+		"$INST_DATA2$": "objectUBO.instData2",
+		"$INST_DATA3$": "objectUBO.instData3",
 		"$VIEW$": "sceneUBO.view",
 		"$PROJECTION$": "sceneUBO.projection",
 		"$TIME$": "sceneUBO.time.x",
 		"$DELTA_TIME$": "sceneUBO.time.y",
 		"$SKIN_PALETTE$": "objectUBO.skinPalette",
-		"$VTX_FLAGS$": "objectUBO.vtxFlags",
-		"$HAS_RIG$": "(objectUBO.vtxFlags.x > 0.5)",
-		"$HAS_MORPH$": "(objectUBO.vtxFlags.y > 0.5)",
-		"$HAS_UV$": "(objectUBO.vtxFlags.z > 0.5)",
-		"$HAS_NORMAL$": "(objectUBO.vtxFlags.w > 0.5)",
-		"$HAS_COLOR$": "(objectUBO.slot0.x > 0.5)",
-		"$HAS_BONE$": "(objectUBO.slot0.y > 0.5)",
-		"$HAS_TANGENT$": "(objectUBO.slot0.z > 0.5)",
-		"$MORPH_HAS_POS$": "(objectUBO.extras.y > 0.5)",
-		"$MORPH_HAS_NORMAL$": "(objectUBO.extras.z > 0.5)",
-		"$MORPH_HAS_TANGENT$": "(objectUBO.extras.w > 0.5)",
+		"$VTX_FLAGS$": "objectUBO.vtxFlags0",
+		"$SKIN_ENABLED$": "(objectUBO.vtxFlags0.x > 0.5)",
+		"$HAS_MORPH$": "(objectUBO.vtxFlags0.y > 0.5)",
+		"$HAS_UV$": "(objectUBO.vtxFlags0.z > 0.5)",
+		"$HAS_NORMAL$": "(objectUBO.vtxFlags0.w > 0.5)",
+		"$HAS_COLOR$": "(objectUBO.vtxFlags1.x > 0.5)",
+		"$HAS_BONE$": "(objectUBO.vtxFlags1.y > 0.5)",
+		"$HAS_TANGENT$": "(objectUBO.vtxFlags1.z > 0.5)",
+		"$MORPH_HAS_POS$": "(objectUBO.vtxFlags1.w > 0.5)",
+		"$MORPH_HAS_NORMAL$": "(objectUBO.extras.y > 0.5)",
+		"$MORPH_HAS_TANGENT$": "(objectUBO.extras.z > 0.5)",
 		"$ALBEDO_TEX$": "albedoTex",
 		"$ALBEDO_COLOR$": "objectUBO.albedoColor",
 		"$OUT_COLOR$": "outputColor",
@@ -482,26 +481,26 @@ function defaultKeyMapGlsl() {
 		"$MORPH_POS$": "wr_morphPos",
 		"$MORPH_WEIGHT$": "u_extras.x",
 		"$INST_MODEL$": "u_model",
-		"$INST_DATA0$": "u_slot0",
-		"$INST_DATA1$": "u_albedoColor",
-		"$INST_DATA2$": "u_vtxFlags",
-		"$INST_DATA3$": "u_extras",
+		"$INST_DATA0$": "u_instData0",
+		"$INST_DATA1$": "u_instData1",
+		"$INST_DATA2$": "u_instData2",
+		"$INST_DATA3$": "u_instData3",
 		"$VIEW$": "u_view",
 		"$PROJECTION$": "u_projection",
 		"$TIME$": "u_time.x",
 		"$DELTA_TIME$": "u_time.y",
 		"$SKIN_PALETTE$": "u_skinPalette",
-		"$VTX_FLAGS$": "u_vtxFlags",
-		"$HAS_RIG$": "(u_vtxFlags.x > 0.5)",
-		"$HAS_MORPH$": "(u_vtxFlags.y > 0.5)",
-		"$HAS_UV$": "(u_vtxFlags.z > 0.5)",
-		"$HAS_NORMAL$": "(u_vtxFlags.w > 0.5)",
-		"$HAS_COLOR$": "(u_slot0.x > 0.5)",
-		"$HAS_BONE$": "(u_slot0.y > 0.5)",
-		"$HAS_TANGENT$": "(u_slot0.z > 0.5)",
-		"$MORPH_HAS_POS$": "(u_extras.y > 0.5)",
-		"$MORPH_HAS_NORMAL$": "(u_extras.z > 0.5)",
-		"$MORPH_HAS_TANGENT$": "(u_extras.w > 0.5)",
+		"$VTX_FLAGS$": "u_vtxFlags0",
+		"$SKIN_ENABLED$": "(u_vtxFlags0.x > 0.5)",
+		"$HAS_MORPH$": "(u_vtxFlags0.y > 0.5)",
+		"$HAS_UV$": "(u_vtxFlags0.z > 0.5)",
+		"$HAS_NORMAL$": "(u_vtxFlags0.w > 0.5)",
+		"$HAS_COLOR$": "(u_vtxFlags1.x > 0.5)",
+		"$HAS_BONE$": "(u_vtxFlags1.y > 0.5)",
+		"$HAS_TANGENT$": "(u_vtxFlags1.z > 0.5)",
+		"$MORPH_HAS_POS$": "(u_vtxFlags1.w > 0.5)",
+		"$MORPH_HAS_NORMAL$": "(u_extras.y > 0.5)",
+		"$MORPH_HAS_TANGENT$": "(u_extras.z > 0.5)",
 		"$ALBEDO_TEX$": "u_albedoTex",
 		"$ALBEDO_COLOR$": "u_albedoColor",
 		"$OUT_COLOR$": "outputColor",
@@ -534,9 +533,13 @@ struct SceneUBO {
 
 struct ObjectUBO {
     model: mat4x4f,
-    slot0: vec4f,
+    instData0: vec4f,
+    instData1: vec4f,
+    instData2: vec4f,
+    instData3: vec4f,
     albedoColor: vec4f,
-    vtxFlags: vec4f,
+    vtxFlags0: vec4f,
+    vtxFlags1: vec4f,
     extras: vec4f,
     skinPalette: array<mat4x4f, 128>,
 }
@@ -592,9 +595,13 @@ struct SceneUBO {
 
 struct ObjectUBO {
     model: mat4x4f,
-    slot0: vec4f,
+    instData0: vec4f,
+    instData1: vec4f,
+    instData2: vec4f,
+    instData3: vec4f,
     albedoColor: vec4f,
-    vtxFlags: vec4f,
+    vtxFlags0: vec4f,
+    vtxFlags1: vec4f,
     extras: vec4f,
     skinPalette: array<mat4x4f, 128>,
 }
@@ -659,9 +666,13 @@ uniform vec4 u_cameraPos;
 uniform vec4 u_time;
 
 uniform mat4 u_model;
-uniform vec4 u_slot0;
+uniform vec4 u_instData0;
+uniform vec4 u_instData1;
+uniform vec4 u_instData2;
+uniform vec4 u_instData3;
 uniform vec4 u_albedoColor;
-uniform vec4 u_vtxFlags;
+uniform vec4 u_vtxFlags0;
+uniform vec4 u_vtxFlags1;
 uniform vec4 u_extras;
 uniform mat4 u_skinPalette[128];
 
@@ -702,9 +713,13 @@ uniform mat4 u_viewProj;
 uniform vec4 u_cameraPos;
 uniform vec4 u_time;
 
-uniform vec4 u_slot0;
+uniform vec4 u_instData0;
+uniform vec4 u_instData1;
+uniform vec4 u_instData2;
+uniform vec4 u_instData3;
 uniform vec4 u_albedoColor;
-uniform vec4 u_vtxFlags;
+uniform vec4 u_vtxFlags0;
+uniform vec4 u_vtxFlags1;
 uniform vec4 u_extras;
 uniform mat4 u_skinPalette[128];
 uniform sampler2D u_albedoTex;

@@ -1,330 +1,230 @@
-# WeebRender2 - By Asciiz
+﻿# WeebRender2
 
-Usage guide for the runtime side
-Keep it simple and use the parts you need
+Runtime notes for the current WR2 branch
+This file matches the current code in `WrWorld`, `WrShader`, and `WrWorld/Components`
 
-## Setup
-
-Pick a backend, create a world, set a camera
+## Quick Start
 
 ```js
-	import { AzWBackend } from "../AzLib/AzWBackend.js";
-	import { AzCamera } from "../AzLib/AzCamera.js";
-	import { WrWorld } from "../WeebRender2/index.js";
+import { AzWBackend } from "../AzLib/AzWBackend.js";
+import { AzCamera } from "../AzLib/AzCamera.js";
+import { WrWorld } from "../WeebRender2/index.js";
 
-	const canvas = document.getElementById("wr-canvas");
-	const { backend } = await AzWBackend.Base.choose(canvas, { prefer: "webgpu" });
+const canvas = document.getElementById("wr-canvas");
+const { backend } = await AzWBackend.Base.choose(canvas, { prefer: "webgpu" });
 
-	const world = new WrWorld({ backend });
-	const camera = new AzCamera({ position: [0, 1.2, 4.5], near: 0.1, far: 250, fov: 45 });
-	camera.lookAt([0, 1, 0]);
-	world.setCamera(camera);
+const world = new WrWorld({ backend });
+const camera = new AzCamera({ position: [0, 1.2, 4.5], near: 0.1, far: 250, fov: 45 });
+camera.lookAt([0, 1, 0]);
+world.setCamera(camera);
 ```
 
-##### `AzWBackend.Base.choose(canvas, options)`
+## World API
 
-* Creates a backend for the canvas
-* `options`:
-	* `prefer`: "webgpu" or "webgl2" - fallback to the other if the preferred is unavailable (99% of the time it will fall back to webgl2)
-* Call `backend.resize` when the canvas size changes
+### `new WrWorld({ backend })`
+Creates a world with shared node map and shared stores
 
-## World
+### `world.setBackend(backend)`
+Swaps backend and drops cached GPU resources
 
-##### `new WrWorld({ backend })`
+### `world.setCamera(camera)`
+Sets active camera reference
 
-* Creates the runtime scene container
-* `backend`:
-	* Result of `AzWBackend.Base.choose`
-* Keep one world per canvas
+### `world.registerShader(id, desc)`
+Registers a WR shader
 
-##### `world.setBackend(backend)`
+### `world.loadModelFromURL(url, options)`
+Loads GLB and returns copied branch root node
 
-* Swaps backend and rebuilds shader variants
-* Use when you change backend or context is lost
+`options.shaderIds` is an optional shader list appended to each loaded MeshRenderer
 
-##### `world.setCamera(camera)`
+### `world.render(fromNode, options)`
+Builds draw queue from `fromNode` branch and optionally draws it
 
-* Sets the active camera used during render
-* Camera is not owned by the world
+Options:
+- `collectOnly` default `false`
+- `includeHidden` default `false`
+- `time` default `performance.now() * 0.001`
+- `deltaTime` default `0`
+- `beginFrame` default `true`
+- `endFrame` default `true`
+- `clearColor` default `shader.renderCfg.clearColor` then `[0.62, 0.72, 0.92, 1]`
+- `clearDepth` default `shader.renderCfg.clearDepth` then `1`
+- `useDepth` default `true`
+- `clearColorEnabled` default `true` only when starting frame, else `false`
+- `clearDepthEnabled` default `true` only when starting frame, else `false`
 
-##### `world.registerShader(id, desc)`
-
-* Stores shader code and render config in the shader store
-* `id`:
-	* String shader id used by MeshRenderer
-* `desc`:
-	* `renderCfg`: depth, blend, clear color
-	* `wgsl`: WGSL source parts
-	* `glsl`: GLSL source parts
-
-##### `world.getShader(id)`
-
-* Returns a shader asset or null
-
-##### `world.removeShader(id)`
-
-* Removes a shader asset from the store
-
-##### `world.loadModelFromURL(url, options)`
-
-* Loads a GLB and returns the root node of that scene
-* `options`:
-	* `shaderId`: default shader id for MeshRenderer
+### Node-centric multi-branch rendering
 
 ```js
-	const root = await world.loadModelFromURL("/Models/Agnes.glb", {
-		shaderId: "wr-default",
-	});
+rootA.render({
+  time: t,
+  deltaTime: dt,
+  beginFrame: true,
+  endFrame: false,
+  clearColorEnabled: true,
+  clearDepthEnabled: true,
+});
+
+rootB.render({
+  time: t,
+  deltaTime: dt,
+  beginFrame: false,
+  endFrame: true,
+  clearColorEnabled: false,
+  clearDepthEnabled: false,
+});
 ```
 
-##### `world.render(root, options)`
+## Node API (no detailed description because the description is RIGHT FCKING THERE in the method names)
 
-* Builds a draw queue and renders it
-* `options`:
-	* `time`:
-		* Time value passed to shaders
-		* Default: `performance.now() * 0.001` (second)
-	* `deltaTime`:
-		* Delta time passed to shaders
-		* Default: `0` (calculation is your responsibility)
-	* `includeHidden`:
-		* Render nodes with `display = false`
-		* Default: `false`
-	* `collectOnly`:
-		* Build queue but do not draw
-		* Default: `false`
-	* `beginFrame`:
-		* Start a backend frame before drawing
-		* Default: `true`
-	* `endFrame`:
-		* Submit/end backend frame after drawing
-		* Default: `true`
-	* `clearColor`:
-		* RGBA clear color
-		* Default: `shader.renderCfg.clearColor` or `[0.62, 0.72, 0.92, 1]`
-	* `clearDepth`:
-		* Depth clear value
-		* Default: `shader.renderCfg.clearDepth` or `1`
-	* `useDepth`:
-		* Enable depth attachment for this pass
-		* Default: `true`
-	* `clearColorEnabled`:
-		* Clear color in this render pass
-		* Default: `true` when starting a frame, `false` for chained passes in the same frame
-	* `clearDepthEnabled`:
-		* Clear depth in this render pass
-		* Default: `true` when starting a frame, `false` for chained passes in the same frame
+### `node.addComp(Type)`
+Add component instance to node
 
-## Shaders
+### `node.getComp(Type)`
+Read component instance
 
-Time keys:
+### `node.removeComp(Type)`
+Remove component instance
 
-* `$TIME$` maps to `u_time.x` (GLSL) / `sceneUBO.time.x` (WGSL)
-* `$DELTA_TIME$` maps to `u_time.y` (GLSL) / `sceneUBO.time.y` (WGSL)
-
-```js
-	world.registerShader("wr-default", {
-		renderCfg: {
-			depthTest: true,
-			depthWrite: true,
-			cull: "back",
-			blend: false,
-			clearColor: [0.62, 0.72, 0.92, 1],
-			clearDepth: 1,
-		},
-		wgsl: { vertex: { main: "..." }, fragment: { main: "..." } },
-		glsl: { vertex: { main: "..." }, fragment: { main: "..." } },
-	});
-```
-
-## Nodes
-
-##### `world.addNode(parent, index)`
-
-* Creates a node under `parent`
-* `parent`:
-	* Node id, node object, or null for root
-* `index`:
-	* Optional child index
-
-##### `world.getNode(id)`
-
-* Returns a node by id or null
-
-##### `world.moveNode(id, newParentId)`
-
-* Re-parents a node
-* Keeps the subtree intact
-
-##### `world.deleteNode(id, branch)`
-
-* Deletes one node or the entire branch
-* `branch`:
-	* true to delete children too
-
-##### `world.copyBranch(fromId, toId)`
-
-* Clones a subtree and keeps component data
-* Returns the new root clone
-
-```js
-	const cloneRoot = world.addNode(null);
-	const clone = world.copyBranch(root.id, cloneRoot.id);
-```
+### `node.render(options)`
+Proxy to `world.render(node, options)`
 
 ## Components
 
-##### `node.addComp(Type)`
+## `WrTransform`
+- `local: mat4`
+- `world: mat4`
+- `applyRaw(raw)`
 
-* Adds a component to a node
-* Returns existing instance if it already exists
+## `WrMeshRenderer`
+- `meshId`
+- `textures.albedo`
+- `morphWeights`
+- `instData.slot0..slot3` each vec4
+- `cfg.shaderIds: string[]`
+- `cfg.hasRig: boolean`
+- `cfg.display: boolean`
 
-##### `node.getComp(Type)`
+Methods:
+- `setCfg({ shaderIds, hasRig, display })`
+- `useShader(id)`
+- `disuseShader(id)`
+- `bindMesh(meshRef, options)`
+- `setTexture(slot, textureRef)`
+- `setMorphWeight(nameOrIndex, value)`
+- `setMorphExclusive(nameOrIndex, value)`
+- `getPrimaryMorph()`
+- `setInstData("slot0"|"slot1"|"slot2"|"slot3", vec4)`
+- `getInstData(slot)`
 
-* Returns a component instance or null
+Notes:
+- One mesh renderer can draw with multiple shaders in one render call
 
-##### `node.removeComp(Type)`
+## `WrLiveSkeleton`
+- `skeletonId`
+- `bones[]`
+- `setSkeleton(ref)`
+- `setBonePose(indexOrName, mat4)`
+- `buildPalette(maxBones)`
 
-* Removes a component and returns it
-
-```js
-	import { WrTransform, WrMeshRenderer, WrLiveSkeleton } from "../WeebRender2/index.js";
-
-	const node = world.addNode(null);
-	const tx = node.addComp(WrTransform);
-	const mr = node.addComp(WrMeshRenderer);
-	const skel = node.addComp(WrLiveSkeleton);
-```
-
-## Transform
-
-##### `transform.applyRaw(raw)`
-
-* Applies loader transform data
-* `raw`:
-	* `local`: local matrix
-	* `world`: world matrix fallback
-
-```js
-	tx.local = Azm.Mat4.fromTranslation([1, 0, 0]);
-	tx.world.set(tx.local);
-```
-
-## MeshRenderer
-
-##### `meshRenderer.setCfg(opts)`
-
-* Updates shader, rig, and visibility flags
-* `opts`:
-	* `shaderId`: shader id string
-	* `hasRig`: enable rig lookups
-	* `display`: visibility flag
-
-##### `meshRenderer.bindMesh(meshRef, opts)`
-
-* Sets mesh id and pulls basic defaults
-* `meshRef`:
-	* mesh id or mesh asset
-* `opts`:
-	* `applyDefaults`: true by default
-	* `ensureMorphWeights`: allocate morph weights
-
-##### `meshRenderer.setTexture(slot, textureRef)`
-
-* Assigns a texture to the slot
-* `slot`:
-	* "albedo" or custom slot
-* `textureRef`:
-	* texture id or texture asset
-
-##### `meshRenderer.setMorphWeight(name, weight)`
-
-* Sets a single morph weight by name or index
-
-##### `meshRenderer.setMorphExclusive(name, weight)`
-
-* Zeros all weights and sets one target
-
-##### `meshRenderer.getPrimaryMorph()`
-
-* Returns the strongest morph target
+## Shader Descriptor
 
 ```js
-	mr.meshId = "mesh_foo";
-	mr.setCfg({ shaderId: "wr-default", hasRig: true, display: true });
-	mr.setMorphWeight("Smile", 1.0);
-	mr.setMorphExclusive("Blink", 0.8);
+world.registerShader("main", {
+  renderCfg: {
+    depthTest: true,
+    depthWrite: true,
+    cull: "back",
+    blend: false,
+  },
+  wgsl: {
+    link: [
+      { name: "out_uv", type: "vec2f" },
+      { name: "out_nrm", type: "vec3f" },
+    ],
+    vertex: { methods: [], main: "..." },
+    fragment: { methods: [], main: "..." },
+  },
+  glsl: {
+    link: [
+      { name: "out_uv", type: "vec2" },
+      { name: "out_nrm", type: "vec3" },
+    ],
+    vertex: { methods: [], main: "..." },
+    fragment: { methods: [], main: "..." },
+  },
+});
 ```
 
-## LiveSkeleton
+`link` is the vertex->fragment data contract
+Do not use legacy `$LINK0...$LINK7$` keys, they are removed
 
-##### `liveSkeleton.setSkeleton(skeletonRef)`
+## Stage Key Reference
 
-* Links a skeleton asset by id or object
+Stage tags:
+- `V` vertex only
+- `F` fragment only
+- `VF` both
 
-##### `liveSkeleton.resolveBoneIndex(indexOrName)`
+| Key | Stage | Meaning |
+| - | - | - |
+| `$POSITION$` | V | Vertex position input |
+| `$NORMAL$` | V | Vertex normal input |
+| `$UV$` | VF | UV input in vertex, linked UV in fragment |
+| `$TANGENT$` | V | Tangent input or fallback |
+| `$BONE_ID$` | V | Bone index vec4 |
+| `$BONE_WEIGHT$` | V | Bone weight vec4 |
+| `$MORPH_POS$` | V | Morph position delta |
+| `$MORPH_WEIGHT$` | V | Active morph weight |
+| `$INST_MODEL$` | V | Model matrix |
+| `$INST_DATA0$` | V | MeshRenderer instData slot0 |
+| `$INST_DATA1$` | V | MeshRenderer instData slot1 |
+| `$INST_DATA2$` | V | MeshRenderer instData slot2 |
+| `$INST_DATA3$` | V | MeshRenderer instData slot3 |
+| `$VIEW$` | VF | View matrix |
+| `$PROJECTION$` | VF | Projection matrix |
+| `$TIME$` | VF | Time scalar (`u_time.x`) |
+| `$DELTA_TIME$` | VF | Delta time scalar (`u_time.y`) |
+| `$SKIN_PALETTE$` | V | Skin palette array |
+| `$VTX_FLAGS$` | VF | Primary runtime flags vector |
+| `$SKIN_ENABLED$` | VF | Runtime skinning active flag |
+| `$HAS_MORPH$` | VF | Morph path available flag |
+| `$HAS_UV$` | VF | UV attribute exists flag |
+| `$HAS_NORMAL$` | VF | Normal attribute exists flag |
+| `$HAS_COLOR$` | VF | Color attribute exists flag |
+| `$HAS_BONE$` | VF | Bone attributes exist flag |
+| `$HAS_TANGENT$` | VF | Tangent attribute exists flag |
+| `$MORPH_HAS_POS$` | VF | Morph position stream exists |
+| `$MORPH_HAS_NORMAL$` | VF | Morph normal stream exists |
+| `$MORPH_HAS_TANGENT$` | VF | Morph tangent stream exists |
+| `$ALBEDO_TEX$` | F | Albedo texture sampler |
+| `$ALBEDO_COLOR$` | F | Albedo color factor |
+| `$OUT_COLOR$` | F | Fragment output color target |
 
-* Finds a bone by name or index
+### Important rules
 
-##### `liveSkeleton.setBonePose(indexOrName, matrix)`
+- `$INST_DATA0..3$` are custom instance data only
+- Fragment stage does not accept `$INST_DATA0..3$`
+- If fragment needs instance custom data, pass it via explicit `link`
+- Material color/texture are separate from instance data
+- `hasRig` in component is config intent, `$SKIN_ENABLED$` is runtime flag in shader
 
-* Updates one bone local pose
-
-##### `liveSkeleton.buildPalette(maxBones)`
-
-* Returns a skinning palette for shaders
+## Minimal Render Loop
 
 ```js
-	const skel = node.addComp(WrLiveSkeleton);
-	skel.set("Hips", Azm.Mat4.fromRotationY(0.3));
+let last = performance.now();
+let t = 0;
+
+function frame(now) {
+  const dt = Math.max(0, (now - last) * 0.001);
+  last = now;
+  t += dt;
+
+  root.render({ time: t, deltaTime: dt });
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
 ```
 
-## Rigging flow
-
-Rig lookup is structural, not by id
-`MeshRenderer.resolveLiveSkeleton` walks parents to find the nearest LiveSkeleton
-If `hasRig` is false it will not look
-
-```js
-	const rigRoot = world.addNode(null);
-	rigRoot.addComp(WrLiveSkeleton);
-	const meshNode = world.addNode(rigRoot.id);
-	const mr = meshNode.addComp(WrMeshRenderer);
-	mr.setCfg({ hasRig: true });
-```
-
-## Render loop
-
-```js
-	let t = 0;
-	function frame(now) {
-		t += Math.max(0, (now - (frame.last ?? now)) * 0.001);
-		frame.last = now;
-
-		world.render(root, { time: t });
-		requestAnimationFrame(frame);
-	}
-	requestAnimationFrame(frame);
-```
-
-Render multiple roots in one frame without clearing between them
-
-```js
-	world.render(rootA, {
-		time: t,
-		beginFrame: true,
-		endFrame: false,
-		clearColorEnabled: true,
-		clearDepthEnabled: true,
-	});
-
-	world.render(rootB, {
-		time: t,
-		beginFrame: false,
-		endFrame: true,
-		clearColorEnabled: false,
-		clearDepthEnabled: false,
-	});
-```
-
-* Note: you can store references to nodes, components or assets and apply modifications directly if you wish

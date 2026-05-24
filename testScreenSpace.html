@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Test Screen Space</title>
+	<style>
+
+		:root {
+			--color-0: #9AB7F8; /* Blueish thingy */
+			--color-1: #B8C7F9; /* Another blueish thingy */
+			--color-2: #D9D2FF; /* Red-pinkish thingy */
+			--color-3: #AEBBFF; /* I don't fcking know, slightly darker blue than color-1 i guess? */
+			--color-4: #CBB7F6; /* Pinkish? */
+			--color-5: #F3C7E8; /* Another pinkish? */
+			--color-6: #F7F5FF; /* Almost white */
+			--color-7: #8FA7E8; /* Dusky blue */
+			--color-8: #E7DEFF; /* Iris out (chainsaw man reference) */
+		}
+
+		html, body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+		}
+		body {
+			overflow: hidden;
+			background: radial-gradient(circle at 20% 20%, var(--color-0) 0%, var(--color-7) 48%, var(--color-8) 100%);
+			font-family: Outfit, Segoe UI, Arial, sans-serif;
+			color: var(--color-6);
+		}
+		#viewport {
+			position: fixed;
+			inset: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			overflow: hidden;
+		}
+		#center-layer {
+			position: relative;
+			width: 0;
+			height: 0;
+		}
+		.marker {
+			position: absolute;
+			left: 0;
+			top: 0;
+			transform: translate(-50%, -50%);
+			background: color-mix(in srgb, var(--color-8) 82%, black 18%);
+			border: 1px solid color-mix(in srgb, var(--color-7) 72%, white 28%);
+			border-radius: 10px;
+			padding: 6px 10px;
+			font-size: 13px;
+			white-space: nowrap;
+			backdrop-filter: blur(2px);
+			box-shadow: 0 6px 18px color-mix(in srgb, var(--color-7) 25%, black 75%);
+			pointer-events: none;
+			user-select: none;
+		}
+		.marker .depth {
+			opacity: 0.7;
+			font-size: 11px;
+			margin-left: 6px;
+		}
+		#crosshair {
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			width: 10px;
+			height: 10px;
+			transform: translate(-50%, -50%);
+			border: 1px solid color-mix(in srgb, var(--color-6) 58%, transparent 42%);
+			border-radius: 999px;
+			pointer-events: none;
+		}
+		#state {
+			position: fixed;
+			left: 12px;
+			bottom: 12px;
+			padding: 8px 10px;
+			border-radius: 10px;
+			background: color-mix(in srgb, var(--color-8) 75%, black 25%);
+			border: 1px solid color-mix(in srgb, var(--color-7) 58%, transparent 42%);
+			font-size: 12px;
+			white-space: pre;
+		}
+	</style>
+</head>
+<body>
+	<div id="viewport">
+		<div id="center-layer"></div>
+		<div id="crosshair"></div>
+	</div>
+	<div id="state"></div>
+
+	<script type="module">
+		import { AzCamera } from "./resources/js/AzLib/AzCamera.js";
+		import * as Azm from "./resources/js/AzLib/Azm.js";
+
+		const viewport = document.getElementById("viewport");
+		const centerLayer = document.getElementById("center-layer");
+		const statePanel = document.getElementById("state");
+
+		const camera = new AzCamera({
+			position: [0, 1.2, 7.5],
+			near: 0.1,
+			far: 100,
+			fov: 60,
+		});
+
+		let yaw = 0;
+		let pitch = 0;
+		const pitchCap = 1.55;
+		const mouseSensitivity = 0.0022;
+		const baseSpeed = 4.2;
+		const fastScale = 2.8;
+
+		const keyState = new Map();
+		const points = [
+			{ label: "Root 00", pos: [0, 0.4, 0] },
+			{ label: "Root 01", pos: [2.5, 1.2, -2.4] },
+			{ label: "Root 02", pos: [-2.5, 0.8, -3.0] },
+			{ label: "NPC A", pos: [4.2, 1.8, -8.0] },
+			{ label: "NPC B", pos: [-3.4, 2.2, -6.5] },
+			{ label: "Far Marker", pos: [10.5, 1.5, -20.0] },
+			{ label: "Sky Anchor", pos: [0, 6.0, -9.5] },
+			{ label: "Ground Anchor", pos: [0, -2.8, -4.2] },
+		];
+
+		const markerRows = points.map((entry) => {
+			const el = document.createElement("div");
+			el.className = "marker";
+			el.innerHTML = `<span class="name"></span><span class="depth"></span>`;
+			centerLayer.appendChild(el);
+			return { entry, el };
+		});
+
+		function updateAspect() {
+			const w = Math.max(1, viewport.clientWidth);
+			const h = Math.max(1, viewport.clientHeight);
+			camera.aspect = w / h;
+		}
+		updateAspect();
+		new ResizeObserver(updateAspect).observe(viewport);
+
+		document.addEventListener("keydown", (event) => keyState.set(event.code, true));
+		document.addEventListener("keyup", (event) => keyState.set(event.code, false));
+		viewport.addEventListener("click", () => {
+			if (document.pointerLockElement !== viewport) viewport.requestPointerLock();
+		});
+		document.addEventListener("mousemove", (event) => {
+			if (document.pointerLockElement !== viewport) return;
+			yaw -= event.movementX * mouseSensitivity;
+			pitch -= event.movementY * mouseSensitivity;
+			pitch = Math.max(-pitchCap, Math.min(pitchCap, pitch));
+		});
+
+		function updateCamera(dt) {
+			camera.setYawPitch(yaw, pitch, 0);
+			const speed = baseSpeed * (keyState.get("ShiftLeft") ? fastScale : 1);
+			const step = speed * dt;
+			let moveX = 0;
+			let moveY = 0;
+			let moveZ = 0;
+			if (keyState.get("KeyW")) moveZ -= step;
+			if (keyState.get("KeyS")) moveZ += step;
+			if (keyState.get("KeyA")) moveX -= step;
+			if (keyState.get("KeyD")) moveX += step;
+			if (keyState.get("KeyQ")) moveY -= step;
+			if (keyState.get("KeyE")) moveY += step;
+			if (moveX !== 0 || moveY !== 0 || moveZ !== 0) {
+				camera.translate([moveX, moveY, moveZ]);
+			}
+		}
+
+		function projectMarkers() {
+			const halfW = viewport.clientWidth * 0.5;
+			const halfH = viewport.clientHeight * 0.5;
+			const nearFadeStart = -0.70;
+			const nearFadeEnd = -1.00;
+			const projected = [];
+			for (const row of markerRows) {
+				const ndc = camera.findNDC(row.entry.pos);
+				if (!ndc) {
+					row.el.style.display = "none";
+					continue;
+				}
+
+				const px = ndc[0] * halfW;
+				const py = -ndc[1] * halfH;
+				row.el.style.display = "";
+				row.el.style.transform = `translate(-50%, -50%) translate(${px}px, ${py}px)`;
+
+				const nearT = (ndc[2] - nearFadeEnd) / (nearFadeStart - nearFadeEnd);
+				const nearAlpha = Math.max(0, Math.min(1, nearT));
+				row.el.style.opacity = String(0.22 + 0.78 * nearAlpha);
+
+				row.el.querySelector(".name").textContent = row.entry.label;
+				row.el.querySelector(".depth").textContent = `z=${ndc[2].toFixed(3)}`;
+				projected.push({ row, ndcZ: ndc[2] });
+			}
+
+			projected.sort((a, b) => a.ndcZ - b.ndcZ);
+			const depthCount = projected.length;
+			for (let i = 0; i < depthCount; i++) {
+				const zOrder = depthCount - i;
+				projected[i].row.el.style.zIndex = String(zOrder);
+			}
+		}
+
+		let last = performance.now();
+		function frame(now) {
+			const dt = Math.max(0, (now - last) * 0.001);
+			last = now;
+			updateCamera(dt);
+			projectMarkers();
+			statePanel.textContent =
+				`pos = [${camera.position[0].toFixed(2)}, ${camera.position[1].toFixed(2)}, ${camera.position[2].toFixed(2)}]\n` +
+				`yaw=${(yaw * Azm.RAD2DEG).toFixed(1)} pitch=${(pitch * Azm.RAD2DEG).toFixed(1)}\n`;
+			requestAnimationFrame(frame);
+		}
+		requestAnimationFrame(frame);
+	</script>
+</body>
+</html>

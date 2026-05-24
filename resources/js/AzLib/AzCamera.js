@@ -126,6 +126,27 @@ export class AzCamera {
 		};
 	}
 
+	findNDC(pos) {
+		if (!pos || (typeof pos !== "object")) return null;
+		const x = Number(pos[0]);
+		const y = Number(pos[1]);
+		const z = Number(pos[2]);
+		if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+
+		const vp = Azm.Mat4.mul(this.projection, this.view);
+		const clip = Azm.Mat4.transformV4(vp, [x, y, z, 1]);
+		const w = Number(clip[3] ?? 0);
+		if (!Number.isFinite(w) || w <= Azm.EPSILON) return null;
+
+		const invW = 1 / w;
+		const ndcX = clip[0] * invW;
+		const ndcY = clip[1] * invW;
+		const ndcZ = clip[2] * invW;
+		if (!Number.isFinite(ndcX) || !Number.isFinite(ndcY) || !Number.isFinite(ndcZ)) return null;
+
+		return Azm.Vec3.set(ndcX, ndcY, ndcZ);
+	}
+
 	static hitAABB(ray, min, max, modelMatrix = null) {
 		const origin = ray?.origin;
 		const direction = ray?.direction;

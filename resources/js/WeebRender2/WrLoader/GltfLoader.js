@@ -545,7 +545,7 @@ function buildSceneData(gltf, modelName, meshIndexToId, skinToSkeletonId) {
 			components.MeshRenderer = {
 				active: true,
 				meshID: meshIndexToId[gn.mesh] ?? null,
-				shaderKeys: [],
+				shaderIds: [],
 				morphWeights: null,
 				hasRig: gn.skin != null,
 			};

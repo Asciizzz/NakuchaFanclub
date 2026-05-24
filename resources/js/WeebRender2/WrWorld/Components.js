@@ -18,6 +18,16 @@ function asBool(value, fallback = false) {
 	return !!value;
 }
 
+function asVec4(value, fallback = [0, 0, 0, 0]) {
+	const src = (Array.isArray(value) || ArrayBuffer.isView(value)) ? value : fallback;
+	return new Float32Array([
+		Number(src[0] ?? fallback[0]) || 0,
+		Number(src[1] ?? fallback[1]) || 0,
+		Number(src[2] ?? fallback[2]) || 0,
+		Number(src[3] ?? fallback[3]) || 0,
+	]);
+}
+
 function resolveAncestorComp(node, Type) {
 	let cur = node ?? null;
 	while (cur) {
@@ -55,11 +65,17 @@ export class Transform extends Component {
 export class MeshRenderer extends Component {
 	meshId = null;
 	morphWeights = null;
+	instData = {
+		slot0: asVec4([0, 0, 0, 0]),
+		slot1: asVec4([0, 0, 0, 0]),
+		slot2: asVec4([0, 0, 0, 0]),
+		slot3: asVec4([0, 0, 0, 0]),
+	};
 	textures = {
 		albedo: null,
 	};
 	cfg = {
-		shaderId: null,
+		shaderIds: [],
 		hasRig: false,
 		display: true,
 	};
@@ -73,14 +89,8 @@ export class MeshRenderer extends Component {
 		const meshId = asId(src.meshId ?? src.meshID ?? src.mesh);
 		if (meshId) this.meshId = resolveMeshId(meshId);
 
-		const shaderId = asId(
-			src.shaderId
-			?? src.shaderID
-			?? src.shaderKey
-			?? (Array.isArray(src.shaderKeys) ? src.shaderKeys[0] : null)
-			?? options.defaultShaderId
-		);
-		if (shaderId !== null) this.cfg.shaderId = shaderId;
+		this.cfg.shaderIds = [];
+		for (const id of (Array.isArray(src.shaderIds) ? src.shaderIds : [src.shaderIds])) this.useShader(id);
 
 		if (src.hasRig !== undefined) this.cfg.hasRig = asBool(src.hasRig, this.cfg.hasRig);
 
@@ -89,6 +99,13 @@ export class MeshRenderer extends Component {
 
 		if (ArrayBuffer.isView(src.morphWeights) || Array.isArray(src.morphWeights)) {
 			this.morphWeights = new Float32Array(src.morphWeights);
+		}
+		if (src.instData && typeof src.instData === "object") {
+			const inst = src.instData;
+			if (inst.slot0 !== undefined) this.instData.slot0 = asVec4(inst.slot0);
+			if (inst.slot1 !== undefined) this.instData.slot1 = asVec4(inst.slot1);
+			if (inst.slot2 !== undefined) this.instData.slot2 = asVec4(inst.slot2);
+			if (inst.slot3 !== undefined) this.instData.slot3 = asVec4(inst.slot3);
 		}
 
 		return this;
@@ -112,18 +129,43 @@ export class MeshRenderer extends Component {
 
 	setCfg(next = {}) {
 		const src = next && typeof next === "object" ? next : {};
-		if (src.shaderId !== undefined) this.cfg.shaderId = asId(src.shaderId);
+		if (src.shaderIds !== undefined) {
+			this.cfg.shaderIds = [];
+			for (const id of (Array.isArray(src.shaderIds) ? src.shaderIds : [src.shaderIds])) this.useShader(id);
+		}
 		if (src.hasRig !== undefined) this.cfg.hasRig = asBool(src.hasRig, this.cfg.hasRig);
 		if (src.display !== undefined) this.cfg.display = asBool(src.display, this.cfg.display);
 		return this.cfg;
 	}
 
-	get shaderId() {
-		return this.cfg.shaderId;
+	useShader(value) {
+		const id = asId(value);
+		if (!id) return false;
+		if (this.cfg.shaderIds.includes(id)) return false;
+		this.cfg.shaderIds.push(id);
+		return true;
 	}
 
-	set shaderId(value) {
-		this.cfg.shaderId = asId(value);
+	disuseShader(value) {
+		const id = asId(value);
+		if (!id) return false;
+		const index = this.cfg.shaderIds.indexOf(id);
+		if (index < 0) return false;
+		this.cfg.shaderIds.splice(index, 1);
+		return true;
+	}
+
+	setInstData(slot, value) {
+		const key = asId(slot);
+		if (key !== "slot0" && key !== "slot1" && key !== "slot2" && key !== "slot3") return null;
+		this.instData[key] = asVec4(value);
+		return this.instData[key];
+	}
+
+	getInstData(slot) {
+		const key = asId(slot);
+		if (key !== "slot0" && key !== "slot1" && key !== "slot2" && key !== "slot3") return null;
+		return this.instData[key] ?? null;
 	}
 
 	setTexture(slot, textureRef) {

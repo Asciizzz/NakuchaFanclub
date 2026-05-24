@@ -310,9 +310,13 @@ struct SceneUBO {
 
 struct ObjectUBO {
     model: mat4x4f,
-    slot0: vec4f,
+    instData0: vec4f,
+    instData1: vec4f,
+    instData2: vec4f,
+    instData3: vec4f,
     albedoColor: vec4f,
-    vtxFlags: vec4f,
+    vtxFlags0: vec4f,
+    vtxFlags1: vec4f,
     extras: vec4f,
     skinPalette: array<mat4x4f, 128>,
 }
@@ -358,9 +362,13 @@ ${linkWgslWriteback}
     const fragmentWgsl = `
 struct ObjectUBO {
     model: mat4x4f,
-    slot0: vec4f,
+    instData0: vec4f,
+    instData1: vec4f,
+    instData2: vec4f,
+    instData3: vec4f,
     albedoColor: vec4f,
-    vtxFlags: vec4f,
+    vtxFlags0: vec4f,
+    vtxFlags1: vec4f,
     extras: vec4f,
     skinPalette: array<mat4x4f, 128>,
 }
@@ -397,9 +405,13 @@ layout(location=5) in vec3 a_morphPos;
 
 uniform mat4 u_viewProj;
 uniform mat4 u_model;
-uniform vec4 u_slot0;
+uniform vec4 u_instData0;
+uniform vec4 u_instData1;
+uniform vec4 u_instData2;
+uniform vec4 u_instData3;
 uniform vec4 u_albedoColor;
-uniform vec4 u_vtxFlags;
+uniform vec4 u_vtxFlags0;
+uniform vec4 u_vtxFlags1;
 uniform vec4 u_extras;
 uniform mat4 u_skinPalette[128];
 
@@ -432,7 +444,8 @@ layout(location=0) out vec4 fragColor;
 
 uniform sampler2D u_albedoTex;
 uniform vec4 u_albedoColor;
-uniform vec4 u_vtxFlags;
+uniform vec4 u_vtxFlags0;
+uniform vec4 u_vtxFlags1;
 uniform vec4 u_extras;
 uniform mat4 u_skinPalette[128];
 

@@ -119,7 +119,7 @@ async function run() {
 
 					var skinnedPos = vec4f(localPos, 1.0);
 					var skinnedNrm = localNrm;
-					if ($HAS_RIG$) {
+					if ($SKIN_ENABLED$) {
 						let weights = $BONE_WEIGHT$;
 						let wsum = weights.x + weights.y + weights.z + weights.w;
 						if (wsum > 0.00001) {
@@ -171,7 +171,7 @@ async function run() {
 
 					vec4 skinnedPos = vec4(localPos, 1.0);
 					vec3 skinnedNrm = localNrm;
-					if ($HAS_RIG$) {
+					if ($SKIN_ENABLED$) {
 						vec4 weights = $BONE_WEIGHT$;
 						float wsum = weights.x + weights.y + weights.z + weights.w;
 						if (wsum > 0.00001) {
@@ -209,7 +209,7 @@ async function run() {
 	});
 
 	const modelRoot = await world.loadModelFromURL("/Models/Nakurin.glb", {
-		shaderId: "main-shader",
+		shaderIds: ["main-shader"],
 	});
 
 	const renderRoot = world.addNode(null);
@@ -302,7 +302,7 @@ async function run() {
 			deltaTime: dt,
 			beginFrame: false,
 			endFrame: true,
-			clearColorEnabled: false,
+			clearColorEnabled: true,
 			clearDepthEnabled: false,
 		});
 
@@ -311,3 +311,4 @@ async function run() {
 
 	requestAnimationFrame(frame);
 }
+

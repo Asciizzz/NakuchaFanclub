@@ -97,7 +97,7 @@ async function run() {
                     }
 
                     var skinned = vec4f(localPos, 1.0);
-                    if ($HAS_RIG$) {
+                    if ($SKIN_ENABLED$) {
                         let weights = $BONE_WEIGHT$;
                         let wsum = weights.x + weights.y + weights.z + weights.w;
                         if (wsum > 0.00001) {
@@ -133,7 +133,7 @@ async function run() {
                     }
 
                     vec4 skinned = vec4(localPos, 1.0);
-                    if ($HAS_RIG$) {
+                    if ($SKIN_ENABLED$) {
                         vec4 weights = $BONE_WEIGHT$;
                         float wsum = weights.x + weights.y + weights.z + weights.w;
                         if (wsum > 0.00001) {
@@ -235,3 +235,4 @@ async function run() {
 
     requestAnimationFrame(frame);
 }
+
