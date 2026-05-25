@@ -152,6 +152,12 @@
 					useDepth: true,
 				},
 				pass: {},
+				sim: {
+					time: tNow * 0.001,
+					delta: dt,
+					freq: 1.8,
+					amp: 0.25,
+				},
 			});
 
 			hud.textContent =
@@ -161,6 +167,7 @@
 				`gpuTexture: ${grass.texture.gpu ? "ready" : "none"}\n` +
 				`shaderModule: ${grass.shader.module ? "ready" : "none"}\n` +
 				`shaderPipeline: ${grass.shader.pipeline ? "ready" : "none"}\n` +
+				`computePipeline: ${grass.compute.pipeline ? "ready" : "none"}\n` +
 				`meshVB: ${grass.mesh.vertexBuffer ? "ready" : "none"}\n` +
 				`meshIB: ${grass.mesh.indexBuffer ? "ready" : "none"}\n` +
 				`instances: ${grass.scene.instanceCount}\n` +

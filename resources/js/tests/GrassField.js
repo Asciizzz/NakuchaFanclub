@@ -142,6 +142,12 @@ struct VSOut {
 	@location(2) tintData: vec2f,
 }
 
+fn rotateAxis(v: vec3f, axis: vec3f, ang: f32) -> vec3f {
+	let s = sin(ang);
+	let c = cos(ang);
+	return v * c + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - c);
+}
+
 fn sampleHeight(uv: vec2f) -> f32 {
 	let c = textureSampleLevel(texHeight, heightSampler, uv, 0.0).r;
 	return c * scene.height.y;
@@ -169,7 +175,11 @@ fn vs_main(input: VSIn) -> VSOut {
 	let basisRef = select(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), abs(patchNormal.y) > 0.99);
 	let right = normalize(cross(basisRef, patchNormal));
 	let forward = normalize(cross(patchNormal, right));
-	let orientedLocal = right * input.position.x + patchNormal * input.position.y + forward * input.position.z;
+	let orientedLocal0 = right * input.position.x + patchNormal * input.position.y + forward * input.position.z;
+	let tip = 1.0 - input.uv.y;
+	let swayAng = input.instData.y * tip;
+	let orientedLocal1 = rotateAxis(orientedLocal0, patchNormal, swayAng);
+	let orientedLocal = orientedLocal1 + forward * (tip * tip) * (input.instData.y * 0.2);
 
 	let worldBase = vec3f(baseXZ.x, hC, baseXZ.y);
 	let worldPos = scene.model * vec4f(worldBase + orientedLocal, 1.0);
@@ -276,6 +286,100 @@ fn fs_main(input: VSOut) -> @location(0) vec4f {
 			useDepth: src.useDepth !== false,
 			blend: src.blend !== false,
 		};
+	}
+}
+
+class GrassCompute {
+	constructor(backendRef = null) {
+		this.backend = backendRef ?? null;
+		this.module = null;
+		this.pipeline = null;
+		this.bindGroup = null;
+	}
+
+	setBackend(backendRef) {
+		if (this.backend !== backendRef) {
+			this.backend = backendRef ?? null;
+			this.module = null;
+			this.pipeline = null;
+			this.bindGroup = null;
+		}
+		return this.backend;
+	}
+
+	createModule() {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready) return null;
+		if (this.module) return this.module;
+		this.module = backend.createShaderModule({
+			label: "GrassComputeModule",
+			code: `
+struct SceneUBO {
+	viewProj: mat4x4f,
+	model: mat4x4f,
+	grid: vec4f,
+	height: vec4f,
+	light: vec4f,
+	misc: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> scene: SceneUBO;
+@group(0) @binding(1) var<storage, read_write> instances: array<vec4f>;
+@group(0) @binding(2) var heightSampler: sampler;
+@group(0) @binding(3) var texHeight: texture_2d<f32>;
+
+fn sampleHeight(uv: vec2f) -> f32 {
+	let c = textureSampleLevel(texHeight, heightSampler, uv, 0.0).r;
+	return c * scene.height.y;
+}
+
+@compute @workgroup_size(64)
+fn cp_main(@builtin(global_invocation_id) gid: vec3u) {
+	let i = gid.x;
+	let total = u32(max(1.0, scene.grid.x * scene.grid.y));
+	if (i >= total) {
+		return;
+	}
+
+	var d = instances[i];
+	let baseXZ = vec2f(d.x, d.z);
+	let halfExtent = scene.grid.w;
+	let uv = vec2f(
+		baseXZ.x / (halfExtent * 2.0) + 0.5,
+		baseXZ.y / (halfExtent * 2.0) + 0.5
+	);
+
+	let h = sampleHeight(uv);
+	let phase = d.w * 6.28318530718;
+	let t = scene.misc.x;
+	let freq = scene.misc.z;
+	let amp = scene.misc.w;
+	let primary = sin(t * freq + phase + baseXZ.x * 0.13 + baseXZ.y * 0.17);
+	let secondary = cos(t * (freq * 0.57) + phase * 1.71 + h * 0.61);
+	let sway = (primary * 0.7 + secondary * 0.3) * amp;
+	d.y = sway;
+	instances[i] = d;
+}
+			`,
+		});
+		return this.module;
+	}
+
+	createPipeline() {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready) return null;
+		if (this.pipeline) return this.pipeline;
+		const module = this.createModule();
+		if (!module) return null;
+		this.pipeline = backend.createComputePipeline({
+			label: "GrassComputePipeline",
+			layout: "auto",
+			compute: {
+				module,
+				entryPoint: "cp_main",
+			},
+		});
+		return this.pipeline;
 	}
 }
 
@@ -459,6 +563,7 @@ export class GrassField {
 		this.camera = null;
 		this.texture = new GrassTexture(this);
 		this.shader = new GrassShader(this.backend);
+		this.compute = new GrassCompute(this.backend);
 		this.mesh = new GrashMesh(this.backend, GrashMesh.bladeData());
 		this.scene = {
 			ubo: null,
@@ -478,6 +583,7 @@ export class GrassField {
 			heightView: null,
 			heightSampler: null,
 			albedoSampler: null,
+			computeBindGroup: null,
 		};
 
 		if (backendRef && typeof backendRef === "object" && ("backend" in backendRef || "texture" in backendRef)) {
@@ -509,6 +615,7 @@ export class GrassField {
 		}
 		this.backend = backendRef ?? null;
 		this.shader.setBackend(this.backend);
+		this.compute.setBackend(this.backend);
 		this.mesh.setBackend(this.backend);
 		this.scene.bindGroup = null;
 		this.scene.uniformBuffer = null;
@@ -518,6 +625,7 @@ export class GrassField {
 		this.scene.heightView = null;
 		this.scene.heightSampler = null;
 		this.scene.albedoSampler = null;
+		this.scene.computeBindGroup = null;
 		if (this.texture.bitmap) {
 			this.texture.rebuildGPU();
 		}
@@ -538,10 +646,13 @@ export class GrassField {
 	createEngine() {
 		this.shader.createModule();
 		this.shader.createPipeline();
+		this.compute.createModule();
+		this.compute.createPipeline();
 		this.mesh.createGPU();
 		this.#buildInstances();
 		this.#buildHeightMapTexture();
 		this.#rebuildSceneBinding();
+		this.#rebuildComputeBinding();
 	}
 
 	render(cfg = {}) {
@@ -550,6 +661,7 @@ export class GrassField {
 
 		const frameCfg = this.#normalizeFrameCfg(cfg.frame);
 		const passCfg = this.#normalizePassCfg(cfg.pass);
+		const simCfg = this.#normalizeSimCfg(cfg.sim);
 		const pipeline = this.shader.createPipeline(cfg.pipeline ?? passCfg.pipeline ?? {});
 		if (!pipeline) return false;
 
@@ -566,10 +678,15 @@ export class GrassField {
 			this.#rebuildSceneBinding();
 			if (!this.scene.bindGroup) return false;
 		}
+		if (!this.scene.computeBindGroup) {
+			this.#rebuildComputeBinding();
+			if (!this.scene.computeBindGroup) return false;
+		}
 
-		this.#writeSceneUniform();
+		this.#writeSceneUniform(simCfg);
 
 		backend.beginFrame(frameCfg);
+		this.#runComputePass();
 		const pass = backend.beginRenderPass(passCfg);
 		if (!pass) {
 			backend.endFrame();
@@ -587,7 +704,7 @@ export class GrassField {
 		return true;
 	}
 
-	#writeSceneUniform() {
+	#writeSceneUniform(simCfg) {
 		const viewProj = Azm.Mat4.mul(this.camera.projection, this.camera.view);
 		this.scene.uniformData.set(viewProj, 0);
 		this.scene.uniformData.set(this.scene.modelMatrix, 16);
@@ -610,10 +727,10 @@ export class GrassField {
 		this.scene.uniformData[lightOffset + 1] = 1.0;
 		this.scene.uniformData[lightOffset + 2] = 0.25;
 		this.scene.uniformData[lightOffset + 3] = 0;
-		this.scene.uniformData[miscOffset + 0] = 0;
-		this.scene.uniformData[miscOffset + 1] = 0;
-		this.scene.uniformData[miscOffset + 2] = 0;
-		this.scene.uniformData[miscOffset + 3] = 0;
+		this.scene.uniformData[miscOffset + 0] = simCfg.time;
+		this.scene.uniformData[miscOffset + 1] = simCfg.delta;
+		this.scene.uniformData[miscOffset + 2] = simCfg.freq;
+		this.scene.uniformData[miscOffset + 3] = simCfg.amp;
 		this.backend.writeBuffer(this.scene.uniformBuffer, this.scene.uniformData, 0);
 	}
 
@@ -674,7 +791,45 @@ export class GrassField {
 				{ binding: 4, resource: this.scene.heightView },
 			],
 		});
+		this.scene.computeBindGroup = null;
 		return !!this.scene.bindGroup;
+	}
+
+	#rebuildComputeBinding() {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready) return false;
+		const pipeline = this.compute.pipeline ?? this.compute.createPipeline();
+		if (!pipeline || !this.scene.uniformBuffer || !this.scene.instanceBuffer || !this.scene.heightView || !this.scene.heightSampler) {
+			return false;
+		}
+
+		const layout = pipeline.getBindGroupLayout(0);
+		this.scene.computeBindGroup = backend.createBindGroup({
+			label: "GrassComputeBG",
+			layout,
+			entries: [
+				{ binding: 0, resource: { buffer: this.scene.uniformBuffer, offset: 0, size: this.scene.uniformData.byteLength } },
+				{ binding: 1, resource: { buffer: this.scene.instanceBuffer, offset: 0, size: this.scene.instanceData.byteLength } },
+				{ binding: 2, resource: this.scene.heightSampler },
+				{ binding: 3, resource: this.scene.heightView },
+			],
+		});
+		return !!this.scene.computeBindGroup;
+	}
+
+	#runComputePass() {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready) return false;
+		const pipeline = this.compute.pipeline ?? this.compute.createPipeline();
+		if (!pipeline || !this.scene.computeBindGroup) return false;
+		const pass = backend.beginComputePass({ label: "GrassComputePass" });
+		if (!pass) return false;
+		pass.setPipeline(pipeline);
+		pass.setBindGroup(0, this.scene.computeBindGroup);
+		const groups = Math.ceil(this.scene.instanceCount / 64);
+		pass.dispatchWorkgroups(Math.max(1, groups), 1, 1);
+		pass.end();
+		return true;
 	}
 
 	#buildInstances() {
@@ -699,13 +854,14 @@ export class GrassField {
 				data[p + 0] = wx;
 				data[p + 1] = 0;
 				data[p + 2] = wz;
-				data[p + 3] = 0;
+				data[p + 3] = (Math.sin(wx * 11.73 + wz * 7.91) * 0.5 + 0.5);
 				p += 4;
 			}
 		}
 
 		const usage =
 			(globalThis.GPUBufferUsage?.VERTEX ?? 0x20) |
+			(globalThis.GPUBufferUsage?.STORAGE ?? 0x80) |
 			(globalThis.GPUBufferUsage?.COPY_DST ?? 0x08);
 		this.scene.instanceBuffer = backend.createBuffer({
 			label: "GrassInstanceBuffer",
@@ -752,6 +908,7 @@ export class GrassField {
 		this.scene.heightTexture = texture;
 		this.scene.heightView = texture.createView();
 		this.scene.bindGroup = null;
+		this.scene.computeBindGroup = null;
 		return true;
 	}
 
@@ -800,6 +957,15 @@ export class GrassField {
 		if (src.useDepth === true || src.useDepth === false) out.useDepth = src.useDepth;
 		if (src.pipeline && typeof src.pipeline === "object") out.pipeline = src.pipeline;
 		return out;
+	}
+
+	#normalizeSimCfg(cfg) {
+		const src = cfg && typeof cfg === "object" ? cfg : {};
+		const time = Number.isFinite(src.time) ? src.time : performance.now() * 0.001;
+		const delta = Number.isFinite(src.delta) ? src.delta : 1 / 60;
+		const freq = Number.isFinite(src.freq) ? src.freq : 1.8;
+		const amp = Number.isFinite(src.amp) ? src.amp : 0.22;
+		return { time, delta, freq, amp };
 	}
 }
 
