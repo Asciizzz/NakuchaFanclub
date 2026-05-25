@@ -163,6 +163,8 @@
 				`shaderPipeline: ${grass.shader.pipeline ? "ready" : "none"}\n` +
 				`meshVB: ${grass.mesh.vertexBuffer ? "ready" : "none"}\n` +
 				`meshIB: ${grass.mesh.indexBuffer ? "ready" : "none"}\n` +
+				`instances: ${grass.scene.instanceCount}\n` +
+				`heightMap: ${grass.scene.heightResolution} (${grass.scene.heightView ? "ready" : "none"})\n` +
 				`fov: ${camera.fov.toFixed(1)}\n` +
 				`pointerLock: ${document.pointerLockElement === canvas ? "on" : "off"}\n` +
 				`controls: click + mouse, WASD, Shift, wheel\n` +
