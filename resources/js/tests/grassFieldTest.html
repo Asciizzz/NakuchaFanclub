@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>Grass Field Base Test</title>
+	<style>
+		:root {
+			--c0: #87aee4;
+			--c1: #5f88c8;
+			--c2: #0f1f34;
+			--c3: #dce9ff;
+		}
+		html, body {
+			margin: 0;
+			width: 100%;
+			height: 100%;
+		}
+		body {
+			overflow: hidden;
+			background: radial-gradient(circle at 30% 20%, var(--c0) 0%, var(--c1) 44%, var(--c2) 100%);
+			font-family: Outfit, Segoe UI, Arial, sans-serif;
+			color: var(--c3);
+		}
+		#root {
+			position: fixed;
+			inset: 0;
+		}
+		#hud {
+			position: fixed;
+			left: 12px;
+			top: 12px;
+			padding: 10px 12px;
+			border-radius: 10px;
+			background: color-mix(in srgb, #091522 78%, transparent 22%);
+			border: 1px solid color-mix(in srgb, #7ea2dd 45%, transparent 55%);
+			font-size: 12px;
+			white-space: pre;
+		}
+	</style>
+</head>
+<body>
+	<div id="root"></div>
+	<div id="hud">init</div>
+	<script type="module">
+		import { AzWBackend } from "../AzLib/AzWBackend.js";
+		import { AzCamera } from "../AzLib/AzCamera.js";
+		import { GrassField } from "./GrassField.js";
+
+		const root = document.getElementById("root");
+		const hud = document.getElementById("hud");
+		const canvas = document.createElement("canvas");
+		canvas.style.width = "100%";
+		canvas.style.height = "100%";
+		root.replaceChildren(canvas);
+
+		const { backend, report } = await AzWBackend.Base.choose(canvas, { prefer: "webgpu" });
+		if (backend.kind !== "webgpu") throw new Error("This test requires WebGPU");
+
+		const camera = new AzCamera({ position: [0, 1.2, 2.6], near: 0.1, far: 200, fov: 50 });
+		let yaw = 0;
+		let pitch = 0;
+		camera.setYawPitch(yaw, pitch, 0);
+
+		const keys = new Set();
+		const moveSpeed = 2.8;
+		const shiftBoost = 3.0;
+		const mouseSense = 0.002;
+		const fovMin = 20;
+		const fovMax = 85;
+
+		canvas.addEventListener("click", () => {
+			canvas.requestPointerLock();
+		});
+
+		document.addEventListener("pointerlockchange", () => {
+			if (document.pointerLockElement === canvas) {
+				canvas.style.cursor = "none";
+			} else {
+				canvas.style.cursor = "default";
+			}
+		});
+
+		document.addEventListener("mousemove", (event) => {
+			if (document.pointerLockElement !== canvas) return;
+			yaw -= event.movementX * mouseSense;
+			pitch -= event.movementY * mouseSense;
+			if (pitch > 1.55) pitch = 1.55;
+			if (pitch < -1.55) pitch = -1.55;
+			camera.setYawPitch(yaw, pitch, 0);
+		});
+
+		document.addEventListener("keydown", (event) => {
+			keys.add(event.code);
+		});
+		document.addEventListener("keyup", (event) => {
+			keys.delete(event.code);
+		});
+
+		canvas.addEventListener("wheel", (event) => {
+			event.preventDefault();
+			camera.fov += event.deltaY * 0.03;
+			if (camera.fov < fovMin) camera.fov = fovMin;
+			if (camera.fov > fovMax) camera.fov = fovMax;
+		}, { passive: false });
+
+		function resize() {
+			backend.resize({ maxPixelRatio: 2 });
+			const w = Math.max(1, canvas.clientWidth || canvas.width || 1);
+			const h = Math.max(1, canvas.clientHeight || canvas.height || 1);
+			camera.aspect = w / h;
+		}
+		resize();
+		new ResizeObserver(resize).observe(root);
+
+		const grass = new GrassField();
+		grass.setBackend(backend);
+		grass.setCamera(camera);
+		await grass.setTextureFromURL("./grass.png");
+		grass.createEngine();
+
+		let tPrev = performance.now();
+		function frame(tNow) {
+			const dt = Math.min(0.05, Math.max(0.0001, (tNow - tPrev) * 0.001));
+			tPrev = tNow;
+
+			let moveX = 0;
+			let moveZ = 0;
+			if (keys.has("KeyW")) moveZ += 1;
+			if (keys.has("KeyS")) moveZ -= 1;
+			if (keys.has("KeyD")) moveX += 1;
+			if (keys.has("KeyA")) moveX -= 1;
+
+			if (moveX !== 0 || moveZ !== 0) {
+				const speed = moveSpeed * (keys.has("ShiftLeft") || keys.has("ShiftRight") ? shiftBoost : 1);
+				const right = camera.right;
+				const forward = camera.forward;
+				const len = Math.hypot(moveX, moveZ) || 1;
+				const sx = moveX / len;
+				const sz = moveZ / len;
+				camera.position[0] += (right[0] * sx + forward[0] * sz) * speed * dt;
+				camera.position[1] += (right[1] * sx + forward[1] * sz) * speed * dt;
+				camera.position[2] += (right[2] * sx + forward[2] * sz) * speed * dt;
+			}
+
+			grass.render({
+				frame: {
+					clearColor: [0.52, 0.68, 0.90, 1],
+					clearColorEnabled: true,
+					clearDepth: 1,
+					clearDepthEnabled: true,
+					useDepth: true,
+				},
+				pass: {},
+			});
+
+			hud.textContent =
+				`backend: ${report.chosen}\n` +
+				`textureURL: ${grass.texture.url ?? "(none)"}\n` +
+				`textureSize: ${grass.texture.size.width}x${grass.texture.size.height}\n` +
+				`gpuTexture: ${grass.texture.gpu ? "ready" : "none"}\n` +
+				`shaderModule: ${grass.shader.module ? "ready" : "none"}\n` +
+				`shaderPipeline: ${grass.shader.pipeline ? "ready" : "none"}\n` +
+				`meshVB: ${grass.mesh.vertexBuffer ? "ready" : "none"}\n` +
+				`meshIB: ${grass.mesh.indexBuffer ? "ready" : "none"}\n` +
+				`fov: ${camera.fov.toFixed(1)}\n` +
+				`pointerLock: ${document.pointerLockElement === canvas ? "on" : "off"}\n` +
+				`controls: click + mouse, WASD, Shift, wheel\n` +
+				`camera: ${grass.camera ? "attached" : "none"}`;
+			requestAnimationFrame(frame);
+		}
+		requestAnimationFrame(frame);
+	</script>
+</body>
+</html>
