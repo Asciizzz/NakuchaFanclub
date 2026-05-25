@@ -344,34 +344,6 @@ function normalizeLinksByLanguage(links, preferredLang) {
 	return out;
 }
 
-function mergeLinks(wgslLinks, glslLinks) {
-	if (wgslLinks.length <= 0 && glslLinks.length <= 0) return [];
-	if (wgslLinks.length <= 0) return glslLinks.map((link) => ({ ...link }));
-	if (glslLinks.length <= 0) return wgslLinks.map((link) => ({ ...link }));
-
-	if (wgslLinks.length !== glslLinks.length) {
-		throw new Error("[WrShader] wgsl/glsl link count mismatch");
-	}
-
-	const out = [];
-	for (let i = 0; i < wgslLinks.length; i += 1) {
-		const a = wgslLinks[i];
-		const b = glslLinks[i];
-		if (a.name !== b.name) {
-			throw new Error(`[WrShader] link mismatch at index ${i}: "${a.name}" vs "${b.name}"`);
-		}
-		out.push({
-			name: a.name,
-			fieldName: `wr_link_${a.name}`,
-			wgslType: a.wgslType,
-			glslType: b.glslType,
-			defaultWgsl: a.defaultWgsl,
-			defaultGlsl: b.defaultGlsl,
-		});
-	}
-	return out;
-}
-
 function normalizeMethods(value) {
 	if (typeof value === "string") {
 		const text = value.trim();
@@ -753,15 +725,17 @@ function normalizeDescriptor(desc = {}) {
 	const glslVertex = glsl.vertex && typeof glsl.vertex === "object" ? glsl.vertex : {};
 	const glslFragment = glsl.fragment && typeof glsl.fragment === "object" ? glsl.fragment : {};
 
-	const wgslLinks = normalizeLinksByLanguage(wgsl.link ?? wgsl.links ?? wgsl.linkage, "wgsl");
-	const glslLinks = normalizeLinksByLanguage(glsl.link ?? glsl.links ?? glsl.linkage, "glsl");
-	const links = mergeLinks(wgslLinks, glslLinks);
+	const wgslLinks = normalizeLinksByLanguage(wgsl.links, "wgsl");
+	const glslLinks = normalizeLinksByLanguage(glsl.links, "glsl");
 
 	const out = {
 		id,
 		label: asText(source.label, id),
 		renderCfg,
-		links,
+		links: {
+			wgsl: wgslLinks,
+			glsl: glslLinks,
+		},
 		wgsl: {
 			vertex: {
 				methods: normalizeMethods(wgslVertex.methods),
@@ -855,8 +829,8 @@ function buildResolvedSources(norm) {
 			wgsl: keyMapWgsl,
 			glsl: keyMapGlsl,
 		},
-		wgsl: buildWgslSource(norm.wgsl, norm.links, keyMapWgsl),
-		glsl: buildGlslSource(norm.glsl, norm.links, keyMapGlsl),
+		wgsl: buildWgslSource(norm.wgsl, norm.links?.wgsl ?? [], keyMapWgsl),
+		glsl: buildGlslSource(norm.glsl, norm.links?.glsl ?? [], keyMapGlsl),
 	};
 }
 
@@ -965,7 +939,10 @@ export class WrShader {
 	constructor(desc = {}) {
 		this.id = "wr-shader";
 		this.label = "wr-shader";
-		this.links = [];
+		this.links = {
+			wgsl: [],
+			glsl: [],
+		};
 		this.keyMap = { wgsl: {}, glsl: {} };
 		this.renderCfg = normalizeRenderCfg(null);
 		this.renderCfgKey = renderCfgKey(this.renderCfg);

@@ -1,5 +1,5 @@
 export { WrWorld } from "./WrWorld/World.js";
-export { WrNode } from "./WrWorld/Node.js";
+export { WrNode } from "./WrWorld/World.js";
 export {
 	Component as WrComponent,
 	Transform as WrTransform,

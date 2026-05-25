@@ -1,7 +1,7 @@
-﻿# WeebRender2
+# WeebRender2
 
-Runtime notes for the current WR2 branch
-This file matches the current code in `WrWorld`, `WrShader`, and `WrWorld/Components`
+Runtime notes for the current WR2 branch  
+This file matches current `WrWorld`, `WrShader`, and `WrWorld/Components`
 
 ## Quick Start
 
@@ -31,12 +31,12 @@ Swaps backend and drops cached GPU resources
 Sets active camera reference
 
 ### `world.registerShader(id, desc)`
-Registers a WR shader
+Registers a WR shader, refer to Shader section for more details
 
 ### `world.loadModelFromURL(url, options)`
 Loads GLB and returns copied branch root node
 
-`options.shaderIds` is an optional shader list appended to each loaded MeshRenderer
+`options.shaderIds` is optional and gets appended to each loaded MeshRenderer
 
 ### `world.render(fromNode, options)`
 Builds draw queue from `fromNode` branch and optionally draws it
@@ -54,7 +54,7 @@ Options:
 - `clearColorEnabled` default `true` only when starting frame, else `false`
 - `clearDepthEnabled` default `true` only when starting frame, else `false`
 
-### Node-centric multi-branch rendering
+### Node-centric Multi-branch Rendering
 
 ```js
 rootA.render({
@@ -76,7 +76,7 @@ rootB.render({
 });
 ```
 
-## Node API (no detailed description because the description is RIGHT FCKING THERE in the method names)
+## Node API
 
 ### `node.addComp(Type)`
 Add component instance to node
@@ -92,12 +92,12 @@ Proxy to `world.render(node, options)`
 
 ## Components
 
-## `WrTransform`
+### `WrTransform`
 - `local: mat4`
 - `world: mat4`
 - `applyRaw(raw)`
 
-## `WrMeshRenderer`
+### `WrMeshRenderer`
 - `meshId`
 - `textures.albedo`
 - `morphWeights`
@@ -120,15 +120,18 @@ Methods:
 
 Notes:
 - One mesh renderer can draw with multiple shaders in one render call
+- If no valid shader id is present, it does not draw
 
-## `WrLiveSkeleton`
+### `WrLiveSkeleton`
 - `skeletonId`
 - `bones[]`
 - `setSkeleton(ref)`
 - `setBonePose(indexOrName, mat4)`
 - `buildPalette(maxBones)`
 
-## Shader Descriptor
+## Shader
+
+### Descriptor
 
 ```js
 world.registerShader("main", {
@@ -137,9 +140,11 @@ world.registerShader("main", {
     depthWrite: true,
     cull: "back",
     blend: false,
+    clearColor: [0.62, 0.72, 0.92, 1],
+    clearDepth: 1,
   },
   wgsl: {
-    link: [
+    links: [
       { name: "out_uv", type: "vec2f" },
       { name: "out_nrm", type: "vec3f" },
     ],
@@ -147,7 +152,7 @@ world.registerShader("main", {
     fragment: { methods: [], main: "..." },
   },
   glsl: {
-    link: [
+    links: [
       { name: "out_uv", type: "vec2" },
       { name: "out_nrm", type: "vec3" },
     ],
@@ -157,10 +162,28 @@ world.registerShader("main", {
 });
 ```
 
-`link` is the vertex->fragment data contract
-Do not use legacy `$LINK0...$LINK7$` keys, they are removed
+`links` is the vertex->fragment data contract  
+Legacy `$LINK0...$LINK7$` keys are removed
 
-## Stage Key Reference
+### `renderCfg`
+
+`renderCfg` is fixed shader state for WR2.  
+WrShader enforces this consistently across WGPU and WGL2.
+
+Fields:
+- `depthTest: boolean`
+- `depthWrite: boolean`
+- `cull: "none" | "back" | "front"`
+- `blend: boolean`
+- `clearColor: [r, g, b, a]` default clear color when render options do not override it
+- `clearDepth: number` default depth clear when render options do not override it
+
+Notes:
+- In WGPU this maps to baked pipeline state
+- In WGL2 WR2 still treats this as fixed per shader to match WR2 behavior
+- Per-frame clear behavior can still be overridden in `world.render(..., options)`
+
+### Stage Key Reference
 
 Stage tags:
 - `V` vertex only
@@ -168,7 +191,7 @@ Stage tags:
 - `VF` both
 
 | Key | Stage | Meaning |
-| - | - | - |
+| --- | --- | --- |
 | `$POSITION$` | V | Vertex position input |
 | `$NORMAL$` | V | Vertex normal input |
 | `$UV$` | VF | UV input in vertex, linked UV in fragment |
@@ -202,13 +225,13 @@ Stage tags:
 | `$ALBEDO_COLOR$` | F | Albedo color factor |
 | `$OUT_COLOR$` | F | Fragment output color target |
 
-### Important rules
+### Important Rules
 
 - `$INST_DATA0..3$` are custom instance data only
 - Fragment stage does not accept `$INST_DATA0..3$`
-- If fragment needs instance custom data, pass it via explicit `link`
+- If fragment needs instance custom data, pass it through explicit `link`
 - Material color/texture are separate from instance data
-- `hasRig` in component is config intent, `$SKIN_ENABLED$` is runtime flag in shader
+- `hasRig` in component is config intent, `$SKIN_ENABLED$` is runtime shader flag
 
 ## Minimal Render Loop
 
@@ -227,4 +250,3 @@ function frame(now) {
 
 requestAnimationFrame(frame);
 ```
-

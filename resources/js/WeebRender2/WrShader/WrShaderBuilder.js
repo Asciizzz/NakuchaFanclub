@@ -152,9 +152,7 @@ function wrAssertLinkName(name) {
  */
 function wrCollectLinks(shaderDesc = {}) {
     const rawList = [];
-    if (shaderDesc.link != null) rawList.push(shaderDesc.link);
     if (Array.isArray(shaderDesc.links)) rawList.push(...shaderDesc.links);
-    if (Array.isArray(shaderDesc.linkage)) rawList.push(...shaderDesc.linkage);
 
     const withOrder = rawList.map((raw, index) => {
         const source = (raw && typeof raw === "object") ? raw : { name: raw };
@@ -462,7 +460,6 @@ ${fragmentMainGlsl}
         ...shaderDesc,
         mode: "template",
         links,
-        linkage: links,
         vertex: {
             ...(shaderDesc.vertex ?? {}),
             wgsl: vertexWgsl,

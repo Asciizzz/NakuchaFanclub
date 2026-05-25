@@ -1,4 +1,4 @@
-import { Ctx } from "../../AzLib/AzHie.js";
+import { Ctx, Node } from "../../AzLib/AzHie.js";
 import * as Azm from "../../AzLib/Azm.js";
 import {
 	WrMeshStore,
@@ -8,8 +8,8 @@ import {
 } from "./Store.js";
 import { load as wrLoadGLB } from "../WrLoader/GltfLoader.js";
 
-import WrNode from "./Node.js";
 import {
+	Component,
 	Transform,
 	MeshRenderer,
 	LiveSkeleton,
@@ -37,6 +37,41 @@ const WR_GPU_BUFFER_USAGE = Object.freeze({
 	INDEX: globalThis.GPUBufferUsage?.INDEX ?? 0x10,
 	UNIFORM: globalThis.GPUBufferUsage?.UNIFORM ?? 0x40,
 });
+
+function isCompType(Type) {
+	return typeof Type === "function" && (Type === Component || Type.prototype instanceof Component);
+}
+
+export class WrNode extends Node {
+	components = new Map();
+
+	addComp(Type) {
+		if (!isCompType(Type)) return null;
+		const existing = this.components.get(Type) ?? null;
+		if (existing) return existing;
+		const comp = new Type(this);
+		this.components.set(Type, comp);
+		return comp;
+	}
+
+	getComp(Type) {
+		if (!isCompType(Type)) return null;
+		return this.components.get(Type) ?? null;
+	}
+
+	removeComp(Type) {
+		if (!isCompType(Type)) return null;
+		const value = this.components.get(Type) ?? null;
+		if (!value) return null;
+		this.components.delete(Type);
+		return value;
+	}
+
+	render(options = {}) {
+		if (!this.ctx || typeof this.ctx.render !== "function") return null;
+		return this.ctx.render(this, options);
+	}
+}
 
 function asId(value) {
 	if (value == null) return null;
@@ -1396,6 +1431,7 @@ export class WrWorld extends Ctx {
 
 if (typeof window !== "undefined") {
 	window.WrWorld2 = WrWorld;
+	window.WrNode = WrNode;
 }
 
 export default WrWorld;
