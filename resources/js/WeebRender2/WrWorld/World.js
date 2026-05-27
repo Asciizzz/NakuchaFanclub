@@ -92,6 +92,18 @@ function asList(value) {
 	return Array.isArray(value) ? value : [];
 }
 
+function normalizeShaderPriorities(value) {
+	const out = [];
+	const seen = new Set();
+	for (const item of asList(value)) {
+		const id = asId(item);
+		if (!id || seen.has(id)) continue;
+		seen.add(id);
+		out.push(id);
+	}
+	return out;
+}
+
 function asNodeRef(world, value) {
 	if (!world) return null;
 	if (value && typeof value === "object") {
@@ -487,6 +499,7 @@ export class WrWorld extends Ctx {
 		}
 
 		const queue = this.#buildRenderQueue(start, options);
+		this.#applyShaderPriorities(queue, options.shaderPriorities);
 		if (!this.#backend?.ready || options.collectOnly === true) return queue;
 
 		if (this.#backend.kind === "webgpu") this.#renderWgpu(queue, options);
@@ -932,6 +945,30 @@ export class WrWorld extends Ctx {
 			backend.endFrame();
 			this.#gpu.frameActive = false;
 		}
+	}
+
+	#applyShaderPriorities(queue, shaderPriorities) {
+		if (!queue || !Array.isArray(queue.draws) || queue.draws.length <= 1) return;
+		const priorities = normalizeShaderPriorities(shaderPriorities);
+		if (priorities.length <= 0) return;
+
+		const rank = new Map();
+		for (let i = 0; i < priorities.length; i += 1) rank.set(priorities[i], i);
+		const ordered = Array.from({ length: priorities.length }, () => []);
+		const others = [];
+
+		for (const draw of queue.draws) {
+			const id = asId(draw?.shaderId);
+			const idx = id != null ? rank.get(id) : undefined;
+			if (idx === undefined) {
+				others.push(draw);
+				continue;
+			}
+			ordered[idx].push(draw);
+		}
+
+		queue.draws = ordered.flat().concat(others);
+		queue.count = queue.draws.length;
 	}
 
 	#ensureWgpuShader(shader, sampleCount = 1) {
