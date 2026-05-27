@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="UTF-8" />
+	<title>Rectangle Canvas Exporter</title>
+</head>
+
+<style>
+	body {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 100vh;
+		margin: 0;
+		background: #000;
+		font-family: Arial, sans-serif;
+	}
+
+	canvas {
+		border: 1px solid #ccc;
+		/* scale down for better visibility */
+		transform: scale(0.8);
+	}
+
+	button {
+		padding: 10px 20px;
+		font-size: 16px;
+		cursor: pointer;
+	}
+</style>
+
+<body>
+	<canvas id="canvas" width="1024" height="1024"></canvas>
+	<br />
+	<button onclick="exportImage()">Export PNG</button>
+
+	<script>
+		// Free-4-all
+
+		const shared_width = 128;
+		const shared_height = 128;
+
+		const row_count = 1024 / shared_height;
+		const column_count = 1024 / shared_width;
+
+		const color_list_1 = [
+			"#FCFAFC", // white
+			"#F3EAFC", // soft white lavender
+			"#FBE8DA", // cream peach
+
+			"#E3DFFB", // pale lavender
+			"#BFCBFB", // pale blue
+			"#9FB6F8", // background blue
+			"#A5AEF3", // soft periwinkle
+			"#9798EE", // muted blue-purple
+			"#6579C3", // medium blue shadow
+			"#586CB7", // deeper blue
+			"#586BB7", // dark blue shadow
+
+			"#DCBFF7", // light purple
+			"#C8A9F2", // pastel purple
+			"#B293E8", // medium lavender
+			"#9785DB", // muted purple
+			"#8C79EF", // saturated purple accent
+
+			"#EED6F0", // pale pink
+			"#F9B7E0", // soft pink
+			"#E4A7F6", // pink-purple highlight
+
+			"#9AA380"  // muted plant green
+
+			// Add other if needed
+		];
+
+		const rectangles = [];
+		for (let i = 0; i < color_list_1.length; i++) {
+			const color = color_list_1[i];
+			
+			// Find the x, y position for this triangle
+			// Column first, then row
+			const x = Math.floor(i / row_count) * shared_width;
+			const y = (i % row_count) * shared_height;
+
+			rectangles.push({
+				x: x,
+				y: y,
+				width: shared_width,
+				height: shared_height,
+				color: `${color}`,
+			});
+		}
+
+		// Main render
+
+		const canvas = document.getElementById("canvas");
+		const ctx = canvas.getContext("2d");
+
+		function draw() {
+			ctx.fillStyle = "#ffffff";
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			for (const rect of rectangles) {
+				ctx.fillStyle = rect.color;
+				ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+			}
+		}
+
+		function exportImage() {
+			const link = document.createElement("a");
+			link.download = "Nakuroom.png";
+			link.href = canvas.toDataURL("image/png");
+			link.click();
+		}
+
+		draw();
+	</script>
+</body>
+
+</html>

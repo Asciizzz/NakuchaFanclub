@@ -97,6 +97,9 @@ class GrassShader {
 
 	setBackend(backendRef) {
 		if (this.backend !== backendRef) {
+			if (this.uniformBuffer && typeof this.uniformBuffer.destroy === "function") {
+				this.uniformBuffer.destroy();
+			}
 			this.backend = backendRef ?? null;
 			this.module = null;
 			this.pipeline = null;
@@ -121,6 +124,8 @@ struct SceneUBO {
 	height: vec4f,
 	light: vec4f,
 	misc: vec4f,
+	camPos: vec4f,
+	fog: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> scene: SceneUBO;
@@ -140,6 +145,7 @@ struct VSOut {
 	@location(0) uv: vec2f,
 	@location(1) patchNormal: vec3f,
 	@location(2) tintData: vec2f,
+	@location(3) worldPos: vec3f,
 }
 
 fn rotateAxis(v: vec3f, axis: vec3f, ang: f32) -> vec3f {
@@ -189,6 +195,7 @@ fn vs_main(input: VSIn) -> VSOut {
 	out.uv = input.uv;
 	out.patchNormal = patchNormal;
 	out.tintData = vec2f(h01, noise);
+	out.worldPos = worldPos.xyz;
 	return out;
 }
 
@@ -210,7 +217,15 @@ fn fs_main(input: VSOut) -> @location(0) vec4f {
 	let patchVar = 0.98 + (noise - 0.5) * 0.08;
 	let baseColor = tex.rgb * elevTint * patchVar;
 	let lit = baseColor * (0.8 + 0.2 * ndl);
-	return vec4f(lit, tex.a);
+	let fogDist = length(input.worldPos - scene.camPos.xyz);
+	let fogDensity = scene.fog.x;
+	let fogExp = scene.fog.y;
+	let fogMix = clamp(1.0 - exp(-pow(fogDist * fogDensity, fogExp)), 0.0, 1.0);
+	let fogTint = vec3f(0.64, 0.80, 1.04);
+	let fogLift = vec3f(0.03, 0.06, 0.10);
+	let fogged = lit * fogTint + fogLift;
+	let finalColor = mix(lit, fogged, fogMix);
+	return vec4f(finalColor, tex.a);
 }
 			`,
 		});
@@ -280,11 +295,243 @@ fn fs_main(input: VSOut) -> @location(0) vec4f {
 			depthFormat: String(src.depthFormat ?? "depth24plus"),
 			topology: String(src.topology ?? "triangle-list"),
 			frontFace: String(src.frontFace ?? "ccw"),
-			cullMode: src.cullMode == null ? "none" : String(src.cullMode),
+			cullMode: src.cullMode == null ? "back" : String(src.cullMode),
 			depthCompare: String(src.depthCompare ?? "less"),
 			depthWriteEnabled: src.depthWriteEnabled !== false,
 			useDepth: src.useDepth !== false,
 			blend: src.blend !== false,
+		};
+	}
+}
+
+export class SkyObject {
+	constructor(backendRef = null) {
+		this.backend = backendRef ?? null;
+		this.camera = null;
+		this.module = null;
+		this.pipeline = null;
+		this.pipelineCfg = null;
+		this.pipelineSig = "";
+		this.uniformBuffer = null;
+		this.uniformData = new Float32Array(32);
+		this.bindGroup = null;
+	}
+
+	setBackend(backendRef) {
+		if (this.backend !== backendRef) {
+			this.backend = backendRef ?? null;
+			this.module = null;
+			this.pipeline = null;
+			this.pipelineCfg = null;
+			this.pipelineSig = "";
+			this.uniformBuffer = null;
+			this.bindGroup = null;
+		}
+		return this.backend;
+	}
+
+	setCamera(cameraRef) {
+		this.camera = cameraRef ?? null;
+		return this.camera;
+	}
+
+	createModule() {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready) return null;
+		if (this.module) return this.module;
+		this.module = backend.createShaderModule({
+			label: "SkyShaderModule",
+			code: `
+struct SkyUBO {
+	invViewProj: mat4x4f,
+	camPos: vec4f,
+	sunDir: vec4f,
+	fogColor: vec4f,
+	params: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> sky: SkyUBO;
+
+struct VSOut {
+	@builtin(position) position: vec4f,
+	@location(0) ndc: vec2f,
+}
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VSOut {
+	var out: VSOut;
+	var p = array<vec2f, 3>(
+		vec2f(-1.0, -1.0),
+		vec2f(3.0, -1.0),
+		vec2f(-1.0, 3.0)
+	);
+	let xy = p[vi];
+	out.position = vec4f(xy, 0.0, 1.0);
+	out.ndc = xy;
+	return out;
+}
+
+@fragment
+fn fs_main(input: VSOut) -> @location(0) vec4f {
+	let ndc = input.ndc;
+	let nearClip = vec4f(ndc, 0.0, 1.0);
+	let farClip = vec4f(ndc, 1.0, 1.0);
+	let worldNear4 = sky.invViewProj * nearClip;
+	let worldFar4 = sky.invViewProj * farClip;
+	let worldNear = worldNear4.xyz / max(worldNear4.w, 0.00001);
+	let worldFar = worldFar4.xyz / max(worldFar4.w, 0.00001);
+	let rayDir = normalize(worldFar - worldNear);
+
+	let h = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
+	// let skyTop = vec3f(0.60, 0.76, 0.86);
+	// let skyMid = vec3f(0.71, 0.81, 0.77);
+	// let skyHorizon = vec3f(0.90, 0.89, 0.72);
+	let skyTop = vec3f(0.2, 0.2, 0.35);
+	let skyMid = vec3f(0.2, 0.2, 0.35);
+	let skyHorizon = vec3f(0.3, 0.3, 0.45);
+	let t0 = smoothstep(0.0, 0.58, h);
+	let t1 = smoothstep(0.58, 1.0, h);
+	let lower = mix(skyHorizon, skyMid, t0);
+	var color = mix(lower, skyTop, t1);
+
+	let sunDot = max(dot(rayDir, normalize(sky.sunDir.xyz)), 0.0);
+	let sunCore = pow(sunDot, 1100.0);
+	let sunGlow = pow(sunDot, 70.0) * 0.42;
+	color += vec3f(1.0, 1.0, 1.0) * sunCore;
+	color += vec3f(1.0, 0.98, 0.90) * sunGlow;
+
+	let haze = smoothstep(0.18, -0.12, rayDir.y);
+	color = mix(color, sky.fogColor.xyz, haze * 0.33);
+	return vec4f(color, 1.0);
+}
+			`,
+		});
+		return this.module;
+	}
+
+	createPipeline(cfg = {}) {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready) return null;
+		const nextCfg = this.#normalizePipelineCfg(cfg);
+		const nextSig = JSON.stringify(nextCfg);
+		if (this.pipeline && this.pipelineSig === nextSig) return this.pipeline;
+
+		this.pipeline = null;
+		this.pipelineCfg = null;
+		this.pipelineSig = "";
+		const module = this.createModule();
+		if (!module) return null;
+
+		const pipeline = backend.createRenderPipeline({
+			label: "SkyShaderPipeline",
+			layout: "auto",
+			vertex: {
+				module,
+				entryPoint: "vs_main",
+				buffers: [],
+			},
+			fragment: {
+				module,
+				entryPoint: "fs_main",
+				targets: [{ format: nextCfg.format, writeMask: 0xF }],
+			},
+			primitive: {
+				topology: "triangle-list",
+				frontFace: "ccw",
+				cullMode: "none",
+			},
+			depthStencil: {
+				format: nextCfg.depthFormat,
+				depthWriteEnabled: false,
+				depthCompare: "always",
+			},
+		});
+
+		this.pipeline = pipeline ?? null;
+		this.pipelineCfg = nextCfg;
+		this.pipelineSig = this.pipeline ? nextSig : "";
+		return this.pipeline;
+	}
+
+	createEngine(cfg = {}) {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready) return false;
+		this.createModule();
+		this.createPipeline(cfg);
+		if (!this.uniformBuffer) {
+			const usage =
+				(globalThis.GPUBufferUsage?.UNIFORM ?? 0x40) |
+				(globalThis.GPUBufferUsage?.COPY_DST ?? 0x08);
+			this.uniformBuffer = backend.createBuffer({
+				label: "SkyUBO",
+				size: this.uniformData.byteLength,
+				usage,
+				mappedAtCreation: false,
+			});
+		}
+		if (!this.uniformBuffer) return false;
+		this.#rebuildBinding();
+		return !!this.bindGroup;
+	}
+
+	update(cfg = {}) {
+		const backend = this.backend;
+		if (!backend || backend.kind !== "webgpu" || !backend.ready || !this.camera) return false;
+		if (!this.createEngine(cfg)) return false;
+		const vp = Azm.Mat4.mul(this.camera.projection, this.camera.view);
+		const invVp = Azm.Mat4.invert(vp);
+		if (!invVp) return false;
+		this.uniformData.set(invVp, 0);
+		this.uniformData[16] = this.camera.position[0];
+		this.uniformData[17] = this.camera.position[1];
+		this.uniformData[18] = this.camera.position[2];
+		this.uniformData[19] = 1;
+		this.uniformData[20] = Number.isFinite(cfg.sunX) ? cfg.sunX : 0.0;
+		this.uniformData[21] = Number.isFinite(cfg.sunY) ? cfg.sunY : 0.86;
+		this.uniformData[22] = Number.isFinite(cfg.sunZ) ? cfg.sunZ : 0.5;
+		this.uniformData[23] = 0;
+		this.uniformData[24] = Number.isFinite(cfg.fogR) ? cfg.fogR : 0.74;
+		this.uniformData[25] = Number.isFinite(cfg.fogG) ? cfg.fogG : 0.80;
+		this.uniformData[26] = Number.isFinite(cfg.fogB) ? cfg.fogB : 0.83;
+		this.uniformData[27] = 1;
+		this.uniformData[28] = 0;
+		this.uniformData[29] = 0;
+		this.uniformData[30] = 0;
+		this.uniformData[31] = 0;
+		backend.writeBuffer(this.uniformBuffer, this.uniformData, 0);
+		return true;
+	}
+
+	draw(pass, cfg = {}) {
+		if (!pass) return false;
+		if (!this.update(cfg)) return false;
+		const pipeline = this.createPipeline(cfg);
+		if (!pipeline || !this.bindGroup) return false;
+		pass.setPipeline(pipeline);
+		pass.setBindGroup(0, this.bindGroup);
+		pass.draw(3, 1, 0, 0);
+		return true;
+	}
+
+	#rebuildBinding() {
+		const backend = this.backend;
+		const pipeline = this.pipeline ?? this.createPipeline();
+		if (!backend || !pipeline || !this.uniformBuffer) return false;
+		const layout = pipeline.getBindGroupLayout(0);
+		this.bindGroup = backend.createBindGroup({
+			label: "SkyBG",
+			layout,
+			entries: [{ binding: 0, resource: { buffer: this.uniformBuffer, offset: 0, size: this.uniformData.byteLength } }],
+		});
+		return !!this.bindGroup;
+	}
+
+	#normalizePipelineCfg(cfg) {
+		const src = cfg && typeof cfg === "object" ? cfg : {};
+		const backend = this.backend;
+		return {
+			format: String(src.format ?? backend?.format ?? "bgra8unorm"),
+			depthFormat: String(src.depthFormat ?? "depth24plus"),
 		};
 	}
 }
@@ -321,6 +568,8 @@ struct SceneUBO {
 	height: vec4f,
 	light: vec4f,
 	misc: vec4f,
+	camPos: vec4f,
+	fog: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> scene: SceneUBO;
@@ -356,7 +605,19 @@ fn cp_main(@builtin(global_invocation_id) gid: vec3u) {
 	let amp = scene.misc.w;
 	let primary = sin(t * freq + phase + baseXZ.x * 0.13 + baseXZ.y * 0.17);
 	let secondary = cos(t * (freq * 0.57) + phase * 1.71 + h * 0.61);
-	let sway = (primary * 0.7 + secondary * 0.3) * amp;
+	let localSway = (primary * 0.7 + secondary * 0.3) * amp;
+
+	let windDir = normalize(vec2f(0.82, 0.57));
+	let along = dot(baseXZ, windDir);
+	let tc = fract(t * 0.055 + 0.13);
+	let burst = exp(-pow((tc - 0.55) * 4.8, 2.0));
+	let lineCenter = mix(-scene.grid.w * 1.35, scene.grid.w * 1.35, tc);
+	let lineDist = abs(along - lineCenter);
+	let lineBand = exp(-pow(lineDist * 0.095, 2.0));
+	let ripple = sin(t * (freq * 2.4) + along * 0.42 + phase * 0.35);
+	let gust = lineBand * burst * ripple * (amp * 2.6);
+
+	let sway = localSway + gust;
 	d.y = sway;
 	instances[i] = d;
 }
@@ -569,11 +830,11 @@ export class GrassField {
 			ubo: null,
 			bindGroup: null,
 			uniformBuffer: null,
-			uniformData: new Float32Array(48),
+			uniformData: new Float32Array(56),
 			modelMatrix: Azm.Mat4.makeIdentity(),
-			gridCountX: 128,
-			gridCountZ: 128,
-			gridSpacing: 0.45,
+			gridCountX: 640,
+			gridCountZ: 640,
+			gridSpacing: 0.2,
 			instanceData: null,
 			instanceBuffer: null,
 			instanceCount: 0,
@@ -635,6 +896,7 @@ export class GrassField {
 	async setTextureFromURL(url) {
 		const texture = await this.texture.setFromURL(url);
 		this.#rebuildSceneBinding();
+		this.#rebuildComputeBinding();
 		return texture;
 	}
 
@@ -661,10 +923,53 @@ export class GrassField {
 
 		const frameCfg = this.#normalizeFrameCfg(cfg.frame);
 		const passCfg = this.#normalizePassCfg(cfg.pass);
-		const simCfg = this.#normalizeSimCfg(cfg.sim);
-		const pipeline = this.shader.createPipeline(cfg.pipeline ?? passCfg.pipeline ?? {});
-		if (!pipeline) return false;
+		const ok = this.#ensureResources(cfg.pipeline ?? passCfg.pipeline ?? {});
+		if (!ok) return false;
+		this.update(cfg.sim);
 
+		backend.beginFrame(frameCfg);
+		this.#runComputePass();
+		const pass = backend.beginRenderPass(passCfg);
+		if (!pass) {
+			backend.endFrame();
+			return false;
+		}
+		this.draw(pass, cfg.pipeline ?? passCfg.pipeline ?? {});
+		pass.end();
+		backend.endFrame();
+		return true;
+	}
+
+	update(simCfg = {}) {
+		const ok = this.#ensureResources({});
+		if (!ok) return false;
+		this.#writeSceneUniform(this.#normalizeSimCfg(simCfg));
+		return true;
+	}
+
+	simulate(simCfg = {}) {
+		if (!this.update(simCfg)) return false;
+		return this.#runComputePass();
+	}
+
+	draw(pass, pipelineCfg = {}) {
+		if (!pass) return false;
+		const pipeline = this.shader.createPipeline(pipelineCfg ?? {});
+		if (!pipeline || !this.scene.bindGroup || !this.mesh.vertexBuffer || !this.scene.instanceBuffer || !this.mesh.indexBuffer) {
+			return false;
+		}
+		pass.setPipeline(pipeline);
+		pass.setBindGroup(0, this.scene.bindGroup);
+		pass.setVertexBuffer(0, this.mesh.vertexBuffer);
+		pass.setVertexBuffer(1, this.scene.instanceBuffer);
+		pass.setIndexBuffer(this.mesh.indexBuffer, this.mesh.indexFormat);
+		pass.drawIndexed(this.mesh.indexCount, this.scene.instanceCount, 0, 0, 0);
+		return true;
+	}
+
+	#ensureResources(pipelineCfg = {}) {
+		const pipeline = this.shader.createPipeline(pipelineCfg ?? {});
+		if (!pipeline) return false;
 		if (!this.mesh.vertexBuffer || !this.mesh.indexBuffer) {
 			if (!this.mesh.createGPU()) return false;
 		}
@@ -682,25 +987,6 @@ export class GrassField {
 			this.#rebuildComputeBinding();
 			if (!this.scene.computeBindGroup) return false;
 		}
-
-		this.#writeSceneUniform(simCfg);
-
-		backend.beginFrame(frameCfg);
-		this.#runComputePass();
-		const pass = backend.beginRenderPass(passCfg);
-		if (!pass) {
-			backend.endFrame();
-			return false;
-		}
-
-		pass.setPipeline(pipeline);
-		pass.setBindGroup(0, this.scene.bindGroup);
-		pass.setVertexBuffer(0, this.mesh.vertexBuffer);
-		pass.setVertexBuffer(1, this.scene.instanceBuffer);
-		pass.setIndexBuffer(this.mesh.indexBuffer, this.mesh.indexFormat);
-		pass.drawIndexed(this.mesh.indexCount, this.scene.instanceCount, 0, 0, 0);
-		pass.end();
-		backend.endFrame();
 		return true;
 	}
 
@@ -715,12 +1001,14 @@ export class GrassField {
 		const heightOffset = 36;
 		const lightOffset = 40;
 		const miscOffset = 44;
+		const camOffset = 48;
+		const fogOffset = 52;
 		this.scene.uniformData[gridOffset + 0] = this.scene.gridCountX;
 		this.scene.uniformData[gridOffset + 1] = this.scene.gridCountZ;
 		this.scene.uniformData[gridOffset + 2] = this.scene.gridSpacing;
 		this.scene.uniformData[gridOffset + 3] = halfExtent;
 		this.scene.uniformData[heightOffset + 0] = this.scene.heightResolution;
-		this.scene.uniformData[heightOffset + 1] = 2.2;
+		this.scene.uniformData[heightOffset + 1] = 15.0;
 		this.scene.uniformData[heightOffset + 2] = 5.0;
 		this.scene.uniformData[heightOffset + 3] = 0;
 		this.scene.uniformData[lightOffset + 0] = 0.35;
@@ -731,6 +1019,14 @@ export class GrassField {
 		this.scene.uniformData[miscOffset + 1] = simCfg.delta;
 		this.scene.uniformData[miscOffset + 2] = simCfg.freq;
 		this.scene.uniformData[miscOffset + 3] = simCfg.amp;
+		this.scene.uniformData[camOffset + 0] = this.camera.position[0];
+		this.scene.uniformData[camOffset + 1] = this.camera.position[1];
+		this.scene.uniformData[camOffset + 2] = this.camera.position[2];
+		this.scene.uniformData[camOffset + 3] = 1;
+		this.scene.uniformData[fogOffset + 0] = 0.09;
+		this.scene.uniformData[fogOffset + 1] = 1.18;
+		this.scene.uniformData[fogOffset + 2] = 0;
+		this.scene.uniformData[fogOffset + 3] = 0;
 		this.backend.writeBuffer(this.scene.uniformBuffer, this.scene.uniformData, 0);
 	}
 

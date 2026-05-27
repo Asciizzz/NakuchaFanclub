@@ -9,5 +9,6 @@
 
 <body>
     <div id="main-canvas"></div>
+    <div id="wr-hover" class="wr-hover" hidden></div>
 </body>
 </html>

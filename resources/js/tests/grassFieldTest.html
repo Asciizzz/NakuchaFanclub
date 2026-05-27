@@ -45,7 +45,7 @@
 	<script type="module">
 		import { AzWBackend } from "../AzLib/AzWBackend.js";
 		import { AzCamera } from "../AzLib/AzCamera.js";
-		import { GrassField } from "./GrassField.js";
+		import { GrassField, SkyObject } from "./GrassField.js";
 
 		const root = document.getElementById("root");
 		const hud = document.getElementById("hud");
@@ -119,6 +119,11 @@
 		await grass.setTextureFromURL("./grass.png");
 		grass.createEngine();
 
+		const sky = new SkyObject();
+		sky.setBackend(backend);
+		sky.setCamera(camera);
+		sky.createEngine();
+
 		let tPrev = performance.now();
 		function frame(tNow) {
 			const dt = Math.min(0.05, Math.max(0.0001, (tNow - tPrev) * 0.001));
@@ -143,30 +148,42 @@
 				camera.position[2] += (right[2] * sx + forward[2] * sz) * speed * dt;
 			}
 
-			grass.render({
-				frame: {
-					clearColor: [0.52, 0.68, 0.90, 1],
-					clearColorEnabled: true,
-					clearDepth: 1,
-					clearDepthEnabled: true,
-					useDepth: true,
-				},
-				pass: {},
-				sim: {
-					time: tNow * 0.001,
-					delta: dt,
-					freq: 1.8,
-					amp: 0.25,
-				},
+			backend.beginFrame({
+				clearColor: [0.52, 0.68, 0.90, 1],
+				clearColorEnabled: true,
+				clearDepth: 1,
+				clearDepthEnabled: true,
+				useDepth: true,
 			});
+			grass.simulate({
+				time: tNow * 0.001,
+				delta: dt,
+				freq: 1.8,
+				amp: 0.25,
+			});
+			const pass = backend.beginRenderPass({});
+			if (pass) {
+				sky.draw(pass, {
+					sunX: 0.0,
+					sunY: 0.22,
+					sunZ: 0.5,
+					fogR: 0.2,
+					fogG: 0.2,
+					fogB: 0.83,
+				});
+				grass.draw(pass, {});
+				pass.end();
+			}
+			backend.endFrame();
 
-			hud.textContent =
+			const textContent =
 				`backend: ${report.chosen}\n` +
 				`textureURL: ${grass.texture.url ?? "(none)"}\n` +
 				`textureSize: ${grass.texture.size.width}x${grass.texture.size.height}\n` +
 				`gpuTexture: ${grass.texture.gpu ? "ready" : "none"}\n` +
 				`shaderModule: ${grass.shader.module ? "ready" : "none"}\n` +
 				`shaderPipeline: ${grass.shader.pipeline ? "ready" : "none"}\n` +
+				`skyPipeline: ${sky.pipeline ? "ready" : "none"}\n` +
 				`computePipeline: ${grass.compute.pipeline ? "ready" : "none"}\n` +
 				`meshVB: ${grass.mesh.vertexBuffer ? "ready" : "none"}\n` +
 				`meshIB: ${grass.mesh.indexBuffer ? "ready" : "none"}\n` +

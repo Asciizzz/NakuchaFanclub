@@ -7,6 +7,7 @@ import {
 	WrLiveSkeleton,
 	WrTransform,
 } from "../WeebRender2/index.js";
+import { WrScreenHover } from "./WrScreenHover.js";
 
 const EYE_CLOSE_MORPH = "Eye_2_R(CloseA)[M_Face]";
 const container = document.getElementById("main-canvas");
@@ -83,6 +84,32 @@ async function run() {
 	});
 	camera.lookAt([0, 1, 0]);
 	world.setCamera(camera);
+	const hoverElement = document.getElementById("wr-hover");
+	const hover = new WrScreenHover({
+		world,
+		camera,
+		canvas,
+		element: hoverElement,
+		offsetY: -8,
+	});
+	hover.setRenderCondition((ctx, node) => !!node.getComp(WrMeshRenderer));
+	hover.setRenderFunc((ctx, self) => {
+		const node = self.node;
+		const block = document.createElement("div");
+		const title = document.createElement("div");
+		title.className = "wr-hover__title";
+		title.textContent = node.name || node.id;
+		const meta = document.createElement("div");
+		meta.className = "wr-hover__meta";
+		meta.textContent = `#${node.id}`;
+		block.appendChild(title);
+		block.appendChild(meta);
+		return block;
+	});
+	if (typeof window !== "undefined") {
+		window.wrHover = hover;
+		window.showHoverNode = (nodeId) => hover.render(nodeId);
+	}
 
 	const resize = () => {
 		backend.resize({ maxPixelRatio: 2 });
@@ -144,7 +171,7 @@ async function run() {
 			depthWrite: true,
 			cull: "back",
 			blend: false,
-			clearColor: [0.62, 0.72, 0.92, 1],
+			clearColor: [0, 0, 0, 0],
 			clearDepth: 1,
 		},
 		wgsl: {
@@ -184,7 +211,11 @@ async function run() {
 			},
 			fragment: {
 				main: `
-					$OUT_COLOR$ = textureSample($ALBEDO_TEX$, texSampler, out_uv) * $ALBEDO_COLOR$;
+					var texColor = textureSample($ALBEDO_TEX$, texSampler, out_uv) * $ALBEDO_COLOR$;
+					if (texColor.a < 0.5) { discard; }
+					texColor.a = 1.0;
+
+					$OUT_COLOR$ = texColor;
 				`,
 			},
 		},
@@ -226,7 +257,9 @@ async function run() {
 			fragment: {
 				main: `
 					vec4 texColor = texture($ALBEDO_TEX$, out_uv);
-					texColor.r = 0.0;
+					if (texColor.a < 0.5) { discard; }
+
+					// texColor.r = 0.0;
 
 					$OUT_COLOR$ = texColor * $ALBEDO_COLOR$;
 				`,
@@ -242,6 +275,10 @@ async function run() {
 			blend: false,
 		},
 		wgsl: {
+			links: [
+				{ name: "out_uv", type: "vec2f" },
+				{ name: "out_nrm", type: "vec3f" },
+			],
 			vertex: {
 				main: `
 					var localPos = $POSITION$;
@@ -268,13 +305,19 @@ async function run() {
 					}
 
 					let worldNrm = normalize(($INST_MODEL$ * vec4f(skinnedNrm, 0.0)).xyz);
-					let worldPos = ($INST_MODEL$ * skinnedPos).xyz + worldNrm * 0.035;
+					let worldPos = ($INST_MODEL$ * skinnedPos).xyz + worldNrm * 0.015;
 					output.position = $PROJECTION$ * $VIEW$ * vec4f(worldPos, 1.0);
+
+					out_uv = $UV$;
+					out_nrm = worldNrm;
 				`,
 			},
 			fragment: {
 				main: `
-					$OUT_COLOR$ = vec4f(0.0, 0.0, 0.0, 1.0);
+					// $OUT_COLOR$ = vec4f(out_uv.x, out_uv.y, 0.0, 1.0);
+
+					// Color based on normal for testing
+					$OUT_COLOR$ = vec4f(out_nrm * 0.5 + 0.5, 1.0);
 				`,
 			},
 		},
@@ -317,10 +360,16 @@ async function run() {
 		},
 	});
 
-	const modelRoot = await world.loadModelFromURL("/Models/Nakurin.glb", {
-		shaderIds: ["outline-shader", "main-shader"],
+	const modelRoot = await world.loadModelFromURL("/Models/Room.glb", {
+		shaderIds: ["main-shader"],
 	});
 
+	const rootTRS = modelRoot.getComp(WrTransform);
+	console.log(rootTRS.local);
+	Azm.Mat4.scale(rootTRS.local, [0.2, 0.2, 0.2], rootTRS.local);
+	console.log(rootTRS.local);
+
+	/*
 	const renderRoot = world.addNode(null);
 	renderRoot.name = "world";
 
@@ -362,8 +411,9 @@ async function run() {
 		if (morphIndex < 0) continue;
 		meshRenderer.setMorphWeight(EYE_CLOSE_MORPH, 0);
 	}
+	*/
 
-	console.log(world.nodes);
+	// console.log(world.nodes);
 
 	let last = performance.now();
 	let t = 0;
@@ -371,6 +421,7 @@ async function run() {
 
 	canvas.addEventListener("pointerdown", (event) => {
 		if (event.button !== 0) return;
+		return; // disable for the time being
 		const rect = canvas.getBoundingClientRect();
 		const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
 		const y = 1 - ((event.clientY - rect.top) / Math.max(1, rect.height)) * 2;
@@ -420,6 +471,7 @@ async function run() {
 			}
 		}
 
+		/*
 		const eye = 0.5 + 0.5 * Math.sin(t * 5.0);
 		for (const meshRenderer of meshRenderers) {
 			if (meshRenderer.resolveMorphIndex(EYE_CLOSE_MORPH) < 0) continue;
@@ -432,8 +484,9 @@ async function run() {
 				driver.live.set(driver.bone, Azm.Mat4.fromRotationY(angle));
 			}
 		}
+		//*/
 
-		renderRoot.render({
+		modelRoot.render({
 			time: t,
 			deltaTime: dt,
 			beginFrame: true,
@@ -441,6 +494,7 @@ async function run() {
 			clearColorEnabled: true,
 			clearDepthEnabled: true,
 		});
+		hover.render(modelRoot.id);
 		// renderRoot.render({
 		// 	time: t,
 		// 	deltaTime: dt,
