@@ -72,6 +72,11 @@ function toNumber(value, fallback = 0) {
 	return Number.isFinite(n) ? n : fallback;
 }
 
+function normalizeSampleCount(value, fallback = 1) {
+	const n = Math.max(1, Math.floor(toNumber(value, fallback)));
+	return n > 1 ? 4 : 1;
+}
+
 /**
  * Resolve canvas from element or selector
  * @param {HTMLCanvasElement|string|null} canvasRef canvas ref
@@ -313,22 +318,36 @@ export class WGPU extends Base {
 		this.device = null;
 		this.context = null;
 		this.format = null;
+		const antialias = options.antialias ?? true;
+		const requestedSamples = options.sampleCount ?? options.msaa;
+		this.sampleCount = normalizeSampleCount(
+			requestedSamples ?? (antialias ? 4 : 1),
+			1,
+		);
 		this.#encoder = null;
 		this.#frame = null;
-		this.#colorView = null;
-		this.#depthTexture = null;
-		this.#depthView = null;
-		this.#depthWidth = 0;
-		this.#depthHeight = 0;
+		this.#targets = {
+			colorView: null,
+			msaa: {
+				texture: null,
+				view: null,
+				width: 0,
+				height: 0,
+				sampleCount: 1,
+			},
+			depth: {
+				texture: null,
+				view: null,
+				width: 0,
+				height: 0,
+				sampleCount: 1,
+			},
+		};
 	}
 
 	#encoder;
 	#frame;
-	#colorView;
-	#depthTexture;
-	#depthView;
-	#depthWidth;
-	#depthHeight;
+	#targets;
 
 	/**
 	 * Backend kind tag
@@ -389,6 +408,7 @@ export class WGPU extends Base {
 			format: this.format,
 			alphaMode: this.options.context?.alphaMode ?? "premultiplied",
 		});
+		this.#releaseMsaaColorTarget();
 		this.#releaseDepthTarget();
 		return true;
 	}
@@ -402,9 +422,13 @@ export class WGPU extends Base {
 		if (!this.ready || !this.context || !this.device) return null;
 		if (this.#encoder) this.endFrame();
 
-		this.#frame = Base.normalizeFrameOptions(frameOptions);
+		const source = frameOptions && typeof frameOptions === "object" ? frameOptions : {};
+		this.#frame = {
+			...Base.normalizeFrameOptions(source),
+			sampleCount: normalizeSampleCount(source.sampleCount ?? this.sampleCount, this.sampleCount),
+		};
 		this.#encoder = AzWGPU.Command.createEncoder(this.device, "AzFrame");
-		this.#colorView = this.context.getCurrentTexture().createView();
+		this.#targets.colorView = this.context.getCurrentTexture().createView();
 		return this.#frame;
 	}
 
@@ -414,13 +438,14 @@ export class WGPU extends Base {
 	 * @returns {GPURenderPassEncoder|null}
 	 */
 	beginRenderPass(options = {}) {
-		if (!this.#encoder || !this.#colorView) return null;
+		if (!this.#encoder || !this.#targets.colorView) return null;
 		const frame = this.#frame ?? Base.normalizeFrameOptions();
 		const merged = {
 			...frame,
 			...options,
 			clearColor: options.clearColor ? Base.normalizeClearColor(options.clearColor) : frame.clearColor,
 		};
+		merged.sampleCount = normalizeSampleCount(merged.sampleCount ?? this.sampleCount, this.sampleCount);
 		return AzWGPU.Pass.beginRender(this.#encoder, this.#passDescriptor(merged));
 	}
 
@@ -444,7 +469,7 @@ export class WGPU extends Base {
 		AzWGPU.Command.submit(this.device, [command]);
 		this.#encoder = null;
 		this.#frame = null;
-		this.#colorView = null;
+		this.#targets.colorView = null;
 	}
 
 	/**
@@ -460,6 +485,7 @@ export class WGPU extends Base {
 				AzWGPU.Context.unconfigure(this.context);
 			} catch (_error) {}
 		}
+		this.#releaseMsaaColorTarget();
 		this.#releaseDepthTarget();
 		this.adapter = null;
 		this.device = null;
@@ -477,11 +503,14 @@ export class WGPU extends Base {
 	#passDescriptor(frame) {
 		const clearColor = frame.clearColor ?? Base.normalizeClearColor();
 		const needsDepth = frame.useDepth || frame.clearDepthEnabled;
-		const depthView = needsDepth ? this.#ensureDepthTarget() : null;
+		const sampleCount = normalizeSampleCount(frame.sampleCount ?? this.sampleCount, this.sampleCount);
+		const depthView = needsDepth ? this.#ensureDepthTarget(sampleCount) : null;
+		const colorTarget = this.#resolveColorTarget(sampleCount);
 
 		return {
 			colorAttachments: [{
-				view: this.#colorView,
+				view: colorTarget.view,
+				resolveTarget: colorTarget.resolveTarget,
 				loadOp: frame.clearColorEnabled ? "clear" : "load",
 				storeOp: "store",
 				clearValue: clearColor,
@@ -495,30 +524,90 @@ export class WGPU extends Base {
 		};
 	}
 
+	#resolveColorTarget(sampleCount) {
+		if (sampleCount <= 1) {
+			this.#releaseMsaaColorTarget();
+			return {
+				view: this.#targets.colorView,
+				resolveTarget: undefined,
+			};
+		}
+		const view = this.#ensureMsaaColorTarget(sampleCount);
+		return {
+			view: view ?? this.#targets.colorView,
+			resolveTarget: this.#targets.colorView,
+		};
+	}
+
+	#ensureMsaaColorTarget(sampleCount) {
+		if (!this.device || !this.canvas || !this.format) return null;
+		const width = Math.max(1, this.canvas.width | 0);
+		const height = Math.max(1, this.canvas.height | 0);
+		const state = this.#targets.msaa;
+		const sameSize = width === state.width && height === state.height;
+		const sameSamples = sampleCount === state.sampleCount;
+		if (state.view && sameSize && sameSamples) return state.view;
+
+		this.#releaseMsaaColorTarget();
+		state.texture = AzWGPU.Texture.create2D(this.device, {
+			label: "AzMsaaColor",
+			width,
+			height,
+			format: this.format,
+			sampleCount,
+			usage: globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10,
+		});
+		state.view = AzWGPU.Texture.createView(state.texture, { dimension: "2d" });
+		state.width = width;
+		state.height = height;
+		state.sampleCount = sampleCount;
+		return state.view;
+	}
+
+	#releaseMsaaColorTarget() {
+		const state = this.#targets.msaa;
+		if (state.texture?.destroy) state.texture.destroy();
+		state.texture = null;
+		state.view = null;
+		state.width = 0;
+		state.height = 0;
+		state.sampleCount = 1;
+	}
+
 	/**
 	 * Ensure depth target for current canvas size
+	 * @param {number} [sampleCount=1] sample count
 	 * @returns {GPUTextureView|null}
 	 */
-	#ensureDepthTarget() {
+	#ensureDepthTarget(sampleCount = 1) {
 		if (!this.device || !this.canvas) return null;
 		const width = Math.max(1, this.canvas.width | 0);
 		const height = Math.max(1, this.canvas.height | 0);
-		if (this.#depthView && width === this.#depthWidth && height === this.#depthHeight) {
-			return this.#depthView;
+		const normalizedSamples = normalizeSampleCount(sampleCount, 1);
+		const state = this.#targets.depth;
+		if (
+			state.view &&
+			width === state.width &&
+			height === state.height &&
+			normalizedSamples === state.sampleCount
+		) {
+			return state.view;
 		}
 
 		this.#releaseDepthTarget();
-		this.#depthTexture = AzWGPU.Texture.create2D(this.device, {
+		state.texture = AzWGPU.Texture.create2D(this.device, {
 			label: "AzDepth",
 			width,
 			height,
 			format: AZ_WGPU_DEPTH_FORMAT,
+			sampleCount: normalizedSamples,
 			usage: globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10,
 		});
-		this.#depthView = AzWGPU.Texture.createView(this.#depthTexture, { dimension: "2d" });
-		this.#depthWidth = width;
-		this.#depthHeight = height;
-		return this.#depthView;
+		state.view = AzWGPU.Texture.createView(state.texture, { dimension: "2d" });
+		state.width = width;
+		state.height = height;
+		state.sampleCount = normalizedSamples;
+		return state.view;
 	}
 
 	/**
@@ -526,11 +615,13 @@ export class WGPU extends Base {
 	 * @returns {void}
 	 */
 	#releaseDepthTarget() {
-		if (this.#depthTexture?.destroy) this.#depthTexture.destroy();
-		this.#depthTexture = null;
-		this.#depthView = null;
-		this.#depthWidth = 0;
-		this.#depthHeight = 0;
+		const state = this.#targets.depth;
+		if (state.texture?.destroy) state.texture.destroy();
+		state.texture = null;
+		state.view = null;
+		state.width = 0;
+		state.height = 0;
+		state.sampleCount = 1;
 	}
 
 	// ----------
@@ -672,18 +763,34 @@ export class WGL2 extends Base {
 	 */
 	async init() {
 		if (!this.canvas) throw new Error("[AzWBackendWGL2] canvas is required");
+		const contextSource = this.options.context && typeof this.options.context === "object"
+			? this.options.context
+			: {};
+		const antialias = contextSource.antialias ?? this.options.antialias ?? true;
+		const alpha = contextSource.alpha ?? this.options.alpha ?? true;
+		const depth = contextSource.depth ?? this.options.depth ?? true;
 
 		const gl = AzWGL2.Context.create(this.canvas, {
-			alpha: true,
-			depth: true,
-			...(this.options.context ?? this.options),
+			...(this.options ?? {}),
+			...contextSource,
+			alpha,
+			depth,
+			antialias,
 		});
 
 		this.gl = gl;
 		this.ready = true;
+		const attrs = gl.getContextAttributes?.() ?? {};
 		this.report = {
 			kind: this.kind,
 			info: AzWGL2.Context.info(gl),
+			context: {
+				alpha: !!attrs.alpha,
+				depth: !!attrs.depth,
+				stencil: !!attrs.stencil,
+				antialias: !!attrs.antialias,
+				preserveDrawingBuffer: !!attrs.preserveDrawingBuffer,
+			},
 			limits: AzWGL2.Limits.inspect(gl),
 			timer: AzWGL2.Timer.supportInfo(gl),
 		};

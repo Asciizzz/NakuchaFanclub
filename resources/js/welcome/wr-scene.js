@@ -12,10 +12,10 @@ import { WrScreenHover } from "./WrScreenHover.js";
 const EYE_CLOSE_MORPH = "Eye_2_R(CloseA)[M_Face]";
 const container = document.getElementById("main-canvas");
 
-function collectBranchNodes(modelRoot) {
-	if (!modelRoot) return [];
+function collectBranchNodes(roomRoot) {
+	if (!roomRoot) return [];
 	const out = [];
-	for (const node of modelRoot.traverse({ mode: "dfs_pre", includeFrom: true })) {
+	for (const node of roomRoot.traverse({ mode: "dfs_pre", includeFrom: true })) {
 		out.push(node);
 	}
 	return out;
@@ -360,33 +360,22 @@ async function run() {
 		},
 	});
 
-	const modelRoot = await world.loadModelFromURL("/Models/Room.glb", {
-		shaderIds: ["main-shader"],
+	const roomRoot = await world.loadModelFromURL("/Models/Room.glb", {
+		shaderIds: ["main-shader"]
 	});
 
-	const rootTRS = modelRoot.getComp(WrTransform);
-	console.log(rootTRS.local);
-	Azm.Mat4.scale(rootTRS.local, [0.2, 0.2, 0.2], rootTRS.local);
-	console.log(rootTRS.local);
+	const nakuRoot = await world.loadModelFromURL("/Models/Nakurin.glb", {
+		shaderIds: ["main-shader"]
+	});
 
-	/*
+	
 	const renderRoot = world.addNode(null);
 	renderRoot.name = "world";
 
-	const clones = [
-		world.copyBranch(modelRoot.id, renderRoot.id),
-		world.copyBranch(modelRoot.id, renderRoot.id),
-		world.copyBranch(modelRoot.id, renderRoot.id),
-	].filter(Boolean);
+	roomRoot.copyBranchTo(renderRoot.id);
+	nakuRoot.copyBranchTo(renderRoot.id);
 
-	const spacing = 2.0;
-	const startX = -((clones.length - 1) * spacing) * 0.5;
-	for (let i = 0; i < clones.length; i++) {
-		const clone = clones[i];
-		const tx = clone.getComp(WrTransform) ?? clone.addComp(WrTransform);
-		Azm.Mat4.translate(tx.local, [startX + i * spacing, 0, 0], tx.local);
-		tx.world.set(tx.local);
-	}
+	/*
 
 	const branchNodes = collectBranchNodes(renderRoot);
 	const meshRenderers = branchNodes
@@ -486,7 +475,7 @@ async function run() {
 		}
 		//*/
 
-		modelRoot.render({
+		renderRoot.render({
 			time: t,
 			deltaTime: dt,
 			beginFrame: true,
@@ -494,7 +483,7 @@ async function run() {
 			clearColorEnabled: true,
 			clearDepthEnabled: true,
 		});
-		hover.render(modelRoot.id);
+		hover.render(renderRoot.id);
 		// renderRoot.render({
 		// 	time: t,
 		// 	deltaTime: dt,

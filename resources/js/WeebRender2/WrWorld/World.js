@@ -71,6 +71,11 @@ export class WrNode extends Node {
 		if (!this.ctx || typeof this.ctx.render !== "function") return null;
 		return this.ctx.render(this, options);
 	}
+
+	copyBranchTo(toId = null) {
+		if (!this.ctx || typeof this.ctx.copyBranch !== "function") return null;
+		return this.ctx.copyBranch(this.id, toId);
+	}
 }
 
 function asId(value) {
@@ -281,6 +286,11 @@ function alignTo256(n) {
 
 function alignTo4(n) {
 	return Math.ceil(n / 4) * 4;
+}
+
+function normalizeSampleCount(value, fallback = 1) {
+	const n = Math.max(1, Math.floor(Number(value) || fallback || 1));
+	return n > 1 ? 4 : 1;
 }
 
 function padTo4Bytes(data) {
@@ -708,6 +718,10 @@ export class WrWorld extends Ctx {
 		const shouldStartFrame = beginFrame || !this.#gpu.frameActive;
 		const clearColorEnabled = options.clearColorEnabled ?? shouldStartFrame;
 		const clearDepthEnabled = options.clearDepthEnabled ?? shouldStartFrame;
+		const sampleCount = normalizeSampleCount(
+			options.sampleCount ?? backend.sampleCount ?? 1,
+			backend.sampleCount ?? 1,
+		);
 
 		if (shouldStartFrame) {
 			backend.beginFrame({
@@ -716,6 +730,7 @@ export class WrWorld extends Ctx {
 				clearDepth,
 				clearDepthEnabled: false,
 				useDepth,
+				sampleCount,
 			});
 			this.#gpu.frameActive = true;
 		}
@@ -726,6 +741,7 @@ export class WrWorld extends Ctx {
 			clearDepth,
 			clearDepthEnabled,
 			useDepth,
+			sampleCount,
 		});
 		if (!pass) {
 			if (endFrame) {
@@ -740,7 +756,7 @@ export class WrWorld extends Ctx {
 		this.#updateSceneScratch(this.#camera, now, deltaTime);
 
 		for (const draw of queue.draws) {
-			const backendState = this.#ensureWgpuShader(draw.shader);
+			const backendState = this.#ensureWgpuShader(draw.shader, sampleCount);
 			if (!backendState?.pipeline) continue;
 			const pipeline = backendState.pipeline;
 			pass.setPipeline(pipeline);
@@ -918,11 +934,20 @@ export class WrWorld extends Ctx {
 		}
 	}
 
-	#ensureWgpuShader(shader) {
+	#ensureWgpuShader(shader, sampleCount = 1) {
 		if (!shader) return null;
-		if (shader.backend?.kind === "webgpu" && shader.backend.pipeline) return shader.backend;
+		const wantedSampleCount = normalizeSampleCount(sampleCount, 1);
+		const cachedCount = this.#gpu.wgpuShaderSampleCount.get(shader) ?? 1;
+		if (shader.backend?.kind === "webgpu" && shader.backend.pipeline && cachedCount === wantedSampleCount) {
+			return shader.backend;
+		}
 		try {
-			return shader.buildBackend(this.#backend, { createPipeline: true });
+			const built = shader.buildBackend(this.#backend, {
+				createPipeline: true,
+				sampleCount: wantedSampleCount,
+			});
+			if (built?.pipeline) this.#gpu.wgpuShaderSampleCount.set(shader, wantedSampleCount);
+			return built;
 		} catch (_error) {
 			return null;
 		}
@@ -1402,6 +1427,7 @@ export class WrWorld extends Ctx {
 			wglTextureCache: new Map(),
 			wglFallbackTexture: null,
 			wglUniformCache: new WeakMap(),
+			wgpuShaderSampleCount: new WeakMap(),
 			identityPalette: null,
 		};
 	}
