@@ -367,7 +367,10 @@ async function run() {
 	const nakuRoot = await world.loadModelFromURL("/Models/Nakurin.glb", {
 		shaderIds: ["main-shader"]
 	});
-
+	const roomTRS = roomRoot.getComp(WrTransform);
+	if (roomTRS) {
+		Azm.Mat4.scale(roomTRS.local, [0.5, 0.5, 0.5], roomTRS.local);
+	}
 	
 	const renderRoot = world.addNode(null);
 	renderRoot.name = "world";
@@ -483,7 +486,7 @@ async function run() {
 			clearColorEnabled: true,
 			clearDepthEnabled: true,
 		});
-		hover.render(renderRoot.id);
+		// hover.render(renderRoot.id);
 		// renderRoot.render({
 		// 	time: t,
 		// 	deltaTime: dt,
