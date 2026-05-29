@@ -15,7 +15,7 @@ const container = document.getElementById("main-canvas");
 function collectBranchNodes(roomRoot) {
 	if (!roomRoot) return [];
 	const out = [];
-	for (const node of roomRoot.traverse({ mode: "dfs_pre", includeFrom: true })) {
+	for (const [node] of roomRoot.traverse({ mode: "dfs_pre", includeFrom: true })) {
 		out.push(node);
 	}
 	return out;

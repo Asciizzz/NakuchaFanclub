@@ -214,7 +214,7 @@ function copySceneNodeData(source, target) {
 }
 
 function canAttachBranch(sourceNode, targetId) {
-	for (const node of sourceNode.traverse({ mode: "dfs_pre", includeFrom: true })) {
+	for (const [node] of sourceNode.traverse({ mode: "dfs_pre", includeFrom: true })) {
 		if (node.id === targetId) return false;
 	}
 	return true;
@@ -426,7 +426,7 @@ export class WrWorld extends Ctx {
 		const parentBefore = source.parentId;
 		const childrenBefore = source.childIds.slice();
 		const branchIds = branch
-			? Array.from(source.traverse({ mode: "dfs_pre", includeFrom: true }), (node) => node.id)
+			? Array.from(source.traverse({ mode: "dfs_pre", includeFrom: true }), ([node]) => node.id)
 			: [source.id];
 
 		const out = super.deleteNode(key, branch);
@@ -464,7 +464,7 @@ export class WrWorld extends Ctx {
 		if (targetKey != null && !canAttachBranch(source, targetKey)) return null;
 
 		const remap = new Map();
-		for (const current of source.traverse({ mode: "dfs_pre", includeFrom: true })) {
+		for (const [current] of source.traverse({ mode: "dfs_pre", includeFrom: true })) {
 			const nextParentId = current.id === fromKey
 				? targetKey
 				: (remap.get(current.parentId)?.id ?? null);
@@ -653,7 +653,7 @@ export class WrWorld extends Ctx {
 		const groups = new Set();
 		const identity = Azm.Mat4.makeIdentity();
 
-		for (const node of start.traverse({ mode, includeFrom: true })) {
+		for (const [node] of start.traverse({ mode, includeFrom: true })) {
 			const parentWorld = node.parentId ? (worldById.get(node.parentId) ?? null) : null;
 			const tx = node.getComp(Transform);
 			let nodeWorld = parentWorld ?? identity;

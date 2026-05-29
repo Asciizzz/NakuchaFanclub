@@ -670,7 +670,8 @@ export class WrWorldRuntime {
             return [];
         })();
 
-        for (const node of baseIter) {
+        for (const entry of baseIter) {
+            const node = Array.isArray(entry) ? entry[0] : entry;
             if (!node || typeof node !== "object") continue;
             const nodeId = String(node.id ?? "").trim();
 

@@ -431,10 +431,12 @@ export class WrWorld extends Ctx {
         const src = options && typeof options === "object" ? options : {};
         const fromId = resolveNodeRefId(src.from ?? null);
         if (!fromId) return;
-        yield* super.traverse({
+        for (const [node] of super.traverse({
             ...src,
             from: fromId,
-        });
+        })) {
+            yield node;
+        }
     }
 
     /**
@@ -566,7 +568,7 @@ export class WrWorld extends Ctx {
         if (targetParentId && !this.getNode(targetParentId)) return null;
 
         const sourceOrder = [];
-        for (const sourceNode of super.traverse({
+        for (const [sourceNode] of super.traverse({
             from: sourceRoot.id,
             mode: "dfs_pre",
             includeFrom: true,
@@ -749,7 +751,6 @@ export class WrWorld extends Ctx {
 }
 
 export default WrWorld;
-
 
 
 

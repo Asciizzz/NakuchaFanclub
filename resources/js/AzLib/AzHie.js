@@ -28,6 +28,13 @@ function cut(list, value) {
 	return i;
 }
 
+const AZHIE_CHECK = Object.freeze({
+	SKIP_CALL: 1 << 0,
+	SKIP_YIELD: 1 << 1,
+	TERMINATE: 1 << 2,
+	BREAK_BRANCH: 1 << 3,
+});
+
 export class Node {
 	ctx = null;
 	id = "";
@@ -83,6 +90,8 @@ export class Node {
 }
 
 export class Ctx {
+	static CHECK = AZHIE_CHECK;
+
 	#nodes = new Map();
 	#version = 0;
 	#seed = 1;
@@ -302,16 +311,52 @@ export class Ctx {
 	/**
 	 * Traverse tree
 	 * @param {object} [options={}] traversal options
-	 * @returns {Generator<Node>}
+	 * @param {string|Node|{id:string}} options.from start node reference (required)
+	 * @param {boolean} [options.includeFrom=true] include `from` node itself
+	 * @param {"dfs_pre"|"dfs_post"|"bfs"} [options.mode="dfs_pre"] traversal mode
+	 * @param {(node: Node, ctx: Ctx) => void} [options.callNode] callback run for every visited node
+	 * @param {{checkNode?: (node: Node, ctx: Ctx) => number}} [options.ignore] returns bitmask from `Ctx.CHECK`
+	 * @returns {Generator<[Node, any]>} yields `[node, callNodeResult]`
 	 */
 	*traverse(options = {}) {
 		const mode = String(options?.mode ?? "dfs_pre").toLowerCase();
-		const includeFrom = options?.includeFrom !== false;
-		const filter = typeof options?.filter === "function" ? options.filter : null;
+		const callNodeFn = typeof options?.callNode === "function" ? options.callNode : null;
+		const checkNodeFn = typeof options?.ignore?.checkNode === "function" ? options.ignore.checkNode : null;
+		const CHECK = Ctx.CHECK;
+
 		const fromNode = this.getNode(options?.from ?? null);
 		if (!fromNode) return;
+
+		const includeFrom = options?.includeFrom !== false;
 		const start = includeFrom ? [fromNode.id] : fromNode.childIds.slice();
 		if (start.length <= 0) return;
+
+		const inspectNode = (node) => {
+			const rawFlags = checkNodeFn ? Number(checkNodeFn(node, this)) : 0;
+			const flags = Number.isFinite(rawFlags) ? (rawFlags | 0) : 0;
+			let callResult;
+			if (!(flags & CHECK.SKIP_CALL) && callNodeFn) callResult = callNodeFn(node, this);
+			return { flags, callResult };
+		};
+
+		function* yieldNode(node, visit) {
+			if (!(visit.flags & CHECK.SKIP_YIELD)) yield [node, visit.callResult];
+		}
+
+		const pushDfsChildren = (stack, node) => {
+			for (let i = node.childIds.length - 1; i >= 0; i--) {
+				stack.push({
+					id: node.childIds[i],
+					phase: "enter",
+				});
+			}
+		};
+
+		const pushBfsChildren = (queue, node) => {
+			for (let i = 0; i < node.childIds.length; i++) {
+				queue.push(node.childIds[i]);
+			}
+		};
 
 		if (mode === "bfs") {
 			const q = start.slice();
@@ -319,10 +364,11 @@ export class Ctx {
 				const id = q.shift();
 				const node = this.#nodes.get(id);
 				if (!node) continue;
-				if (!filter || filter(node)) yield node;
-				for (let i = 0; i < node.childIds.length; i++) {
-					q.push(node.childIds[i]);
-				}
+				const visit = inspectNode(node);
+				yield* yieldNode(node, visit);
+				if (visit.flags & CHECK.TERMINATE) return;
+				if (visit.flags & CHECK.BREAK_BRANCH) continue;
+				pushBfsChildren(q, node);
 			}
 			return;
 		}
@@ -333,23 +379,34 @@ export class Ctx {
 			const node = this.#nodes.get(cur.id);
 			if (!node) continue;
 
-			if (mode === "dfs_post" && cur.phase === "exit") {
-				if (!filter || filter(node)) yield node;
+			if (mode === "dfs_post") {
+				if (cur.phase === "exit") {
+					const visit = {
+						flags: cur.flags ?? 0,
+						callResult: cur.callResult,
+					};
+					yield* yieldNode(node, visit);
+					if (visit.flags & CHECK.TERMINATE) return;
+					continue;
+				}
+
+				const visit = inspectNode(node);
+				if (visit.flags & CHECK.TERMINATE) {
+					yield* yieldNode(node, visit);
+					return;
+				}
+
+				stack.push({ ...cur, phase: "exit", ...visit });
+				if (visit.flags & CHECK.BREAK_BRANCH) continue;
+				pushDfsChildren(stack, node);
 				continue;
 			}
 
-			if (mode === "dfs_pre") {
-				if (!filter || filter(node)) yield node;
-			} else {
-				stack.push({ ...cur, phase: "exit" });
-			}
-
-			for (let i = node.childIds.length - 1; i >= 0; i--) {
-				stack.push({
-					id: node.childIds[i],
-					phase: "enter",
-				});
-			}
+			const visit = inspectNode(node);
+			yield* yieldNode(node, visit);
+			if (visit.flags & CHECK.TERMINATE) return;
+			if (visit.flags & CHECK.BREAK_BRANCH) continue;
+			pushDfsChildren(stack, node);
 		}
 	}
 

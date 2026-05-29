@@ -34,7 +34,7 @@ export class WrScreenHover {
 		const halfW = rect.width * 0.5;
 		const halfH = rect.height * 0.5;
 
-		for (const node of root.traverse({ mode: "dfs_pre", includeFrom: true })) {
+		for (const [node] of root.traverse({ mode: "dfs_pre", includeFrom: true })) {
 			if (this.renderCondition && !this.renderCondition(this.world, node)) continue;
 			const tx = node.getComp(WrTransform);
 			if (!tx || !tx.world) continue;
@@ -73,4 +73,3 @@ export class WrScreenHover {
 }
 
 export default WrScreenHover;
-
