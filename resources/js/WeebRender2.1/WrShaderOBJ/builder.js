@@ -1,3 +1,116 @@
+export const WR_SHADER_KEYS = Object.freeze([
+	"$POSITION$",
+	"$NORMAL$",
+	"$UV$",
+	"$TANGENT$",
+	"$BONE_ID$",
+	"$BONE_WEIGHT$",
+	"$MORPH_POS$",
+	"$MORPH_WEIGHT$",
+	"$INST_MODEL$",
+	"$INST_DATA0$",
+	"$INST_DATA1$",
+	"$INST_DATA2$",
+	"$INST_DATA3$",
+	"$VIEW$",
+	"$PROJECTION$",
+	"$TIME$",
+	"$DELTA_TIME$",
+	"$SKIN_PALETTE$",
+	"$VTX_FLAGS$",
+	"$SKIN_ENABLED$",
+	"$HAS_MORPH$",
+	"$HAS_UV$",
+	"$HAS_NORMAL$",
+	"$HAS_COLOR$",
+	"$HAS_BONE$",
+	"$HAS_TANGENT$",
+	"$MORPH_HAS_POS$",
+	"$MORPH_HAS_NORMAL$",
+	"$MORPH_HAS_TANGENT$",
+	"$ALBEDO_TEX$",
+	"$ALBEDO_COLOR$",
+	"$OUT_COLOR$",
+]);
+
+const WR_KEY_SET = new Set(WR_SHADER_KEYS);
+
+const WR_STAGE_KEYS = Object.freeze({
+	vertex: new Set([
+		"$POSITION$",
+		"$NORMAL$",
+		"$UV$",
+		"$TANGENT$",
+		"$BONE_ID$",
+		"$BONE_WEIGHT$",
+		"$MORPH_POS$",
+		"$MORPH_WEIGHT$",
+		"$INST_MODEL$",
+		"$INST_DATA0$",
+		"$INST_DATA1$",
+		"$INST_DATA2$",
+		"$INST_DATA3$",
+		"$VIEW$",
+		"$PROJECTION$",
+		"$TIME$",
+		"$DELTA_TIME$",
+		"$SKIN_PALETTE$",
+		"$VTX_FLAGS$",
+		"$SKIN_ENABLED$",
+		"$HAS_MORPH$",
+		"$HAS_UV$",
+		"$HAS_NORMAL$",
+		"$HAS_COLOR$",
+		"$HAS_BONE$",
+		"$HAS_TANGENT$",
+		"$MORPH_HAS_POS$",
+		"$MORPH_HAS_NORMAL$",
+		"$MORPH_HAS_TANGENT$",
+	]),
+	fragment: new Set([
+		"$UV$",
+		"$ALBEDO_TEX$",
+		"$ALBEDO_COLOR$",
+		"$OUT_COLOR$",
+		"$VTX_FLAGS$",
+		"$SKIN_ENABLED$",
+		"$HAS_MORPH$",
+		"$HAS_UV$",
+		"$HAS_NORMAL$",
+		"$HAS_COLOR$",
+		"$HAS_BONE$",
+		"$HAS_TANGENT$",
+		"$MORPH_HAS_POS$",
+		"$MORPH_HAS_NORMAL$",
+		"$MORPH_HAS_TANGENT$",
+		"$TIME$",
+		"$DELTA_TIME$",
+	]),
+});
+
+function wrExtractTemplateKeys(source) {
+	const text = String(source ?? "");
+	const found = text.match(/\$[A-Z0-9_]+\$/g) ?? [];
+	return Array.from(new Set(found));
+}
+
+export function wrValidateTemplateKeys(source, stage) {
+	const stageName = String(stage ?? "").toLowerCase();
+	const allowed = WR_STAGE_KEYS[stageName];
+	if (!allowed) throw new Error(`[WrShaderBuilder] unknown stage "${stage}"`);
+
+	const found = wrExtractTemplateKeys(source);
+	for (const key of found) {
+		if (!WR_KEY_SET.has(key)) {
+			throw new Error(`[WrShaderBuilder] unknown key "${key}"`);
+		}
+		if (!allowed.has(key)) {
+			throw new Error(`[WrShaderBuilder] key "${key}" is not valid in ${stageName} stage`);
+		}
+	}
+	return found;
+}
+
 const WR_LINK_RESERVED = new Set([
     "input",
     "output",

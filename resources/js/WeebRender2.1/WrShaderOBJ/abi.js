@@ -1,4 +1,4 @@
-import { wrValidateTemplateKeys } from "./WrShaderTemplate.js";
+import { wrValidateTemplateKeys } from "./builder.js";
 
 export const WR_VERTEX_ABI_VERSION = 1;
 

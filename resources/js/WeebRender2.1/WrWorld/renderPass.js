@@ -18,6 +18,7 @@ export class RenderPass extends Component {
 		clearDepthEnabled: true,
 		useDepth: true,
 	};
+	lastResult = null;
 
 	set(next = {}) {
 		const src = next && typeof next === "object" ? next : {};
@@ -27,6 +28,11 @@ export class RenderPass extends Component {
 		if (src.clearDepthEnabled !== undefined) this.cfg.clearDepthEnabled = !!src.clearDepthEnabled;
 		if (src.useDepth !== undefined) this.cfg.useDepth = !!src.useDepth;
 		return this.cfg;
+	}
+
+	setResult(result = null) {
+		this.lastResult = result ?? null;
+		return this.lastResult;
 	}
 }
 

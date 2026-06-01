@@ -6,35 +6,35 @@ function asId(value) {
 	return id || null;
 }
 
-export class ShaderObj extends Component {
-	shaderIds = [];
+export class ShaderOBJ extends Component {
+	ids = [];
 
 	useShader(value) {
 		const id = asId(value);
 		if (!id) return false;
-		this.shaderIds.push(id);
+		this.ids.push(id);
 		return true;
 	}
 
 	disuseShader(value) {
 		const id = asId(value);
 		if (!id) return false;
-		const index = this.shaderIds.indexOf(id);
+		const index = this.ids.indexOf(id);
 		if (index < 0) return false;
-		this.shaderIds.splice(index, 1);
+		this.ids.splice(index, 1);
 		return true;
 	}
 
-	setShaderIds(values) {
-		this.shaderIds.length = 0;
+	setIds(values) {
+		this.ids.length = 0;
 		const list = Array.isArray(values) ? values : [values];
 		for (const value of list) this.useShader(value);
-		return this.shaderIds;
+		return this.ids;
 	}
 }
 
 if (typeof window !== "undefined") {
-	window.WrShaderObjComp21 = ShaderObj;
+	window.WrShaderOBJComp21 = ShaderOBJ;
 }
 
-export default ShaderObj;
+export default ShaderOBJ;

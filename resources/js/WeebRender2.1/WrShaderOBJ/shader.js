@@ -931,7 +931,7 @@ function wgpuPipelineDescriptor(shader, backend, options = {}) {
  * WrShader
  * Backend-aware WR2 shader asset with fixed template wrappers
  */
-export class WrShaderObj {
+export class WrShaderOBJ {
 	static Keys = WR_SHADER_KEYS;
 	static DefaultRenderCfg = WR_DEFAULT_RENDER_CFG;
 	static WgpuVertexLayout = WR_WGPU_VERTEX_LAYOUT;
@@ -963,8 +963,8 @@ export class WrShaderObj {
 	}
 
 	static from(desc = {}) {
-		if (desc instanceof WrShaderObj) return desc;
-		return new WrShaderObj(desc);
+		if (desc instanceof WrShaderOBJ) return desc;
+		return new WrShaderOBJ(desc);
 	}
 
 	static normalizeRenderCfg(renderCfg = null) {
@@ -986,7 +986,7 @@ export class WrShaderObj {
 	}
 
 	configure(desc = {}) {
-		const norm = WrShaderObj.normalize(desc);
+		const norm = WrShaderOBJ.normalize(desc);
 		this.id = norm.id;
 		this.label = norm.label;
 		this.kind = String(desc?.kind ?? this.kind ?? "object").toLowerCase() === "fullscreen"
@@ -1128,8 +1128,8 @@ export class WrShaderObj {
 }
 
 if (typeof window !== "undefined") {
-	window.WrShaderObj = WrShaderObj;
+	window.WrShaderOBJ = WrShaderOBJ;
 }
 
-export default WrShaderObj;
+export default WrShaderOBJ;
 

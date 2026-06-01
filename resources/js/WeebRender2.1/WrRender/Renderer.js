@@ -1,6 +1,6 @@
 import * as Azm from "../../AzLib/Azm.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
-import { ShaderObj as ShaderObjComp } from "../WrWorld/shaderObj.js";
+import { ShaderOBJ as ShaderOBJComp } from "../WrWorld/shaderObj.js";
 import { RenderPass as RenderPassComp } from "../WrWorld/renderPass.js";
 import { Transform } from "../WrWorld/transform.js";
 import { LiveSkeleton } from "../WrWorld/liveSkeleton.js";
@@ -241,50 +241,87 @@ export class WrRenderer {
 		const camera = getCamera(src.camera ?? this.camera ?? null);
 		const fromNode = asNode(world, src.from ?? src.fromId ?? null);
 		if (!world || !stores || !fromNode) {
-			return { from: null, count: 0, ops: [] };
+			return { from: null, passNodeId: null, count: 0, ops: [], reason: "missing_input" };
+		}
+
+		const passComp = fromNode.getComp(RenderPassComp) ?? null;
+		if (!passComp) {
+			return {
+				from: fromNode.id,
+				passNodeId: null,
+				count: 0,
+				ops: [],
+				backend: backend?.kind ?? null,
+				reason: "missing_renderpass",
+			};
 		}
 
 		const modelByNode = this.#updateTransforms(fromNode);
-		const queue = this.#buildQueue(world, stores, fromNode, modelByNode);
+		const collected = this.#buildQueue(world, stores, fromNode, modelByNode);
+		const queue = collected.ops;
 		if (!backend || src.collectOnly === true) {
-			return {
+			const result = {
 				from: fromNode.id,
+				passNodeId: fromNode.id,
+				passCfg: passComp.cfg,
 				count: queue.length,
 				ops: queue,
+				stats: collected.stats,
 				backend: backend?.kind ?? null,
+				reason: null,
 			};
+			passComp.setResult(result);
+			return result;
 		}
 
 		if (backend.kind === "webgpu") this.#renderWgpu(backend, camera, stores, queue, src);
 		if (backend.kind === "webgl2") this.#renderWgl2(backend, camera, stores, queue, src);
 
-		return {
+		const result = {
 			from: fromNode.id,
+			passNodeId: fromNode.id,
+			passCfg: passComp.cfg,
 			count: queue.length,
 			ops: queue,
+			stats: collected.stats,
 			backend: backend.kind,
+			reason: null,
 		};
+		passComp.setResult(result);
+		return result;
 	}
 
 	#buildQueue(world, stores, fromNode, modelByNode) {
 		const queue = [];
+		const stats = {
+			nodesVisited: 0,
+			prunedNestedRenderPass: 0,
+			skippedMeshNoShader: 0,
+			skippedMeshInvalidShader: 0,
+		};
 		const ctxById = new Map();
 		const bfs = [fromNode];
-		ctxById.set(fromNode.id, { pass: null, shaderIds: [] });
+		ctxById.set(fromNode.id, { pass: null, ids: [] });
 
 		while (bfs.length > 0) {
 			const node = bfs.shift();
-			const parentCtx = ctxById.get(node.id) ?? { pass: null, shaderIds: [] };
-			const passComp = node.getComp(RenderPassComp) ?? parentCtx.pass ?? null;
-			const shaderComp = node.getComp(ShaderObjComp);
-			const shaderIds = parentCtx.shaderIds.slice();
-			if (shaderComp) pushShaderIds(shaderIds, shaderComp.shaderIds);
+			stats.nodesVisited += 1;
+			const parentCtx = ctxById.get(node.id) ?? { pass: null, ids: [] };
+			const ownPass = node.getComp(RenderPassComp) ?? null;
+			if (node !== fromNode && ownPass) {
+				stats.prunedNestedRenderPass += 1;
+				continue;
+			}
+			const passComp = ownPass ?? parentCtx.pass ?? null;
+			const shaderComp = node.getComp(ShaderOBJComp);
+			const ids = parentCtx.ids.slice();
+			if (shaderComp) pushShaderIds(ids, shaderComp.ids);
 
 			if (shaderComp) {
-				for (const shaderId of shaderComp.shaderIds) {
+				for (const shaderId of shaderComp.ids) {
 					const id = asId(shaderId);
 					if (!id) continue;
-					const shader = stores.shaders?.get(id) ?? null;
+					const shader = stores.shaderOBJs?.get(id) ?? null;
 					if (!shader || shader.kind !== "fullscreen") continue;
 					queue.push({
 						type: "fullscreen",
@@ -306,11 +343,22 @@ export class WrRenderer {
 						const skeleton = stores.skeletons?.get(liveSkeleton.skeletonId) ?? null;
 						if (skeleton?.buildPalette) skinPalette = skeleton.buildPalette(liveSkeleton.bones, SKIN_BONE_CAP);
 					}
-					for (const shaderId of shaderIds) {
+					const drawShaderIds = [];
+					for (const shaderId of ids) {
 						const id = asId(shaderId);
 						if (!id) continue;
-						const shader = stores.shaders?.get(id) ?? null;
-						if (!shader || shader.kind === "fullscreen") continue;
+						const shader = stores.shaderOBJs?.get(id) ?? null;
+						if (!shader) {
+							stats.skippedMeshInvalidShader += 1;
+							continue;
+						}
+						if (shader.kind === "fullscreen") continue;
+						drawShaderIds.push(id);
+					}
+					if (drawShaderIds.length <= 0) {
+						stats.skippedMeshNoShader += 1;
+					}
+					for (const id of drawShaderIds) {
 						queue.push({
 							type: "mesh",
 							node,
@@ -327,12 +375,12 @@ export class WrRenderer {
 			}
 
 			for (const child of childNodeList(node)) {
-				ctxById.set(child.id, { pass: passComp, shaderIds });
+				ctxById.set(child.id, { pass: passComp, ids });
 				bfs.push(child);
 			}
 		}
 
-		return queue;
+		return { ops: queue, stats };
 	}
 
 	#updateTransforms(fromNode) {
@@ -408,9 +456,9 @@ export class WrRenderer {
 		}
 
 		for (const draw of draws) {
-			const shader = stores.shaders?.get(draw.shaderId) ?? null;
+			const shader = stores.shaderOBJs?.get(draw.shaderId) ?? null;
 			if (!shader) continue;
-			const backendShader = stores.shaders.createGpu(backend, draw.shaderId, {
+			const backendShader = stores.shaderOBJs.createGpu(backend, draw.shaderId, {
 				createPipeline: true,
 				sampleCount: frameOptions.sampleCount ?? backend.sampleCount ?? 1,
 			});
@@ -655,9 +703,9 @@ export class WrRenderer {
 		const viewProj = Azm.Mat4.mul(projection, view);
 
 		for (const draw of draws) {
-			const shader = stores.shaders?.get(draw.shaderId) ?? null;
+			const shader = stores.shaderOBJs?.get(draw.shaderId) ?? null;
 			if (!shader) continue;
-			const backendShader = stores.shaders.createGpu(backend, draw.shaderId, { createPipeline: true });
+			const backendShader = stores.shaderOBJs.createGpu(backend, draw.shaderId, { createPipeline: true });
 			const glPipeline = backendShader?.glPipeline ?? null;
 			if (!glPipeline?.program) continue;
 			applyWglState(gl, glPipeline.state);

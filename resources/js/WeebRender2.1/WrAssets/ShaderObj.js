@@ -1,2 +1,2 @@
-export { WrShaderObj } from "../WrShader/WrShaderObj.js";
-export { WrShaderObj as default } from "../WrShader/WrShaderObj.js";
+export { WrShaderOBJ } from "../WrShaderOBJ/shader.js";
+export { WrShaderOBJ as default } from "../WrShaderOBJ/shader.js";

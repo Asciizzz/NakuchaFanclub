@@ -4,25 +4,25 @@ export {
 	Transform as WrTransform,
 	MeshRenderer as WrMeshRenderer,
 	LiveSkeleton as WrLiveSkeleton,
-	ShaderObj as WrShaderObjComp,
+	ShaderOBJ as WrShaderOBJComp,
 	RenderPass as WrRenderPass,
 } from "./WrWorld/Components.js";
 
 export { WrMesh } from "./WrAssets/Mesh.js";
 export { WrTexture } from "./WrAssets/Texture.js";
 export { WrSkeleton } from "./WrAssets/Skeleton.js";
-export { WrShaderObj } from "./WrAssets/ShaderObj.js";
+export { WrShaderOBJ } from "./WrAssets/ShaderObj.js";
 export {
 	wrBuildTemplateShaderDefinition,
 	wrIsTemplateShaderDefinition,
 	WR_SHADER_KEYS,
-} from "./WrShader/index.js";
+} from "./WrShaderOBJ/builder.js";
 
 export {
 	WrMeshStore,
 	WrTextureStore,
 	WrSkeletonStore,
-	WrShaderStore,
+	WrShaderOBJStore,
 	WrStores,
 } from "./WrStores/index.js";
 
