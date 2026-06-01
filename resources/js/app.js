@@ -1,1 +1,1 @@
-import './welcome/wr-scene.js';
+import './welcome/test2_1.js';
