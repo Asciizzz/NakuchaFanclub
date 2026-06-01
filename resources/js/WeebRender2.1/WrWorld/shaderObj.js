@@ -6,7 +6,7 @@ function asId(value) {
 	return id || null;
 }
 
-export class Shader extends Component {
+export class ShaderObj extends Component {
 	shaderIds = [];
 
 	useShader(value) {
@@ -34,7 +34,7 @@ export class Shader extends Component {
 }
 
 if (typeof window !== "undefined") {
-	window.WrShaderComp21 = Shader;
+	window.WrShaderObjComp21 = ShaderObj;
 }
 
-export default Shader;
+export default ShaderObj;

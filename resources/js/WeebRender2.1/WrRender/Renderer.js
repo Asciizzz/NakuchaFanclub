@@ -1,6 +1,6 @@
 import * as Azm from "../../AzLib/Azm.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
-import { Shader as ShaderComp } from "../WrWorld/shader.js";
+import { ShaderObj as ShaderObjComp } from "../WrWorld/shaderObj.js";
 import { RenderPass as RenderPassComp } from "../WrWorld/renderPass.js";
 import { Transform } from "../WrWorld/transform.js";
 import { LiveSkeleton } from "../WrWorld/liveSkeleton.js";
@@ -276,7 +276,7 @@ export class WrRenderer {
 			const node = bfs.shift();
 			const parentCtx = ctxById.get(node.id) ?? { pass: null, shaderIds: [] };
 			const passComp = node.getComp(RenderPassComp) ?? parentCtx.pass ?? null;
-			const shaderComp = node.getComp(ShaderComp);
+			const shaderComp = node.getComp(ShaderObjComp);
 			const shaderIds = parentCtx.shaderIds.slice();
 			if (shaderComp) pushShaderIds(shaderIds, shaderComp.shaderIds);
 

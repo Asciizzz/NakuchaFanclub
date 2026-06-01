@@ -4,14 +4,14 @@ export {
 	Transform as WrTransform,
 	MeshRenderer as WrMeshRenderer,
 	LiveSkeleton as WrLiveSkeleton,
-	Shader as WrShaderComp,
+	ShaderObj as WrShaderObjComp,
 	RenderPass as WrRenderPass,
 } from "./WrWorld/Components.js";
 
 export { WrMesh } from "./WrAssets/Mesh.js";
 export { WrTexture } from "./WrAssets/Texture.js";
 export { WrSkeleton } from "./WrAssets/Skeleton.js";
-export { WrShader } from "./WrAssets/Shader.js";
+export { WrShaderObj } from "./WrAssets/ShaderObj.js";
 export {
 	wrBuildTemplateShaderDefinition,
 	wrIsTemplateShaderDefinition,

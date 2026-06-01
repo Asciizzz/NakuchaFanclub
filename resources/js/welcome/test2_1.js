@@ -5,9 +5,9 @@ import { FCamera } from "./FCamera.js";
 import {
 	WrWorld,
 	WrTransform,
-	WrShaderComp,
+	WrShaderObjComp,
 	WrRenderPass,
-	WrShader,
+	WrShaderObj,
 	WrStores,
 	WrLoader,
 	WrRenderer,
@@ -61,7 +61,7 @@ async function run() {
 	resize();
 	new ResizeObserver(resize).observe(container);
 
-	const mainShaderId = stores.shaders.add(new WrShader({
+	const mainShaderId = stores.shaders.add(new WrShaderObj({
 		id: "main-shader",
 		kind: "object",
 		renderCfg: {
@@ -144,7 +144,7 @@ async function run() {
 		},
 	}));
 
-	const outlineShaderId = stores.shaders.add(new WrShader({
+	const outlineShaderId = stores.shaders.add(new WrShaderObj({
 		id: "outline-shader",
 		kind: "object",
 		renderCfg: {
@@ -235,7 +235,7 @@ async function run() {
 		clearDepthEnabled: true,
 		useDepth: true,
 	});
-	const shaderComp = renderRoot.addComp(WrShaderComp);
+	const shaderComp = renderRoot.addComp(WrShaderObjComp);
 	shaderComp.useShader(outlineShaderId);
 	shaderComp.useShader(mainShaderId);
 

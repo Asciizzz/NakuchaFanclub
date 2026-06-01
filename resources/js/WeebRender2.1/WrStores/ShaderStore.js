@@ -1,5 +1,5 @@
 import AzStore from "../../AzLib/AzStore.js";
-import { WrShader } from "../WrAssets/Shader.js";
+import { WrShaderObj } from "../WrAssets/ShaderObj.js";
 
 function asId(value) {
 	if (value == null) return null;
@@ -11,7 +11,7 @@ export class WrShaderStore extends AzStore {
 	#backendCache = new Map();
 
 	add(shader) {
-		const value = shader instanceof WrShader ? shader : WrShader.from(shader ?? {});
+		const value = shader instanceof WrShaderObj ? shader : WrShaderObj.from(shader ?? {});
 		const explicitId = asId(value.id);
 		if (explicitId && !this.has(explicitId)) {
 			super.add(value);

@@ -2,7 +2,7 @@ import { load as loadGLB } from "../../WeebRender2/WrLoader/GltfLoader.js";
 import { Transform } from "../WrWorld/transform.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
 import { LiveSkeleton } from "../WrWorld/liveSkeleton.js";
-import { Shader as ShaderComp } from "../WrWorld/shader.js";
+import { ShaderObj as ShaderObjComp } from "../WrWorld/shaderObj.js";
 import { RenderPass as RenderPassComp } from "../WrWorld/renderPass.js";
 import { WrMesh } from "../WrAssets/Mesh.js";
 import { WrTexture } from "../WrAssets/Texture.js";
@@ -286,7 +286,7 @@ export class WrLoader {
 			pass.set(src.passCfg);
 		}
 		if (src.shaderIds !== undefined) {
-			const shader = root.addComp(ShaderComp);
+			const shader = root.addComp(ShaderObjComp);
 			shader.setShaderIds(src.shaderIds);
 		}
 
