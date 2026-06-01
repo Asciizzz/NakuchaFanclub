@@ -41,8 +41,8 @@ async function run() {
 
 	const world = new WrWorld();
 	const stores = new WrStores();
-	const loader = new WrLoader({ backend, stores, world });
-	const renderer = new WrRenderer();
+	const loader = new WrLoader({ backend, world, stores });
+	const renderer = new WrRenderer({ backend, world, stores });
 
 	const camera = new AzCamera({
 		position: [0, 1.1, 4.5],
@@ -239,11 +239,11 @@ async function run() {
 	shaderComp.useShader(outlineShaderId);
 	shaderComp.useShader(mainShaderId);
 
-	const roomRoot = await loader.loadModelFromURL("/Models/Room.glb", {
+	const roomRoot = await loader.registerGLTF("/Models/Room.glb", {
 		parent: renderRoot.id,
 		uploadGpu: true,
 	});
-	const nakuRoot = await loader.loadModelFromURL("/Models/Nakurin.glb", {
+	const nakuRoot = await loader.registerGLTF("/Models/Nakurin.glb", {
 		parent: renderRoot.id,
 		uploadGpu: true,
 	});
@@ -272,6 +272,7 @@ async function run() {
 		},
 	});
 	fcam.attach();
+	renderer.setCamera(camera);
 
 	let last = performance.now();
 	let t = 0;
@@ -284,10 +285,6 @@ async function run() {
 		fcam.update(dt);
 
 		renderer.render({
-			backend,
-			world,
-			stores,
-			camera,
 			from: renderRoot.id,
 			time: t,
 			deltaTime: dt,

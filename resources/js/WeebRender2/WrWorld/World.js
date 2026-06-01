@@ -507,7 +507,7 @@ export class WrWorld extends Ctx {
 		return queue;
 	}
 
-	async loadModelFromURL(url, options = {}) {
+	async registerGLTF(url, options = {}) {
 		const targetUrl = String(url ?? "").trim();
 		if (!targetUrl) throw new Error("[WrWorld] model URL is required");
 

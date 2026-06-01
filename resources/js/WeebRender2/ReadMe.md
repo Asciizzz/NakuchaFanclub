@@ -33,7 +33,7 @@ Sets active camera reference
 ### `world.registerShader(id, desc)`
 Registers a WR shader, refer to Shader section for more details
 
-### `world.loadModelFromURL(url, options)`
+### `world.registerGLTF(url, options)`
 Loads GLB and returns copied branch root node
 
 `options.shaderIds` is optional and gets appended to each loaded MeshRenderer

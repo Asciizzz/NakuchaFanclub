@@ -108,32 +108,37 @@ function buildVisitOrder(sourceById, childrenMap, rootId) {
 
 export class WrLoader {
 	backend = null;
-	stores = null;
 	world = null;
+	stores = null;
 
 	constructor(options = {}) {
 		const src = options && typeof options === "object" ? options : {};
 		this.backend = src.backend ?? null;
-		this.stores = src.stores ?? src.assets ?? null;
 		this.world = src.world ?? null;
+		this.stores = src.stores ?? src.assets ?? null;
 	}
 
 	setBackend(backend) {
 		this.backend = backend ?? null;
-		return this.backend;
-	}
-
-	setStores(stores) {
-		this.stores = stores ?? null;
-		return this.stores;
+		return this;
 	}
 
 	setWorld(world) {
 		this.world = world ?? null;
-		return this.world;
+		return this;
 	}
 
-	async loadModelFromURL(url, options = {}) {
+	setStores(stores) {
+		this.stores = stores ?? null;
+		return this;
+	}
+
+	setAssets(assets) {
+		this.stores = assets ?? null;
+		return this;
+	}
+
+	async registerGLTF(url, options = {}) {
 		const targetUrl = String(url ?? "").trim();
 		if (!targetUrl) return null;
 

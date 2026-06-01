@@ -195,13 +195,50 @@ function applyWglState(gl, state) {
 
 export class WrRenderer {
 	#gpuByBackend = new WeakMap();
+	backend = null;
+	world = null;
+	stores = null;
+	camera = null;
+
+	constructor(options = {}) {
+		const src = options && typeof options === "object" ? options : {};
+		this.backend = src.backend ?? null;
+		this.world = src.world ?? null;
+		this.stores = src.stores ?? src.assets ?? null;
+		this.camera = src.camera ?? null;
+	}
+
+	setBackend(backend) {
+		this.backend = backend ?? null;
+		return this;
+	}
+
+	setWorld(world) {
+		this.world = world ?? null;
+		return this;
+	}
+
+	setStores(stores) {
+		this.stores = stores ?? null;
+		return this;
+	}
+
+	setAssets(assets) {
+		this.stores = assets ?? null;
+		return this;
+	}
+
+	setCamera(camera) {
+		this.camera = camera ?? null;
+		return this;
+	}
 
 	render(options = {}) {
 		const src = options && typeof options === "object" ? options : {};
-		const world = src.world ?? null;
-		const stores = src.stores ?? null;
-		const backend = src.backend ?? null;
-		const camera = getCamera(src.camera ?? null);
+		const world = src.world ?? this.world ?? null;
+		const stores = src.stores ?? src.assets ?? this.stores ?? null;
+		const backend = src.backend ?? this.backend ?? null;
+		const camera = getCamera(src.camera ?? this.camera ?? null);
 		const fromNode = asNode(world, src.from ?? src.fromId ?? null);
 		if (!world || !stores || !fromNode) {
 			return { from: null, count: 0, ops: [] };
