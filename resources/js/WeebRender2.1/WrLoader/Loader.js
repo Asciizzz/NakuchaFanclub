@@ -283,7 +283,8 @@ export class WrLoader {
 
 		if (src.passCfg && typeof src.passCfg === "object") {
 			const pass = root.addComp(RenderPassComp);
-			pass.set(src.passCfg);
+			const passId = stores.renderPasses?.add(src.passCfg) ?? null;
+			pass.usePass(passId);
 		}
 		if (src.ids !== undefined) {
 			const shader = root.addComp(ShaderOBJComp);

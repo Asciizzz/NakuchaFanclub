@@ -4,6 +4,7 @@ import { ShaderOBJ as ShaderOBJComp } from "../WrWorld/shaderObj.js";
 import { RenderPass as RenderPassComp } from "../WrWorld/renderPass.js";
 import { Transform } from "../WrWorld/transform.js";
 import { LiveSkeleton } from "../WrWorld/liveSkeleton.js";
+import { WrRenderPass } from "../WrAssets/RenderPass.js";
 
 const SCENE_UBO_F32 = 56;
 const OBJECT_UBO_F32 = 2096;
@@ -159,6 +160,25 @@ function getCamera(camera) {
 	return camera ?? null;
 }
 
+function resolveRenderPassAsset(stores, passComp) {
+	if (!passComp) return null;
+	const passId = asId(passComp.id);
+	const stored = passId ? (stores?.renderPasses?.get(passId) ?? null) : null;
+	if (stored) return stored;
+	if (passComp.cfg && typeof passComp.cfg === "object") {
+		return WrRenderPass.from({
+			id: passId,
+			...passComp.cfg,
+		});
+	}
+	return null;
+}
+
+function renderPassFrameOptions(passAsset) {
+	if (passAsset && typeof passAsset.toFrameOptions === "function") return passAsset.toFrameOptions();
+	return passAsset ?? null;
+}
+
 function applyWglState(gl, state) {
 	if (!gl || !state) return;
 	if (state.depthTest) gl.enable(gl.DEPTH_TEST);
@@ -269,12 +289,37 @@ export class WrRenderer {
 		const allOps = [];
 		for (const passNode of passRoots) {
 			const passComp = passNode.getComp(RenderPassComp) ?? null;
-			if (!passComp) continue;
+			const passAsset = resolveRenderPassAsset(stores, passComp);
+			if (!passComp || !passAsset) continue;
+			if (String(passAsset.target?.type ?? "screen") !== "screen") {
+				const passResult = {
+					from: fromNode.id,
+					passNodeId: passNode.id,
+					passId: passAsset.id ?? passComp.id ?? null,
+					passCfg: renderPassFrameOptions(passAsset),
+					target: passAsset.target,
+					count: 0,
+					ops: [],
+					stats: {
+						nodesVisited: 0,
+						prunedNestedRenderPass: 0,
+						skippedMeshNoShader: 0,
+						skippedMeshInvalidShader: 0,
+					},
+					backend: backend?.kind ?? null,
+					reason: "unsupported_render_target",
+				};
+				passComp.setResult(passResult);
+				passResults.push(passResult);
+				continue;
+			}
 			const collected = this.#buildQueue(world, stores, passNode, modelByNode);
 			const passResult = {
 				from: fromNode.id,
 				passNodeId: passNode.id,
-				passCfg: passComp.cfg,
+				passId: passAsset.id ?? passComp.id ?? null,
+				passCfg: renderPassFrameOptions(passAsset),
+				target: passAsset.target,
 				count: collected.ops.length,
 				ops: collected.ops,
 				stats: collected.stats,

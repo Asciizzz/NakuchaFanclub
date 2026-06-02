@@ -12,6 +12,7 @@ export { WrMesh } from "./WrAssets/Mesh.js";
 export { WrTexture } from "./WrAssets/Texture.js";
 export { WrSkeleton } from "./WrAssets/Skeleton.js";
 export { WrShaderOBJ } from "./WrAssets/ShaderObj.js";
+export { WrRenderPass as WrRenderPassAsset } from "./WrAssets/RenderPass.js";
 export {
 	wrBuildTemplateShaderDefinition,
 	wrIsTemplateShaderDefinition,
@@ -23,6 +24,7 @@ export {
 	WrTextureStore,
 	WrSkeletonStore,
 	WrShaderOBJStore,
+	WrRenderPassStore,
 	WrStores,
 } from "./WrStores/index.js";
 

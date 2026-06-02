@@ -1,33 +1,29 @@
 import { Component } from "./component.js";
 
-function normalizeColor(value) {
-	const src = (Array.isArray(value) || ArrayBuffer.isView(value)) ? value : [0, 0, 0, 0];
-	return [
-		Number(src[0] ?? 0) || 0,
-		Number(src[1] ?? 0) || 0,
-		Number(src[2] ?? 0) || 0,
-		Number(src[3] ?? 0) || 0,
-	];
+function asId(value) {
+	if (value == null) return null;
+	const id = String(value).trim();
+	return id || null;
 }
 
 export class RenderPass extends Component {
-	cfg = {
-		clearColor: [0, 0, 0, 0],
-		clearColorEnabled: true,
-		clearDepth: 1,
-		clearDepthEnabled: true,
-		useDepth: true,
-	};
+	id = null;
+	cfg = null;
 	lastResult = null;
 
 	set(next = {}) {
 		const src = next && typeof next === "object" ? next : {};
-		if (src.clearColor !== undefined) this.cfg.clearColor = normalizeColor(src.clearColor);
-		if (src.clearColorEnabled !== undefined) this.cfg.clearColorEnabled = !!src.clearColorEnabled;
-		if (src.clearDepth !== undefined) this.cfg.clearDepth = Number(src.clearDepth) || 0;
-		if (src.clearDepthEnabled !== undefined) this.cfg.clearDepthEnabled = !!src.clearDepthEnabled;
-		if (src.useDepth !== undefined) this.cfg.useDepth = !!src.useDepth;
-		return this.cfg;
+		if (src.id !== undefined) this.id = asId(src.id);
+		if (src.passId !== undefined) this.id = asId(src.passId);
+		this.cfg = { ...src };
+		delete this.cfg.id;
+		delete this.cfg.passId;
+		return this;
+	}
+
+	usePass(id) {
+		this.id = asId(id);
+		return this.id;
 	}
 
 	setResult(result = null) {

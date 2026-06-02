@@ -11,6 +11,7 @@ import {
 	WrStores,
 	WrLoader,
 	WrRenderer,
+	WrRenderPassAsset,
 } from "../WeebRender2.1/index.js";
 
 const container = document.getElementById("main-canvas");
@@ -227,14 +228,17 @@ async function run() {
 
 	const renderRoot = world.addNode(null);
 	renderRoot.name = "render-root";
-	const passComp = renderRoot.addComp(WrRenderPass);
-	passComp.set({
+	const mainPassId = stores.renderPasses.add(new WrRenderPassAsset({
+		id: "main-pass",
+		target: "screen",
 		clearColor: [0, 0, 0, 0],
 		clearColorEnabled: true,
 		clearDepth: 1,
 		clearDepthEnabled: true,
 		useDepth: true,
-	});
+	}));
+	const passComp = renderRoot.addComp(WrRenderPass);
+	passComp.usePass(mainPassId);
 	const shaderComp = renderRoot.addComp(WrShaderOBJComp);
 	shaderComp.useShader(outlineShaderId);
 	shaderComp.useShader(mainShaderId);
