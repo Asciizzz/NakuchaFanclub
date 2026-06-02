@@ -6,8 +6,10 @@ import {
 	WrWorld,
 	WrTransform,
 	WrShaderOBJComp,
+	WrShaderFSCComp,
 	WrRenderPass,
 	WrShaderOBJ,
+	WrShaderFSC,
 	WrStores,
 	WrLoader,
 	WrRenderer,
@@ -52,6 +54,28 @@ async function run() {
 		fov: 45,
 	});
 	camera.lookAt([0, 1, 0]);
+
+	// Camera with fps controls
+	const fcam = new FCamera({
+		canvas,
+		camera,
+		cfg: {
+			look: {
+				sensitivity: 0.0022,
+			},
+			move: {
+				walkSpeed: 2.8,
+				sprintScale: 2.2,
+			},
+			zoom: {
+				wheelScale: 0.04,
+				minFov: 20,
+				maxFov: 90,
+			},
+		},
+	});
+	fcam.attach();
+	renderer.setCamera(camera);
 
 	const resize = () => {
 		backend.resize({ maxPixelRatio: 2 });
@@ -226,8 +250,35 @@ async function run() {
 		},
 	}));
 
-	const renderRoot = world.addNode(null);
-	renderRoot.name = "render-root";
+	const backgroundShaderId = stores.shaderFSCs.add(new WrShaderFSC({
+		id: "background-fsc",
+		renderCfg: {
+			depthTest: false,
+			depthWrite: false,
+			blend: false,
+		},
+		wgsl: {
+			fragment: `
+				let uv = $UV$;
+				let wave = 0.5 + 0.5 * sin($TIME$ + uv.x * 4.0 + uv.y * 2.0);
+				let top = vec3f(0.62, 0.70, 0.96);
+				let bot = vec3f(0.82, 0.76, 0.96);
+				let col = mix(bot, top, uv.y) + wave * 0.035;
+				$OUT_COLOR$ = vec4f(col, 1.0);
+			`,
+		},
+		glsl: {
+			fragment: `
+				vec2 uv = $UV$;
+				float wave = 0.5 + 0.5 * sin($TIME$ + uv.x * 4.0 + uv.y * 2.0);
+				vec3 top = vec3(0.62, 0.70, 0.96);
+				vec3 bot = vec3(0.82, 0.76, 0.96);
+				vec3 col = mix(bot, top, uv.y) + wave * 0.035;
+				$OUT_COLOR$ = vec4(col, 1.0);
+			`,
+		},
+	}));
+
 	const mainPassId = stores.renderPasses.add(new WrRenderPassAsset({
 		id: "main-pass",
 		target: "screen",
@@ -237,46 +288,33 @@ async function run() {
 		clearDepthEnabled: true,
 		useDepth: true,
 	}));
+
+	const renderRoot = world.addNode(null);
+	renderRoot.name = "render-root";
+	// renderpass
 	const passComp = renderRoot.addComp(WrRenderPass);
 	passComp.usePass(mainPassId);
+	// fullscreen shader for background
+	const backgroundComp = renderRoot.addComp(WrShaderFSCComp);
+	backgroundComp.useShader(backgroundShaderId);
+	// object shaders for meshes
 	const shaderComp = renderRoot.addComp(WrShaderOBJComp);
 	shaderComp.useShader(outlineShaderId);
 	shaderComp.useShader(mainShaderId);
 
-	const roomRoot = await loader.registerGLTF("/Models/Room.glb", {
-		parent: renderRoot.id,
-		uploadGpu: true,
-	});
-	const nakuRoot = await loader.registerGLTF("/Models/Nakurin.glb", {
-		parent: renderRoot.id,
-		uploadGpu: true,
-	});
+	// Create 2 new models
+	const roomRoot = await loader.registerGLTF("/Models/Room.glb", { uploadGpu: true });
+	const nakuRoot = await loader.registerGLTF("/Models/Nakurin.glb", { uploadGpu: true });
+
+	console.log(roomRoot, nakuRoot);
+
+	// The room is too fcking big
 	const roomTx = roomRoot?.getComp(WrTransform) ?? null;
 	if (roomTx) Azm.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
-	if (!roomRoot || !nakuRoot) {
-		console.warn("[WrScene2_1] one or more scene branches failed to load");
-	}
 
-	const fcam = new FCamera({
-		canvas,
-		camera,
-		cfg: {
-			look: {
-				sensitivity: 0.0022,
-			},
-			move: {
-				walkSpeed: 2.8,
-				sprintScale: 2.2,
-			},
-			zoom: {
-				wheelScale: 0.04,
-				minFov: 20,
-				maxFov: 90,
-			},
-		},
-	});
-	fcam.attach();
-	renderer.setCamera(camera);
+	// Add them to world
+	world.copyBranch(roomRoot.id, renderRoot.id);
+	world.copyBranch(nakuRoot.id, renderRoot.id);
 
 	let last = performance.now();
 	let t = 0;

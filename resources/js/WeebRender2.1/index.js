@@ -5,6 +5,7 @@ export {
 	MeshRenderer as WrMeshRenderer,
 	LiveSkeleton as WrLiveSkeleton,
 	ShaderOBJ as WrShaderOBJComp,
+	ShaderFSC as WrShaderFSCComp,
 	RenderPass as WrRenderPass,
 } from "./WrWorld/Components.js";
 
@@ -12,6 +13,7 @@ export { WrMesh } from "./WrAssets/Mesh.js";
 export { WrTexture } from "./WrAssets/Texture.js";
 export { WrSkeleton } from "./WrAssets/Skeleton.js";
 export { WrShaderOBJ } from "./WrAssets/ShaderObj.js";
+export { WrShaderFSC } from "./WrAssets/ShaderFSC.js";
 export { WrRenderPass as WrRenderPassAsset } from "./WrAssets/RenderPass.js";
 export {
 	wrBuildTemplateShaderDefinition,
@@ -24,6 +26,7 @@ export {
 	WrTextureStore,
 	WrSkeletonStore,
 	WrShaderOBJStore,
+	WrShaderFSCStore,
 	WrRenderPassStore,
 	WrStores,
 } from "./WrStores/index.js";

@@ -2,6 +2,7 @@ import { WrMeshStore } from "./MeshStore.js";
 import { WrTextureStore } from "./TextureStore.js";
 import { WrSkeletonStore } from "./SkeletonStore.js";
 import { WrShaderOBJStore } from "./ShaderStore.js";
+import { WrShaderFSCStore } from "./ShaderFSCStore.js";
 import { WrRenderPassStore } from "./RenderPassStore.js";
 
 export class WrStores {
@@ -11,6 +12,7 @@ export class WrStores {
 		this.textures = new WrTextureStore({ prefix: src.texturePrefix ?? "tex_" });
 		this.skeletons = new WrSkeletonStore({ prefix: src.skeletonPrefix ?? "skel_" });
 		this.shaderOBJs = new WrShaderOBJStore({ prefix: src.shaderOBJPrefix ?? src.shaderPrefix ?? "shaderOBJ_" });
+		this.shaderFSCs = new WrShaderFSCStore({ prefix: src.shaderFSCPrefix ?? "shaderFSC_" });
 		this.renderPasses = new WrRenderPassStore({ prefix: src.renderPassPrefix ?? "pass_" });
 	}
 
@@ -20,6 +22,7 @@ export class WrStores {
 			textures: this.textures.clear(),
 			skeletons: this.skeletons.clear(),
 			shaderOBJs: this.shaderOBJs.clear(),
+			shaderFSCs: this.shaderFSCs.clear(),
 			renderPasses: this.renderPasses.clear(),
 		};
 		return removed;
@@ -31,6 +34,7 @@ export class WrStores {
 			textures: this.textures.clearGpu(backend),
 			skeletons: 0,
 			shaderOBJs: 0,
+			shaderFSCs: 0,
 		};
 	}
 }

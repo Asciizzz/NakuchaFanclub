@@ -989,9 +989,7 @@ export class WrShaderOBJ {
 		const norm = WrShaderOBJ.normalize(desc);
 		this.id = norm.id;
 		this.label = norm.label;
-		this.kind = String(desc?.kind ?? this.kind ?? "object").toLowerCase() === "fullscreen"
-			? "fullscreen"
-			: "object";
+		this.kind = "object";
 		this.links = norm.links;
 		this.keyMap = norm.keyMap;
 		this.renderCfg = norm.renderCfg;

@@ -1,6 +1,7 @@
 import * as Azm from "../../AzLib/Azm.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
 import { ShaderOBJ as ShaderOBJComp } from "../WrWorld/shaderObj.js";
+import { ShaderFSC as ShaderFSCComp } from "../WrWorld/shaderFSC.js";
 import { RenderPass as RenderPassComp } from "../WrWorld/renderPass.js";
 import { Transform } from "../WrWorld/transform.js";
 import { LiveSkeleton } from "../WrWorld/liveSkeleton.js";
@@ -434,21 +435,23 @@ export class WrRenderer {
 			}
 			const passComp = ownPass ?? parentCtx.pass ?? null;
 			const shaderComp = node.getComp(ShaderOBJComp);
+			const shaderFSCComp = node.getComp(ShaderFSCComp);
 			const ids = parentCtx.ids.slice();
 			if (shaderComp) pushShaderIds(ids, shaderComp.ids);
 
-			if (shaderComp) {
-				for (const shaderId of shaderComp.ids) {
+			if (shaderFSCComp) {
+				for (const shaderId of shaderFSCComp.ids) {
 					const id = asId(shaderId);
 					if (!id) continue;
-					const shader = stores.shaderOBJs?.get(id) ?? null;
-					if (!shader || shader.kind !== "fullscreen") continue;
+					const shader = stores.shaderFSCs?.get(id) ?? null;
+					if (!shader) continue;
 					queue.push({
-						type: "fullscreen",
+						type: "fsc",
 						node,
 						nodeId: node.id,
 						shaderId: id,
 						pass: passComp,
+						shaderFSC: shaderFSCComp,
 					});
 				}
 			}
@@ -472,7 +475,6 @@ export class WrRenderer {
 							stats.skippedMeshInvalidShader += 1;
 							continue;
 						}
-						if (shader.kind === "fullscreen") continue;
 						drawShaderIds.push(id);
 					}
 					if (drawShaderIds.length <= 0) {
@@ -575,11 +577,10 @@ export class WrRenderer {
 
 	#renderWgpu(backend, camera, stores, queue, options) {
 		if (!backend?.ready) return;
-		const draws = queue.filter((op) => op.type === "mesh");
-		if (draws.length <= 0) return;
+		if (!Array.isArray(queue) || queue.length <= 0) return;
 
 		const state = this.#getGpuState(backend);
-		const frameOptions = normalizeFrameOptions(options, draws[0]?.pass?.cfg ?? null);
+		const frameOptions = normalizeFrameOptions(options, queue[0]?.pass?.cfg ?? null);
 		const beginFrame = options.beginFrame !== false;
 		const endFrame = options.endFrame !== false;
 		if (beginFrame) backend.beginFrame(frameOptions);
@@ -593,7 +594,23 @@ export class WrRenderer {
 			return;
 		}
 
-		for (const draw of draws) {
+		for (const draw of queue) {
+			if (draw.type === "fsc") {
+				const backendShader = stores.shaderFSCs?.createGpu(backend, draw.shaderId, {
+					createPipeline: true,
+					sampleCount: frameOptions.sampleCount ?? backend.sampleCount ?? 1,
+					useDepth: !!(frameOptions.useDepth || frameOptions.clearDepthEnabled),
+				});
+				const pipeline = backendShader?.pipeline ?? null;
+				if (!pipeline) continue;
+				const sceneBG = this.#ensureSceneBindGroupWgpu(backend, state, pipeline);
+				if (!sceneBG) continue;
+				pass.setPipeline(pipeline);
+				pass.setBindGroup(0, sceneBG);
+				pass.draw(3, 1, 0, 0);
+				continue;
+			}
+			if (draw.type !== "mesh") continue;
 			const shader = stores.shaderOBJs?.get(draw.shaderId) ?? null;
 			if (!shader) continue;
 			const backendShader = stores.shaderOBJs.createGpu(backend, draw.shaderId, {
@@ -668,6 +685,8 @@ export class WrRenderer {
 		}
 		scene[52] = time;
 		scene[53] = deltaTime;
+		scene[54] = Number(backend?.canvas?.width ?? 0) || 0;
+		scene[55] = Number(backend?.canvas?.height ?? 0) || 0;
 		const buffer = this.#ensureSceneBufferWgpu(backend, state);
 		backend.writeBuffer(buffer, scene, 0);
 	}
@@ -824,11 +843,10 @@ export class WrRenderer {
 
 	#renderWgl2(backend, camera, stores, queue, options) {
 		if (!backend?.ready || !backend.gl) return;
-		const draws = queue.filter((op) => op.type === "mesh");
-		if (draws.length <= 0) return;
+		if (!Array.isArray(queue) || queue.length <= 0) return;
 		const state = this.#getGpuState(backend);
 		const gl = backend.gl;
-		const frameOptions = normalizeFrameOptions(options, draws[0]?.pass?.cfg ?? null);
+		const frameOptions = normalizeFrameOptions(options, queue[0]?.pass?.cfg ?? null);
 		const beginFrame = options.beginFrame !== false;
 		const endFrame = options.endFrame !== false;
 		if (beginFrame) backend.beginFrame(frameOptions);
@@ -840,7 +858,40 @@ export class WrRenderer {
 		const projection = camera?.projection ?? Azm.Mat4.IDENTITY;
 		const viewProj = Azm.Mat4.mul(projection, view);
 
-		for (const draw of draws) {
+		for (const draw of queue) {
+			if (draw.type === "fsc") {
+				const backendShader = stores.shaderFSCs?.createGpu(backend, draw.shaderId, { createPipeline: true });
+				const glPipeline = backendShader?.glPipeline ?? null;
+				if (!glPipeline?.program) continue;
+				applyWglState(gl, glPipeline.state);
+				gl.useProgram(glPipeline.program);
+
+				const uniform = this.#ensureWglUniforms(state, gl, glPipeline.program);
+				if (uniform.u_view) gl.uniformMatrix4fv(uniform.u_view, false, view);
+				if (uniform.u_projection) gl.uniformMatrix4fv(uniform.u_projection, false, projection);
+				if (uniform.u_viewProj) gl.uniformMatrix4fv(uniform.u_viewProj, false, viewProj);
+				if (uniform.u_cameraPos && camera?.position) {
+					gl.uniform4f(
+						uniform.u_cameraPos,
+						Number(camera.position[0] ?? 0) || 0,
+						Number(camera.position[1] ?? 0) || 0,
+						Number(camera.position[2] ?? 0) || 0,
+						1,
+					);
+				}
+				if (uniform.u_time) {
+					gl.uniform4f(
+						uniform.u_time,
+						time,
+						deltaTime,
+						Number(backend?.canvas?.width ?? 0) || 0,
+						Number(backend?.canvas?.height ?? 0) || 0,
+					);
+				}
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+				continue;
+			}
+			if (draw.type !== "mesh") continue;
 			const shader = stores.shaderOBJs?.get(draw.shaderId) ?? null;
 			if (!shader) continue;
 			const backendShader = stores.shaderOBJs.createGpu(backend, draw.shaderId, { createPipeline: true });
