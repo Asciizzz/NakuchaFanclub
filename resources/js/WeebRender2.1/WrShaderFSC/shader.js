@@ -5,10 +5,23 @@ const WR_FSC_KEYS = Object.freeze([
 	"$RESOLUTION$",
 	"$TIME$",
 	"$DELTA_TIME$",
+	"$FRAME$",
+	"$FRAME_RATE$",
+	"$MOUSE$",
+	"$DATE$",
 	"$VIEW$",
 	"$PROJECTION$",
 	"$VIEW_PROJ$",
 	"$CAMERA_POS$",
+	"$CHANNEL0$",
+	"$CHANNEL1$",
+	"$CHANNEL2$",
+	"$CHANNEL3$",
+	"$CHANNEL_SIZE0$",
+	"$CHANNEL_SIZE1$",
+	"$CHANNEL_SIZE2$",
+	"$CHANNEL_SIZE3$",
+	"$KEYBOARD$",
 	"$OUT_COLOR$",
 ]);
 
@@ -141,6 +154,28 @@ function replaceTemplateKeys(source, keyMap) {
 	return out;
 }
 
+function readFeatures(source) {
+	const keys = new Set(extractTemplateKeys(source));
+	return {
+		channels: [0, 1, 2, 3].filter((index) => keys.has(`$CHANNEL${index}$`)),
+		channelSizes: [0, 1, 2, 3].filter((index) => keys.has(`$CHANNEL_SIZE${index}$`)),
+		keyboard: keys.has("$KEYBOARD$"),
+	};
+}
+
+function mergeFeatures(a, b) {
+	const channelSet = new Set([...(a?.channels ?? []), ...(b?.channels ?? [])]);
+	const channelSizeSet = new Set([...(a?.channelSizes ?? []), ...(b?.channelSizes ?? [])]);
+	const channels = Array.from(channelSet).sort((x, y) => x - y);
+	const channelSizes = Array.from(channelSizeSet).sort((x, y) => x - y);
+	return {
+		channels,
+		channelSizes,
+		keyboard: !!(a?.keyboard || b?.keyboard),
+		needsInputGroup: channels.length > 0 || !!(a?.keyboard || b?.keyboard),
+	};
+}
+
 function normalizeDescriptor(desc = {}) {
 	const source = desc && typeof desc === "object" ? desc : {};
 	const wgsl = source.wgsl && typeof source.wgsl === "object" ? source.wgsl : {};
@@ -173,10 +208,23 @@ function defaultKeyMapWgsl() {
 		"$RESOLUTION$": "sceneUBO.time.zw",
 		"$TIME$": "sceneUBO.time.x",
 		"$DELTA_TIME$": "sceneUBO.time.y",
+		"$FRAME$": "sceneUBO.frame.x",
+		"$FRAME_RATE$": "sceneUBO.frame.y",
+		"$MOUSE$": "sceneUBO.mouse",
+		"$DATE$": "sceneUBO.date",
 		"$VIEW$": "sceneUBO.view",
 		"$PROJECTION$": "sceneUBO.projection",
 		"$VIEW_PROJ$": "sceneUBO.viewProj",
 		"$CAMERA_POS$": "sceneUBO.cameraPos",
+		"$CHANNEL0$": "wrChannel0",
+		"$CHANNEL1$": "wrChannel1",
+		"$CHANNEL2$": "wrChannel2",
+		"$CHANNEL3$": "wrChannel3",
+		"$CHANNEL_SIZE0$": "sceneUBO.channelSize0",
+		"$CHANNEL_SIZE1$": "sceneUBO.channelSize1",
+		"$CHANNEL_SIZE2$": "sceneUBO.channelSize2",
+		"$CHANNEL_SIZE3$": "sceneUBO.channelSize3",
+		"$KEYBOARD$": "wrKeyboard",
 		"$OUT_COLOR$": "outputColor",
 	};
 }
@@ -189,10 +237,23 @@ function defaultKeyMapGlsl() {
 		"$RESOLUTION$": "u_time.zw",
 		"$TIME$": "u_time.x",
 		"$DELTA_TIME$": "u_time.y",
+		"$FRAME$": "u_frame.x",
+		"$FRAME_RATE$": "u_frame.y",
+		"$MOUSE$": "u_mouse",
+		"$DATE$": "u_date",
 		"$VIEW$": "u_view",
 		"$PROJECTION$": "u_projection",
 		"$VIEW_PROJ$": "u_viewProj",
 		"$CAMERA_POS$": "u_cameraPos",
+		"$CHANNEL0$": "wrChannel0",
+		"$CHANNEL1$": "wrChannel1",
+		"$CHANNEL2$": "wrChannel2",
+		"$CHANNEL3$": "wrChannel3",
+		"$CHANNEL_SIZE0$": "u_channelSize0",
+		"$CHANNEL_SIZE1$": "u_channelSize1",
+		"$CHANNEL_SIZE2$": "u_channelSize2",
+		"$CHANNEL_SIZE3$": "u_channelSize3",
+		"$KEYBOARD$": "wrKeyboard",
 		"$OUT_COLOR$": "outputColor",
 	};
 }
@@ -205,6 +266,20 @@ function buildWgslSource(norm) {
 	const keyMap = { ...defaultKeyMapWgsl(), ...(norm.keyMap.wgsl ?? {}) };
 	const methods = joinSection(norm.wgsl.methods);
 	const fragment = replaceTemplateKeys(norm.wgsl.fragment, keyMap);
+	const features = readFeatures(norm.wgsl.fragment);
+	const channelDecl = features.channels.map((index) => `
+@group(1) @binding(${index * 2}) var channelSampler${index}: sampler;
+@group(1) @binding(${index * 2 + 1}) var channelTex${index}: texture_2d<f32>;
+fn wrChannel${index}(uv: vec2f) -> vec4f {
+    return textureSample(channelTex${index}, channelSampler${index}, uv);
+}
+`).join("\n");
+	const keyboardDecl = features.keyboard ? `
+@group(1) @binding(8) var keyboardTex: texture_2d<f32>;
+fn wrKeyboard(key: i32) -> vec4f {
+    return textureLoad(keyboardTex, vec2i(clamp(key, 0, 255), 0), 0);
+}
+` : "";
 	return `
 struct SceneUBO {
     view: mat4x4f,
@@ -212,9 +287,18 @@ struct SceneUBO {
     viewProj: mat4x4f,
     cameraPos: vec4f,
     time: vec4f,
+    mouse: vec4f,
+    date: vec4f,
+    frame: vec4f,
+    channelSize0: vec4f,
+    channelSize1: vec4f,
+    channelSize2: vec4f,
+    channelSize3: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> sceneUBO: SceneUBO;
+${channelDecl}
+${keyboardDecl}
 
 struct WrFSCOut {
     @builtin(position) position: vec4f,
@@ -252,6 +336,20 @@ function buildGlslSource(norm) {
 	const keyMap = { ...defaultKeyMapGlsl(), ...(norm.keyMap.glsl ?? {}) };
 	const methods = joinSection(norm.glsl.methods);
 	const fragment = replaceTemplateKeys(norm.glsl.fragment, keyMap);
+	const features = readFeatures(norm.glsl.fragment);
+	const channelUniforms = features.channels.map((index) => `
+uniform sampler2D u_channel${index};
+vec4 wrChannel${index}(vec2 uv) {
+    return texture(u_channel${index}, uv);
+}
+`).join("\n");
+	const channelSizeUniforms = [0, 1, 2, 3].map((index) => `uniform vec4 u_channelSize${index};`).join("\n");
+	const keyboardUniform = features.keyboard ? `
+uniform sampler2D u_keyboard;
+vec4 wrKeyboard(int key) {
+    return texelFetch(u_keyboard, ivec2(clamp(key, 0, 255), 0), 0);
+}
+` : "";
 	const vertex = `#version 300 es
 precision highp float;
 
@@ -280,6 +378,12 @@ uniform mat4 u_projection;
 uniform mat4 u_viewProj;
 uniform vec4 u_cameraPos;
 uniform vec4 u_time;
+uniform vec4 u_mouse;
+uniform vec4 u_date;
+uniform vec4 u_frame;
+${channelSizeUniforms}
+${channelUniforms}
+${keyboardUniform}
 
 ${methods}
 
@@ -392,6 +496,11 @@ export class WrShaderFSC {
 			wgsl: "",
 			glsl: { vertex: "", fragment: "" },
 		};
+		this.features = {
+			wgsl: { channels: [], channelSizes: [], keyboard: false, needsInputGroup: false },
+			glsl: { channels: [], channelSizes: [], keyboard: false, needsInputGroup: false },
+			all: { channels: [], channelSizes: [], keyboard: false, needsInputGroup: false },
+		};
 		this.backend = {
 			kind: null,
 			module: null,
@@ -413,6 +522,11 @@ export class WrShaderFSC {
 		this.id = norm.id;
 		this.label = norm.label;
 		this.renderCfg = norm.renderCfg;
+		this.features = {
+			wgsl: { ...readFeatures(norm.wgsl.fragment), needsInputGroup: readFeatures(norm.wgsl.fragment).channels.length > 0 || readFeatures(norm.wgsl.fragment).keyboard },
+			glsl: { ...readFeatures(norm.glsl.fragment), needsInputGroup: readFeatures(norm.glsl.fragment).channels.length > 0 || readFeatures(norm.glsl.fragment).keyboard },
+		};
+		this.features.all = mergeFeatures(this.features.wgsl, this.features.glsl);
 		this.source = {
 			wgsl: buildWgslSource(norm),
 			glsl: buildGlslSource(norm),
@@ -450,6 +564,7 @@ export class WrShaderFSC {
 				pipeline,
 				program: null,
 				glPipeline: null,
+				features: this.features.wgsl,
 				error: null,
 			};
 			return this.backend;
@@ -460,6 +575,7 @@ export class WrShaderFSC {
 				pipeline: null,
 				program: null,
 				glPipeline: null,
+				features: this.features.wgsl,
 				error: String(error?.message ?? error),
 			};
 			throw error;
@@ -487,6 +603,7 @@ export class WrShaderFSC {
 				pipeline: null,
 				program,
 				glPipeline,
+				features: this.features.glsl,
 				error: null,
 			};
 			return this.backend;
@@ -497,6 +614,7 @@ export class WrShaderFSC {
 				pipeline: null,
 				program: null,
 				glPipeline: null,
+				features: this.features.glsl,
 				error: String(error?.message ?? error),
 			};
 			throw error;

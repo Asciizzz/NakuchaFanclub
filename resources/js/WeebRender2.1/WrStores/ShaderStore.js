@@ -2,9 +2,16 @@ import AzStore from "../../AzLib/AzStore.js";
 import { WrShaderOBJ } from "../WrAssets/ShaderObj.js";
 
 function asId(value) {
+	if (value && typeof value === "object") return asId(value.ref?.id ?? value.id);
 	if (value == null) return null;
 	const id = String(value).trim();
 	return id || null;
+}
+
+function stampRef(store, asset, id) {
+	asset.id = id;
+	asset.ref = { stores: store.stores ?? null, store, id };
+	return asset;
 }
 
 export class WrShaderOBJStore extends AzStore {
@@ -18,22 +25,22 @@ export class WrShaderOBJStore extends AzStore {
 			const autoId = Array.from(this.map.keys()).pop();
 			if (autoId && autoId !== explicitId) this.map.delete(autoId);
 			this.map.set(explicitId, value);
-			value.id = explicitId;
+			stampRef(this, value, explicitId);
 			this.#deleteCachedShader(explicitId);
-			return explicitId;
+			return value;
 		}
 
 		const id = super.add(value);
-		value.id = id;
+		stampRef(this, value, id);
 		this.#deleteCachedShader(id);
-		return id;
+		return value;
 	}
 
-	createGpu(backend, id, options = {}) {
+	createGpu(backend, assetRef, options = {}) {
 		if (!backend) return null;
-		const key = asId(id);
+		const key = asId(assetRef);
 		if (!key) return null;
-		const shader = this.get(key);
+		const shader = assetRef && typeof assetRef === "object" ? assetRef : this.get(key);
 		if (!shader || typeof shader.buildBackend !== "function") return null;
 
 		const cache = this.#getBackendCache(backend, true);

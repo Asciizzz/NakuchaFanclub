@@ -3,9 +3,16 @@ import { WrTexture } from "../WrAssets/Texture.js";
 import AzWGPU from "../../AzLib/AzWGPU.js";
 
 function asId(value) {
+	if (value && typeof value === "object") return asId(value.ref?.id ?? value.id);
 	if (value == null) return null;
 	const id = String(value).trim();
 	return id || null;
+}
+
+function stampRef(store, asset, id) {
+	asset.id = id;
+	asset.ref = { stores: store.stores ?? null, store, id };
+	return asset;
 }
 
 function alignTo256(n) {
@@ -23,13 +30,11 @@ export class WrTextureStore extends AzStore {
 			const autoId = Array.from(this.map.keys()).pop();
 			if (autoId && autoId !== explicitId) this.map.delete(autoId);
 			this.map.set(explicitId, value);
-			value.id = explicitId;
-			return explicitId;
+			return stampRef(this, value, explicitId);
 		}
 
 		const id = super.add(value);
-		value.id = id;
-		return id;
+		return stampRef(this, value, id);
 	}
 
 	remove(id) {
@@ -44,10 +49,10 @@ export class WrTextureStore extends AzStore {
 		return super.remove(key);
 	}
 
-	createGpu(backend, id) {
-		const key = asId(id);
+	createGpu(backend, assetRef) {
+		const key = asId(assetRef);
 		if (!backend || !key) return null;
-		const texture = this.get(key);
+		const texture = assetRef && typeof assetRef === "object" ? assetRef : this.get(key);
 		if (!texture) return null;
 
 		const cache = this.#getBackendCache(backend, true);

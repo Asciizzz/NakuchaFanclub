@@ -9,11 +9,20 @@ function asId(value) {
 	return out || null;
 }
 
+function asNodeId(ctx, value) {
+	if (value && typeof value === "object") {
+		if (value.ctx !== ctx) return null;
+		return asId(value.id);
+	}
+	return asId(value);
+}
+
 function cloneData(value) {
 	if (value == null) return value;
 	if (ArrayBuffer.isView(value)) return new value.constructor(value);
 	if (Array.isArray(value)) return value.map((item) => cloneData(item));
 	if (typeof value === "object") {
+		if (value.ref?.store) return value;
 		const out = {};
 		for (const [key, next] of Object.entries(value)) out[key] = cloneData(next);
 		return out;
@@ -77,22 +86,29 @@ export class WrWorld extends Ctx {
 		return new WrNode(this, id);
 	}
 
+	getNode(ref) {
+		return super.getNode(asNodeId(this, ref));
+	}
+
 	addNode(parent = null, index = -1) {
-		const node = super.addNode(parent, index);
+		const parentId = parent == null ? null : asNodeId(this, parent);
+		const node = super.addNode(parentId, index);
 		if (!node) return null;
 		if (node.parentId == null) this.#roots.add(node.id);
 		return node;
 	}
 
 	moveNode(id, newParentId = null) {
-		const node = super.moveNode(id, newParentId);
+		const nodeId = asNodeId(this, id);
+		const parentId = newParentId == null ? null : asNodeId(this, newParentId);
+		const node = super.moveNode(nodeId, parentId);
 		if (!node) return null;
 		this.#syncRoot(node.id);
 		return node;
 	}
 
 	deleteNode(id, branch = false) {
-		const key = asId(id);
+		const key = asNodeId(this, id);
 		if (!key) return null;
 		const source = this.getNode(key);
 		if (!source) return null;
@@ -119,10 +135,12 @@ export class WrWorld extends Ctx {
 	}
 
 	swapNodes(idA, idB) {
-		const ok = super.swapNodes(idA, idB);
+		const keyA = asNodeId(this, idA);
+		const keyB = asNodeId(this, idB);
+		const ok = super.swapNodes(keyA, keyB);
 		if (!ok) return false;
-		this.#syncRoot(idA);
-		this.#syncRoot(idB);
+		this.#syncRoot(keyA);
+		this.#syncRoot(keyB);
 		return true;
 	}
 
@@ -135,10 +153,11 @@ export class WrWorld extends Ctx {
 	}
 
 	copyBranch(fromId, toId = null) {
-		const source = this.getNode(fromId);
+		const sourceId = asNodeId(this, fromId);
+		const source = this.getNode(sourceId);
 		if (!source) return null;
 
-		const targetId = toId == null ? null : asId(toId);
+		const targetId = toId == null ? null : asNodeId(this, toId);
 		if (targetId != null && !this.getNode(targetId)) return null;
 
 		const remap = new Map();

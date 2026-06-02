@@ -17,14 +17,9 @@ import {
 } from "../WeebRender2.1/index.js";
 
 const container = document.getElementById("main-canvas");
-
-if (!container) {
-	console.warn("[WrScene2_1] #main-canvas is missing");
-} else {
-	run().catch((error) => {
-		console.error("[WrScene2_1] fatal", error);
-	});
-}
+run().catch((error) => {
+	console.error("[WrScene2_1] fatal", error);
+});
 
 async function run() {
 	let prefer = "webgpu";
@@ -45,7 +40,7 @@ async function run() {
 	const world = new WrWorld();
 	const stores = new WrStores();
 	const loader = new WrLoader({ backend, world, stores });
-	const renderer = new WrRenderer({ backend, world, stores });
+	const renderer = new WrRenderer({ backend, world });
 
 	const camera = new AzCamera({
 		position: [0, 1.1, 4.5],
@@ -86,7 +81,7 @@ async function run() {
 	resize();
 	new ResizeObserver(resize).observe(container);
 
-	const mainShaderId = stores.shaderOBJs.add(new WrShaderOBJ({
+	const mainShader = stores.shaderOBJs.add(new WrShaderOBJ({
 		id: "main-shader",
 		kind: "object",
 		renderCfg: {
@@ -169,7 +164,7 @@ async function run() {
 		},
 	}));
 
-	const outlineShaderId = stores.shaderOBJs.add(new WrShaderOBJ({
+	const outlineShader = stores.shaderOBJs.add(new WrShaderOBJ({
 		id: "outline-shader",
 		kind: "object",
 		renderCfg: {
@@ -250,7 +245,7 @@ async function run() {
 		},
 	}));
 
-	const backgroundShaderId = stores.shaderFSCs.add(new WrShaderFSC({
+	const backgroundShader = stores.shaderFSCs.add(new WrShaderFSC({
 		id: "background-fsc",
 		renderCfg: {
 			depthTest: false,
@@ -259,27 +254,61 @@ async function run() {
 		},
 		wgsl: {
 			fragment: `
+				let t = $TIME$;
 				let uv = $UV$;
-				let wave = 0.5 + 0.5 * sin($TIME$ + uv.x * 4.0 + uv.y * 2.0);
-				let top = vec3f(0.62, 0.70, 0.96);
-				let bot = vec3f(0.82, 0.76, 0.96);
-				let col = mix(bot, top, uv.y) + wave * 0.035;
-				$OUT_COLOR$ = vec4f(col, 1.0);
+				let horizon = smoothstep(0.0, 1.0, uv.y);
+				let pulse = 0.5 + 0.5 * sin(t * 1.2 + uv.x * 4.0 + uv.y * 2.0);
+				let timeWave = 0.5 + 0.5 * sin(t * 2.0 + (uv.x + uv.y) * 10.0);
+				let frameStep = step(0.5, fract($FRAME$ / 36.0));
+				let fpsTint = clamp($FRAME_RATE$ / 120.0, 0.0, 1.0);
+				let dayPulse = 0.5 + 0.5 * sin($DATE$.w * 0.02);
+				let mouseUv = $MOUSE$.xy / max($RESOLUTION$, vec2f(1.0, 1.0));
+				let mouseOn = select(0.0, 1.0, $MOUSE$.x > 0.0 || $MOUSE$.y > 0.0);
+				let mouseGlow = exp(-dot(uv - mouseUv, uv - mouseUv) * 14.0) * mouseOn;
+				let skyTop = vec3f(0.54, 0.64, 0.94);
+				let skyMid = vec3f(0.76, 0.72, 0.98);
+				let skyLow = vec3f(0.93, 0.79, 0.92);
+				var color = mix(skyLow, skyMid, smoothstep(0.05, 0.55, horizon));
+				color = mix(color, skyTop, smoothstep(0.45, 1.0, horizon));
+				color += vec3f(0.025, 0.018, 0.04) * pulse;
+				color += vec3f(0.05, 0.025, 0.07) * timeWave;
+				color += vec3f(0.015, 0.0, 0.03) * frameStep;
+				color = mix(color, color + vec3f(0.0, 0.025, 0.04), fpsTint);
+				color += vec3f(0.015, 0.01, 0.0) * dayPulse;
+				color += vec3f(0.05, 0.04, 0.08) * mouseGlow;
+				$OUT_COLOR$ = vec4f(color, 1.0);
 			`,
 		},
 		glsl: {
 			fragment: `
+				float t = $TIME$;
 				vec2 uv = $UV$;
-				float wave = 0.5 + 0.5 * sin($TIME$ + uv.x * 4.0 + uv.y * 2.0);
-				vec3 top = vec3(0.62, 0.70, 0.96);
-				vec3 bot = vec3(0.82, 0.76, 0.96);
-				vec3 col = mix(bot, top, uv.y) + wave * 0.035;
-				$OUT_COLOR$ = vec4(col, 1.0);
+				float horizon = smoothstep(0.0, 1.0, uv.y);
+				float pulse = 0.5 + 0.5 * sin(t * 1.2 + uv.x * 4.0 + uv.y * 2.0);
+				float timeWave = 0.5 + 0.5 * sin(t * 2.0 + (uv.x + uv.y) * 10.0);
+				float frameStep = step(0.5, fract($FRAME$ / 36.0));
+				float fpsTint = clamp($FRAME_RATE$ / 120.0, 0.0, 1.0);
+				float dayPulse = 0.5 + 0.5 * sin($DATE$.w * 0.02);
+				vec2 mouseUv = $MOUSE$.xy / max($RESOLUTION$, vec2(1.0, 1.0));
+				float mouseOn = ($MOUSE$.x > 0.0 || $MOUSE$.y > 0.0) ? 1.0 : 0.0;
+				float mouseGlow = exp(-dot(uv - mouseUv, uv - mouseUv) * 14.0) * mouseOn;
+				vec3 skyTop = vec3(0.54, 0.64, 0.94);
+				vec3 skyMid = vec3(0.76, 0.72, 0.98);
+				vec3 skyLow = vec3(0.93, 0.79, 0.92);
+				vec3 color = mix(skyLow, skyMid, smoothstep(0.05, 0.55, horizon));
+				color = mix(color, skyTop, smoothstep(0.45, 1.0, horizon));
+				color += vec3(0.025, 0.018, 0.04) * pulse;
+				color += vec3(0.05, 0.025, 0.07) * timeWave;
+				color += vec3(0.015, 0.0, 0.03) * frameStep;
+				color = mix(color, color + vec3(0.0, 0.025, 0.04), fpsTint);
+				color += vec3(0.015, 0.01, 0.0) * dayPulse;
+				color += vec3(0.05, 0.04, 0.08) * mouseGlow;
+				$OUT_COLOR$ = vec4(color, 1.0);
 			`,
 		},
 	}));
 
-	const mainPassId = stores.renderPasses.add(new WrRenderPassAsset({
+	const mainPass = stores.renderPasses.add(new WrRenderPassAsset({
 		id: "main-pass",
 		target: "screen",
 		clearColor: [0, 0, 0, 0],
@@ -293,14 +322,14 @@ async function run() {
 	renderRoot.name = "render-root";
 	// renderpass
 	const passComp = renderRoot.addComp(WrRenderPass);
-	passComp.usePass(mainPassId);
+	passComp.usePass(mainPass);
 	// fullscreen shader for background
 	const backgroundComp = renderRoot.addComp(WrShaderFSCComp);
-	backgroundComp.useShader(backgroundShaderId);
+	backgroundComp.useShader(backgroundShader);
 	// object shaders for meshes
 	const shaderComp = renderRoot.addComp(WrShaderOBJComp);
-	shaderComp.useShader(outlineShaderId);
-	shaderComp.useShader(mainShaderId);
+	shaderComp.useShader(outlineShader);
+	shaderComp.useShader(mainShader);
 
 	// Create 2 new models
 	const roomRoot = await loader.registerGLTF("/Models/Room.glb", { uploadGpu: true });
@@ -317,18 +346,16 @@ async function run() {
 	world.copyBranch(nakuRoot.id, renderRoot.id);
 
 	let last = performance.now();
-	let t = 0;
 	let dt = 0;
 	function frame(now) {
 		dt = Math.max(0, (now - last) * 0.001);
 		last = now;
-		t += dt;
 
 		fcam.update(dt);
 
 		renderer.render({
 			from: renderRoot.id,
-			time: t,
+			time: now * 0.001,
 			deltaTime: dt,
 			beginFrame: true,
 			endFrame: true,

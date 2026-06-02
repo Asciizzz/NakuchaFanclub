@@ -7,7 +7,7 @@ import { Transform } from "../WrWorld/transform.js";
 import { LiveSkeleton } from "../WrWorld/liveSkeleton.js";
 import { WrRenderPass } from "../WrAssets/RenderPass.js";
 
-const SCENE_UBO_F32 = 56;
+const SCENE_UBO_F32 = 84;
 const OBJECT_UBO_F32 = 2096;
 const SKIN_BONE_CAP = 128;
 const SKIN_BASE_F32 = 48;
@@ -24,6 +24,8 @@ const GPU_BUFFER_USAGE = Object.freeze({
 	COPY_DST: globalThis.GPUBufferUsage?.COPY_DST ?? 0x8,
 	UNIFORM: globalThis.GPUBufferUsage?.UNIFORM ?? 0x40,
 });
+const KEYBOARD_TEX_W = 256;
+const KEYBOARD_TEX_H = 1;
 
 function asId(value) {
 	if (value == null) return null;
@@ -39,12 +41,11 @@ function asNode(world, from) {
 	return world.getNode(id);
 }
 
-function pushShaderIds(target, values) {
+function pushShaders(target, values) {
 	if (!Array.isArray(values)) return;
 	for (const value of values) {
-		const id = asId(value);
-		if (!id) continue;
-		target.push(id);
+		if (!value || typeof value !== "object") continue;
+		target.push(value);
 	}
 }
 
@@ -68,12 +69,26 @@ function readColor4(value, fallback = [1, 1, 1, 1]) {
 	];
 }
 
-function resolveTextureId(meshRenderer, material) {
-	const fromComp = asId(meshRenderer?.textures?.albedo);
-	if (fromComp) return fromComp;
-	const fromMat = asId(material?.albedoTex);
-	if (fromMat) return fromMat;
+function resolveTexture(meshRenderer, material) {
+	const fromComp = meshRenderer?.textures?.albedo;
+	if (fromComp && typeof fromComp === "object") return fromComp;
+	const fromMat = material?.albedoTex;
+	if (fromMat && typeof fromMat === "object") return fromMat;
 	return null;
+}
+
+function resolveSlotId(shaderFSC, slot) {
+	const tex = shaderFSC?.textureSlots?.[`slot${slot}`] ?? null;
+	return asId(tex);
+}
+
+function resolveSlotTexture(shaderFSC, slot) {
+	const tex = shaderFSC?.textureSlots?.[`slot${slot}`] ?? null;
+	return tex && typeof tex === "object" ? tex : null;
+}
+
+function assetStore(asset) {
+	return asset?.ref?.store ?? null;
 }
 
 function resolveMorphWeight(meshRenderer) {
@@ -161,14 +176,11 @@ function getCamera(camera) {
 	return camera ?? null;
 }
 
-function resolveRenderPassAsset(stores, passComp) {
+function resolveRenderPassAsset(passComp) {
 	if (!passComp) return null;
-	const passId = asId(passComp.id);
-	const stored = passId ? (stores?.renderPasses?.get(passId) ?? null) : null;
-	if (stored) return stored;
+	if (passComp.pass) return passComp.pass;
 	if (passComp.cfg && typeof passComp.cfg === "object") {
 		return WrRenderPass.from({
-			id: passId,
 			...passComp.cfg,
 		});
 	}
@@ -218,14 +230,12 @@ export class WrRenderer {
 	#gpuByBackend = new WeakMap();
 	backend = null;
 	world = null;
-	stores = null;
 	camera = null;
 
 	constructor(options = {}) {
 		const src = options && typeof options === "object" ? options : {};
 		this.backend = src.backend ?? null;
 		this.world = src.world ?? null;
-		this.stores = src.stores ?? src.assets ?? null;
 		this.camera = src.camera ?? null;
 	}
 
@@ -239,16 +249,6 @@ export class WrRenderer {
 		return this;
 	}
 
-	setStores(stores) {
-		this.stores = stores ?? null;
-		return this;
-	}
-
-	setAssets(assets) {
-		this.stores = assets ?? null;
-		return this;
-	}
-
 	setCamera(camera) {
 		this.camera = camera ?? null;
 		return this;
@@ -257,11 +257,10 @@ export class WrRenderer {
 	render(options = {}) {
 		const src = options && typeof options === "object" ? options : {};
 		const world = src.world ?? this.world ?? null;
-		const stores = src.stores ?? src.assets ?? this.stores ?? null;
 		const backend = src.backend ?? this.backend ?? null;
 		const camera = getCamera(src.camera ?? this.camera ?? null);
 		const fromNode = asNode(world, src.from ?? src.fromId ?? null);
-		if (!world || !stores || !fromNode) {
+		if (!world || !fromNode) {
 			return { from: null, passNodeId: null, count: 0, ops: [], reason: "missing_input" };
 		}
 		const modelByNode = this.#updateTransforms(fromNode);
@@ -290,13 +289,13 @@ export class WrRenderer {
 		const allOps = [];
 		for (const passNode of passRoots) {
 			const passComp = passNode.getComp(RenderPassComp) ?? null;
-			const passAsset = resolveRenderPassAsset(stores, passComp);
+			const passAsset = resolveRenderPassAsset(passComp);
 			if (!passComp || !passAsset) continue;
 			if (String(passAsset.target?.type ?? "screen") !== "screen") {
 				const passResult = {
 					from: fromNode.id,
 					passNodeId: passNode.id,
-					passId: passAsset.id ?? passComp.id ?? null,
+					passId: passAsset.ref?.id ?? passAsset.id ?? null,
 					passCfg: renderPassFrameOptions(passAsset),
 					target: passAsset.target,
 					count: 0,
@@ -314,11 +313,11 @@ export class WrRenderer {
 				passResults.push(passResult);
 				continue;
 			}
-			const collected = this.#buildQueue(world, stores, passNode, modelByNode);
+			const collected = this.#buildQueue(world, passNode, modelByNode);
 			const passResult = {
 				from: fromNode.id,
 				passNodeId: passNode.id,
-				passId: passAsset.id ?? passComp.id ?? null,
+				passId: passAsset.ref?.id ?? passAsset.id ?? null,
 				passCfg: renderPassFrameOptions(passAsset),
 				target: passAsset.target,
 				count: collected.ops.length,
@@ -349,6 +348,8 @@ export class WrRenderer {
 				reason: null,
 			};
 		}
+		const runtimeState = this.#getGpuState(backend);
+		this.#updateFscRuntime(backend, runtimeState, src);
 
 		const passOverrides = (baseOptions, passCfg) => ({
 			...baseOptions,
@@ -363,7 +364,7 @@ export class WrRenderer {
 			const firstCfg = passResults[0]?.passCfg ?? null;
 			backend.beginFrame(passOverrides(src, firstCfg));
 			for (const passResult of passResults) {
-				this.#renderWgpu(backend, camera, stores, passResult.ops, {
+				this.#renderWgpu(backend, camera, passResult.ops, {
 					...passOverrides(src, passResult.passCfg),
 					beginFrame: false,
 					endFrame: false,
@@ -375,7 +376,7 @@ export class WrRenderer {
 			const firstCfg = passResults[0]?.passCfg ?? null;
 			backend.beginFrame(passOverrides(src, firstCfg));
 			for (const passResult of passResults) {
-				this.#renderWgl2(backend, camera, stores, passResult.ops, {
+				this.#renderWgl2(backend, camera, passResult.ops, {
 					...passOverrides(src, passResult.passCfg),
 					beginFrame: false,
 					endFrame: false,
@@ -383,6 +384,7 @@ export class WrRenderer {
 			}
 			backend.endFrame();
 		}
+		if (runtimeState.keyboardUploaded) this.#clearKeyboardTransient(runtimeState);
 
 		return {
 			from: fromNode.id,
@@ -412,7 +414,7 @@ export class WrRenderer {
 		return roots;
 	}
 
-	#buildQueue(world, stores, fromNode, modelByNode) {
+	#buildQueue(world, fromNode, modelByNode) {
 		const queue = [];
 		const stats = {
 			nodesVisited: 0,
@@ -422,12 +424,12 @@ export class WrRenderer {
 		};
 		const ctxById = new Map();
 		const bfs = [fromNode];
-		ctxById.set(fromNode.id, { pass: null, ids: [] });
+		ctxById.set(fromNode.id, { pass: null, shaders: [] });
 
 		while (bfs.length > 0) {
 			const node = bfs.shift();
 			stats.nodesVisited += 1;
-			const parentCtx = ctxById.get(node.id) ?? { pass: null, ids: [] };
+			const parentCtx = ctxById.get(node.id) ?? { pass: null, shaders: [] };
 			const ownPass = node.getComp(RenderPassComp) ?? null;
 			if (node !== fromNode && ownPass) {
 				stats.prunedNestedRenderPass += 1;
@@ -436,20 +438,17 @@ export class WrRenderer {
 			const passComp = ownPass ?? parentCtx.pass ?? null;
 			const shaderComp = node.getComp(ShaderOBJComp);
 			const shaderFSCComp = node.getComp(ShaderFSCComp);
-			const ids = parentCtx.ids.slice();
-			if (shaderComp) pushShaderIds(ids, shaderComp.ids);
+			const shaders = parentCtx.shaders.slice();
+			if (shaderComp) pushShaders(shaders, shaderComp.shaders);
 
 			if (shaderFSCComp) {
-				for (const shaderId of shaderFSCComp.ids) {
-					const id = asId(shaderId);
-					if (!id) continue;
-					const shader = stores.shaderFSCs?.get(id) ?? null;
+				for (const shader of shaderFSCComp.shaders) {
 					if (!shader) continue;
 					queue.push({
 						type: "fsc",
 						node,
 						nodeId: node.id,
-						shaderId: id,
+						shader,
 						pass: passComp,
 						shaderFSC: shaderFSCComp,
 					});
@@ -458,36 +457,33 @@ export class WrRenderer {
 
 			const meshRenderer = node.getComp(MeshRenderer);
 			if (meshRenderer && meshRenderer.cfg?.display !== false) {
-				const meshId = asId(meshRenderer.meshId);
-				if (meshId && stores.meshes?.has(meshId)) {
+				const mesh = meshRenderer.mesh ?? null;
+				if (mesh) {
 					const liveSkeleton = meshRenderer.cfg?.hasRig ? resolveNearestLiveSkeleton(node) : null;
 					let skinPalette = null;
 					if (liveSkeleton) {
-						const skeleton = stores.skeletons?.get(liveSkeleton.skeletonId) ?? null;
+						const skeleton = liveSkeleton.skeleton ?? null;
 						if (skeleton?.buildPalette) skinPalette = skeleton.buildPalette(liveSkeleton.bones, SKIN_BONE_CAP);
 					}
-					const drawShaderIds = [];
-					for (const shaderId of ids) {
-						const id = asId(shaderId);
-						if (!id) continue;
-						const shader = stores.shaderOBJs?.get(id) ?? null;
+					const drawShaders = [];
+					for (const shader of shaders) {
 						if (!shader) {
 							stats.skippedMeshInvalidShader += 1;
 							continue;
 						}
-						drawShaderIds.push(id);
+						drawShaders.push(shader);
 					}
-					if (drawShaderIds.length <= 0) {
+					if (drawShaders.length <= 0) {
 						stats.skippedMeshNoShader += 1;
 					}
-					for (const id of drawShaderIds) {
+					for (const shader of drawShaders) {
 						queue.push({
 							type: "mesh",
 							node,
 							nodeId: node.id,
-							meshId,
+							mesh,
 							meshRenderer,
-							shaderId: id,
+							shader,
 							pass: passComp,
 							modelMatrix: modelByNode.get(node.id) ?? Azm.Mat4.makeIdentity(),
 							skinPalette,
@@ -497,7 +493,7 @@ export class WrRenderer {
 			}
 
 			for (const child of childNodeList(node)) {
-				ctxById.set(child.id, { pass: passComp, ids });
+				ctxById.set(child.id, { pass: passComp, shaders });
 				bfs.push(child);
 			}
 		}
@@ -554,14 +550,28 @@ export class WrRenderer {
 		if (state) return state;
 		state = {
 			sceneScratch: new Float32Array(SCENE_UBO_F32),
+			objectHeaderScratch: new Float32Array(SKIN_BASE_F32),
 			objectScratch: new Float32Array(OBJECT_UBO_F32),
 			sceneBuffer: null,
 			objectBuffers: new Map(),
 			sceneBindGroups: new WeakMap(),
 			objectBindGroups: new WeakMap(),
+			fscBindGroups: new WeakMap(),
 			wgpuFallbackTexture: null,
+			wglFallbackTexture: null,
+			wgpuKeyboardTexture: null,
+			wglKeyboardTexture: null,
 			wglUniformCache: new WeakMap(),
 			identityPalette: null,
+			inputCanvas: null,
+			inputHandlers: null,
+			mouse: new Float32Array([0, 0, -1, -1]),
+			date: new Float32Array(4),
+			frame: new Float32Array(4),
+			channelSizes: new Float32Array(16),
+			keyboard: new Uint8Array(KEYBOARD_TEX_W * KEYBOARD_TEX_H * 4),
+			frameIndex: 0,
+			keyboardUploaded: false,
 		};
 		this.#gpuByBackend.set(backend, state);
 		return state;
@@ -575,7 +585,89 @@ export class WrRenderer {
 		return out;
 	}
 
-	#renderWgpu(backend, camera, stores, queue, options) {
+	#updateFscRuntime(backend, state, options) {
+		this.#attachInputCanvas(state, backend?.canvas ?? null);
+		const dt = Number(options.deltaTime ?? 0) || 0;
+		state.frameIndex += 1;
+		state.frame[0] = state.frameIndex;
+		state.frame[1] = dt > 0 ? 1 / dt : 0;
+		state.frame[2] = 0;
+		state.frame[3] = 0;
+
+		const now = new Date();
+		const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		state.date[0] = now.getFullYear();
+		state.date[1] = now.getMonth() + 1;
+		state.date[2] = now.getDate();
+		state.date[3] = (now.getTime() - midnight.getTime()) * 0.001;
+		state.keyboardUploaded = false;
+	}
+
+	#attachInputCanvas(state, canvas) {
+		if (!canvas || state.inputCanvas === canvas) return;
+		this.#detachInputCanvas(state);
+		state.inputCanvas = canvas;
+
+		const readMouse = (event) => {
+			const rect = canvas.getBoundingClientRect();
+			const sx = canvas.width / Math.max(1, rect.width);
+			const sy = canvas.height / Math.max(1, rect.height);
+			state.mouse[0] = (event.clientX - rect.left) * sx;
+			state.mouse[1] = (event.clientY - rect.top) * sy;
+		};
+		const move = (event) => readMouse(event);
+		const down = (event) => {
+			readMouse(event);
+			state.mouse[2] = state.mouse[0];
+			state.mouse[3] = state.mouse[1];
+		};
+		const up = () => {
+			state.mouse[2] = -1;
+			state.mouse[3] = -1;
+		};
+		const keyDown = (event) => {
+			const code = Math.max(0, Math.min(255, Number(event.keyCode ?? event.which ?? 0) | 0));
+			const offset = code * 4;
+			if (state.keyboard[offset] === 0) state.keyboard[offset + 1] = 255;
+			state.keyboard[offset] = 255;
+		};
+		const keyUp = (event) => {
+			const code = Math.max(0, Math.min(255, Number(event.keyCode ?? event.which ?? 0) | 0));
+			const offset = code * 4;
+			state.keyboard[offset] = 0;
+			state.keyboard[offset + 2] = 255;
+		};
+
+		canvas.addEventListener("mousemove", move);
+		canvas.addEventListener("mousedown", down);
+		globalThis.addEventListener?.("mouseup", up);
+		globalThis.addEventListener?.("keydown", keyDown);
+		globalThis.addEventListener?.("keyup", keyUp);
+		state.inputHandlers = { move, down, up, keyDown, keyUp };
+	}
+
+	#detachInputCanvas(state) {
+		const canvas = state.inputCanvas;
+		const handlers = state.inputHandlers;
+		if (!canvas || !handlers) return;
+		canvas.removeEventListener("mousemove", handlers.move);
+		canvas.removeEventListener("mousedown", handlers.down);
+		globalThis.removeEventListener?.("mouseup", handlers.up);
+		globalThis.removeEventListener?.("keydown", handlers.keyDown);
+		globalThis.removeEventListener?.("keyup", handlers.keyUp);
+		state.inputCanvas = null;
+		state.inputHandlers = null;
+	}
+
+	#clearKeyboardTransient(state) {
+		const keys = state.keyboard;
+		for (let i = 0; i < keys.length; i += 4) {
+			keys[i + 1] = 0;
+			keys[i + 2] = 0;
+		}
+	}
+
+	#renderWgpu(backend, camera, queue, options) {
 		if (!backend?.ready) return;
 		if (!Array.isArray(queue) || queue.length <= 0) return;
 
@@ -587,7 +679,7 @@ export class WrRenderer {
 
 		const time = Number(options.time ?? 0) || 0;
 		const deltaTime = Number(options.deltaTime ?? 0) || 0;
-		this.#writeSceneWgpu(backend, state, camera, time, deltaTime);
+		this.#writeSceneWgpu(backend, state, camera, time, deltaTime, null);
 		const pass = backend.beginRenderPass(frameOptions);
 		if (!pass) {
 			if (endFrame) backend.endFrame();
@@ -596,34 +688,43 @@ export class WrRenderer {
 
 		for (const draw of queue) {
 			if (draw.type === "fsc") {
-				const backendShader = stores.shaderFSCs?.createGpu(backend, draw.shaderId, {
+				const shaderStore = assetStore(draw.shader);
+				const backendShader = shaderStore?.createGpu(backend, draw.shader, {
 					createPipeline: true,
 					sampleCount: frameOptions.sampleCount ?? backend.sampleCount ?? 1,
 					useDepth: !!(frameOptions.useDepth || frameOptions.clearDepthEnabled),
 				});
 				const pipeline = backendShader?.pipeline ?? null;
 				if (!pipeline) continue;
+				this.#writeSceneWgpu(backend, state, camera, time, deltaTime, draw.shaderFSC);
 				const sceneBG = this.#ensureSceneBindGroupWgpu(backend, state, pipeline);
 				if (!sceneBG) continue;
 				pass.setPipeline(pipeline);
 				pass.setBindGroup(0, sceneBG);
+				if (backendShader.features?.needsInputGroup) {
+					const inputBG = this.#ensureFscBindGroupWgpu(backend, state, pipeline, draw.shaderFSC, backendShader.features);
+					if (!inputBG) continue;
+					pass.setBindGroup(1, inputBG);
+				}
 				pass.draw(3, 1, 0, 0);
 				continue;
 			}
 			if (draw.type !== "mesh") continue;
-			const shader = stores.shaderOBJs?.get(draw.shaderId) ?? null;
+			const shader = draw.shader ?? null;
 			if (!shader) continue;
-			const backendShader = stores.shaderOBJs.createGpu(backend, draw.shaderId, {
+			const shaderStore = assetStore(shader);
+			const backendShader = shaderStore?.createGpu(backend, shader, {
 				createPipeline: true,
 				sampleCount: frameOptions.sampleCount ?? backend.sampleCount ?? 1,
 			});
 			const pipeline = backendShader?.pipeline ?? null;
 			if (!pipeline) continue;
 
-			const mesh = stores.meshes?.get(draw.meshId) ?? null;
+			const mesh = draw.mesh ?? null;
 			if (!mesh) continue;
 			const morphTargetIndex = 0;
-			const gpuMesh = stores.meshes.createGpu(backend, draw.meshId, { morphTargetIndex });
+			const meshStore = assetStore(mesh);
+			const gpuMesh = meshStore?.createGpu(backend, mesh, { morphTargetIndex });
 			if (!gpuMesh?.submeshes?.length) continue;
 
 			const sceneBG = this.#ensureSceneBindGroupWgpu(backend, state, pipeline);
@@ -634,14 +735,14 @@ export class WrRenderer {
 			for (let i = 0; i < gpuMesh.submeshes.length; i += 1) {
 				const submeshGpu = gpuMesh.submeshes[i];
 				const material = mesh.submeshes?.[i]?.material ?? {};
-				const texId = resolveTextureId(draw.meshRenderer, material);
-				const textureGpu = texId ? stores.textures.createGpu(backend, texId) : this.#fallbackWgpuTexture(backend, state);
+				const tex = resolveTexture(draw.meshRenderer, material);
+				const textureGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : this.#fallbackWgpuTexture(backend, state);
 				if (!textureGpu) continue;
 
 				this.#writeObjectWgpu(
 					backend,
 					state,
-					`${draw.nodeId}|${draw.meshId}|${i}`,
+					`${draw.nodeId}|${mesh.ref?.id ?? "mesh"}|${i}`,
 					draw,
 					mesh,
 					i,
@@ -652,7 +753,7 @@ export class WrRenderer {
 					backend,
 					state,
 					pipeline,
-					`${draw.nodeId}|${draw.meshId}|${i}`,
+					`${draw.nodeId}|${mesh.ref?.id ?? "mesh"}|${i}`,
 					textureGpu,
 				);
 				if (!objectBG) continue;
@@ -668,7 +769,7 @@ export class WrRenderer {
 		if (endFrame) backend.endFrame();
 	}
 
-	#writeSceneWgpu(backend, state, camera, time, deltaTime) {
+	#writeSceneWgpu(backend, state, camera, time, deltaTime, shaderFSC = null) {
 		const scene = state.sceneScratch;
 		scene.fill(0);
 		const view = camera?.view ?? Azm.Mat4.IDENTITY;
@@ -687,8 +788,27 @@ export class WrRenderer {
 		scene[53] = deltaTime;
 		scene[54] = Number(backend?.canvas?.width ?? 0) || 0;
 		scene[55] = Number(backend?.canvas?.height ?? 0) || 0;
+		scene.set(state.mouse, 56);
+		scene.set(state.date, 60);
+		scene.set(state.frame, 64);
+		this.#writeChannelSizes(state, shaderFSC);
+		scene.set(state.channelSizes, 68);
 		const buffer = this.#ensureSceneBufferWgpu(backend, state);
 		backend.writeBuffer(buffer, scene, 0);
+	}
+
+	#writeChannelSizes(state, shaderFSC = null) {
+		const out = state.channelSizes;
+		for (let i = 0; i < 4; i += 1) {
+			const tex = resolveSlotTexture(shaderFSC, i);
+			const width = Math.max(1, Number(tex?.width ?? tex?.source?.width ?? 1) || 1);
+			const height = Math.max(1, Number(tex?.height ?? tex?.source?.height ?? 1) || 1);
+			const offset = i * 4;
+			out[offset] = width;
+			out[offset + 1] = height;
+			out[offset + 2] = 1 / width;
+			out[offset + 3] = 1 / height;
+		}
 	}
 
 	#ensureSceneBufferWgpu(backend, state) {
@@ -714,7 +834,9 @@ export class WrRenderer {
 	}
 
 	#writeObjectWgpu(backend, state, objectKey, draw, mesh, submeshIndex, material, morphWeight) {
-		const object = state.objectScratch;
+		const flags = collectSubmeshFlags({ mesh, hasRig: !!draw.meshRenderer?.cfg?.hasRig }, submeshIndex);
+		const skinEnabled = !!(draw.meshRenderer?.cfg?.hasRig && flags.hasBone);
+		const object = skinEnabled ? state.objectScratch : state.objectHeaderScratch;
 		object.fill(0);
 		object.set(draw.modelMatrix, 0);
 
@@ -746,8 +868,7 @@ export class WrRenderer {
 		object[34] = color[2];
 		object[35] = color[3];
 
-		const flags = collectSubmeshFlags({ mesh, hasRig: !!draw.meshRenderer?.cfg?.hasRig }, submeshIndex);
-		object[36] = draw.meshRenderer?.cfg?.hasRig && flags.hasBone ? 1 : 0;
+		object[36] = skinEnabled ? 1 : 0;
 		object[37] = flags.morphHasPos ? 1 : 0;
 		object[38] = flags.hasUV ? 1 : 0;
 		object[39] = flags.hasNormal ? 1 : 0;
@@ -760,11 +881,13 @@ export class WrRenderer {
 		object[46] = flags.morphHasTangent ? 1 : 0;
 		object[47] = 0;
 
-		object.set(this.#identityPalette(state), SKIN_BASE_F32);
-		if (draw.skinPalette && (ArrayBuffer.isView(draw.skinPalette) || Array.isArray(draw.skinPalette))) {
-			const max = SKIN_BONE_CAP * 16;
-			const count = Math.min(max, draw.skinPalette.length | 0);
-			for (let i = 0; i < count; i += 1) object[SKIN_BASE_F32 + i] = Number(draw.skinPalette[i] ?? object[SKIN_BASE_F32 + i]) || 0;
+		if (skinEnabled) {
+			object.set(this.#identityPalette(state), SKIN_BASE_F32);
+			if (draw.skinPalette && (ArrayBuffer.isView(draw.skinPalette) || Array.isArray(draw.skinPalette))) {
+				const max = SKIN_BONE_CAP * 16;
+				const count = Math.min(max, draw.skinPalette.length | 0);
+				for (let i = 0; i < count; i += 1) object[SKIN_BASE_F32 + i] = Number(draw.skinPalette[i] ?? object[SKIN_BASE_F32 + i]) || 0;
+			}
 		}
 
 		const buffer = this.#ensureObjectBufferWgpu(backend, state, objectKey);
@@ -814,6 +937,74 @@ export class WrRenderer {
 		return bindGroup;
 	}
 
+	#ensureFscBindGroupWgpu(backend, state, pipeline, shaderFSC, features) {
+		let byPipeline = state.fscBindGroups.get(pipeline);
+		if (!byPipeline) {
+			byPipeline = new Map();
+			state.fscBindGroups.set(pipeline, byPipeline);
+		}
+		const slotIds = [0, 1, 2, 3].map((slot) => resolveSlotId(shaderFSC, slot) ?? "_");
+		const key = `${slotIds.join("|")}|keyboard:${features?.keyboard ? 1 : 0}`;
+		const cached = byPipeline.get(key);
+		if (cached) {
+			if (features?.keyboard) this.#writeKeyboardWgpu(backend, state);
+			return cached;
+		}
+
+		const layout = pipeline.getBindGroupLayout(1);
+		const entries = [];
+		for (const slot of features?.channels ?? []) {
+			const tex = resolveSlotTexture(shaderFSC, slot);
+			const texGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : null;
+			const resource = texGpu ?? this.#fallbackWgpuTexture(backend, state);
+			if (!resource) return null;
+			entries.push({ binding: slot * 2, resource: resource.sampler });
+			entries.push({ binding: slot * 2 + 1, resource: resource.view });
+		}
+		if (features?.keyboard) {
+			const keyboard = this.#ensureKeyboardWgpu(backend, state);
+			if (!keyboard) return null;
+			this.#writeKeyboardWgpu(backend, state);
+			entries.push({ binding: 8, resource: keyboard.view });
+		}
+
+		const bindGroup = backend.createBindGroup({
+			label: "Wr21FSCInputBG",
+			layout,
+			entries,
+		});
+		if (!bindGroup) return null;
+		byPipeline.set(key, bindGroup);
+		return bindGroup;
+	}
+
+	#ensureKeyboardWgpu(backend, state) {
+		if (state.wgpuKeyboardTexture) return state.wgpuKeyboardTexture;
+		const texture = backend.createTexture2D({
+			label: "Wr21Keyboard",
+			width: KEYBOARD_TEX_W,
+			height: KEYBOARD_TEX_H,
+			format: "rgba8unorm",
+		});
+		if (!texture) return null;
+		const view = texture.createView();
+		state.wgpuKeyboardTexture = { texture, view };
+		return state.wgpuKeyboardTexture;
+	}
+
+	#writeKeyboardWgpu(backend, state) {
+		const keyboard = this.#ensureKeyboardWgpu(backend, state);
+		if (!keyboard) return false;
+		backend.writeTexture(
+			keyboard.texture,
+			state.keyboard,
+			{ offset: 0, bytesPerRow: 256 * 4, rowsPerImage: 1 },
+			{ width: KEYBOARD_TEX_W, height: KEYBOARD_TEX_H, depthOrArrayLayers: 1 },
+		);
+		state.keyboardUploaded = true;
+		return true;
+	}
+
 	#fallbackWgpuTexture(backend, state) {
 		if (state.wgpuFallbackTexture) return state.wgpuFallbackTexture;
 		const texture = backend.createTexture2D({
@@ -841,7 +1032,7 @@ export class WrRenderer {
 		return state.wgpuFallbackTexture;
 	}
 
-	#renderWgl2(backend, camera, stores, queue, options) {
+	#renderWgl2(backend, camera, queue, options) {
 		if (!backend?.ready || !backend.gl) return;
 		if (!Array.isArray(queue) || queue.length <= 0) return;
 		const state = this.#getGpuState(backend);
@@ -860,7 +1051,7 @@ export class WrRenderer {
 
 		for (const draw of queue) {
 			if (draw.type === "fsc") {
-				const backendShader = stores.shaderFSCs?.createGpu(backend, draw.shaderId, { createPipeline: true });
+				const backendShader = assetStore(draw.shader)?.createGpu(backend, draw.shader, { createPipeline: true });
 				const glPipeline = backendShader?.glPipeline ?? null;
 				if (!glPipeline?.program) continue;
 				applyWglState(gl, glPipeline.state);
@@ -888,13 +1079,22 @@ export class WrRenderer {
 						Number(backend?.canvas?.height ?? 0) || 0,
 					);
 				}
+				if (uniform.u_mouse) gl.uniform4fv(uniform.u_mouse, state.mouse);
+				if (uniform.u_date) gl.uniform4fv(uniform.u_date, state.date);
+				if (uniform.u_frame) gl.uniform4fv(uniform.u_frame, state.frame);
+				this.#writeChannelSizes(state, draw.shaderFSC);
+				for (let i = 0; i < 4; i += 1) {
+					const loc = uniform[`u_channelSize${i}`];
+					if (loc) gl.uniform4fv(loc, state.channelSizes.subarray(i * 4, i * 4 + 4));
+				}
+				this.#bindFscInputsWgl2(backend, state, draw.shaderFSC, backendShader.features ?? null, uniform);
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
 				continue;
 			}
 			if (draw.type !== "mesh") continue;
-			const shader = stores.shaderOBJs?.get(draw.shaderId) ?? null;
+			const shader = draw.shader ?? null;
 			if (!shader) continue;
-			const backendShader = stores.shaderOBJs.createGpu(backend, draw.shaderId, { createPipeline: true });
+			const backendShader = assetStore(shader)?.createGpu(backend, shader, { createPipeline: true });
 			const glPipeline = backendShader?.glPipeline ?? null;
 			if (!glPipeline?.program) continue;
 			applyWglState(gl, glPipeline.state);
@@ -915,10 +1115,10 @@ export class WrRenderer {
 			}
 			if (uniform.u_time) gl.uniform4f(uniform.u_time, time, deltaTime, 0, 0);
 
-			const mesh = stores.meshes?.get(draw.meshId) ?? null;
+			const mesh = draw.mesh ?? null;
 			if (!mesh) continue;
 			const morphTargetIndex = 0;
-			const gpuMesh = stores.meshes.createGpu(backend, draw.meshId, { morphTargetIndex });
+			const gpuMesh = assetStore(mesh)?.createGpu(backend, mesh, { morphTargetIndex });
 			if (!gpuMesh?.submeshes?.length) continue;
 
 			for (let i = 0; i < gpuMesh.submeshes.length; i += 1) {
@@ -972,8 +1172,8 @@ export class WrRenderer {
 					gl.uniformMatrix4fv(uniform.u_skinPalette, false, palette);
 				}
 
-				const texId = resolveTextureId(draw.meshRenderer, material);
-				const texGpu = texId ? stores.textures.createGpu(backend, texId) : null;
+				const tex = resolveTexture(draw.meshRenderer, material);
+				const texGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : null;
 				const texture = texGpu?.texture ?? null;
 				if (uniform.u_albedoTex && texture) {
 					gl.activeTexture(gl.TEXTURE0);
@@ -997,6 +1197,73 @@ export class WrRenderer {
 		if (endFrame) backend.endFrame();
 	}
 
+	#bindFscInputsWgl2(backend, state, shaderFSC, features, uniform) {
+		const gl = backend.gl ?? null;
+		if (!gl || !features) return;
+		for (const slot of features.channels ?? []) {
+			const tex = resolveSlotTexture(shaderFSC, slot);
+			const texGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : null;
+			const texture = texGpu?.texture ?? this.#fallbackWglTexture(backend, state);
+			const loc = uniform[`u_channel${slot}`];
+			if (!texture || !loc) continue;
+			gl.activeTexture(gl.TEXTURE0 + slot);
+			gl.bindTexture(gl.TEXTURE_2D, texture);
+			gl.uniform1i(loc, slot);
+		}
+		if (features.keyboard && uniform.u_keyboard) {
+			const texture = this.#ensureKeyboardWgl2(backend, state);
+			if (!texture) return;
+			this.#writeKeyboardWgl2(backend, state);
+			gl.activeTexture(gl.TEXTURE0 + 4);
+			gl.bindTexture(gl.TEXTURE_2D, texture);
+			gl.uniform1i(uniform.u_keyboard, 4);
+		}
+	}
+
+	#fallbackWglTexture(backend, state) {
+		if (state.wglFallbackTexture) return state.wglFallbackTexture;
+		const gl = backend.gl ?? null;
+		if (!gl) return null;
+		const texture = backend.createTexture2D({
+			width: 1,
+			height: 1,
+			minFilter: gl.LINEAR,
+			magFilter: gl.LINEAR,
+			wrapS: gl.CLAMP_TO_EDGE,
+			wrapT: gl.CLAMP_TO_EDGE,
+		});
+		if (!texture) return null;
+		backend.writeTexture2D(texture, new Uint8Array([255, 255, 255, 255]), { width: 1, height: 1, format: gl.RGBA, type: gl.UNSIGNED_BYTE });
+		state.wglFallbackTexture = texture;
+		return texture;
+	}
+
+	#ensureKeyboardWgl2(backend, state) {
+		if (state.wglKeyboardTexture) return state.wglKeyboardTexture;
+		const gl = backend.gl ?? null;
+		if (!gl) return null;
+		const texture = backend.createTexture2D({
+			width: KEYBOARD_TEX_W,
+			height: KEYBOARD_TEX_H,
+			minFilter: gl.NEAREST,
+			magFilter: gl.NEAREST,
+			wrapS: gl.CLAMP_TO_EDGE,
+			wrapT: gl.CLAMP_TO_EDGE,
+		});
+		if (!texture) return null;
+		state.wglKeyboardTexture = texture;
+		return texture;
+	}
+
+	#writeKeyboardWgl2(backend, state) {
+		const gl = backend.gl ?? null;
+		const texture = this.#ensureKeyboardWgl2(backend, state);
+		if (!gl || !texture) return false;
+		backend.writeTexture2D(texture, state.keyboard, { width: KEYBOARD_TEX_W, height: KEYBOARD_TEX_H, format: gl.RGBA, type: gl.UNSIGNED_BYTE });
+		state.keyboardUploaded = true;
+		return true;
+	}
+
 	#ensureWglUniforms(state, gl, program) {
 		const cached = state.wglUniformCache.get(program);
 		if (cached) return cached;
@@ -1006,6 +1273,18 @@ export class WrRenderer {
 			u_viewProj: gl.getUniformLocation(program, "u_viewProj"),
 			u_cameraPos: gl.getUniformLocation(program, "u_cameraPos"),
 			u_time: gl.getUniformLocation(program, "u_time"),
+			u_mouse: gl.getUniformLocation(program, "u_mouse"),
+			u_date: gl.getUniformLocation(program, "u_date"),
+			u_frame: gl.getUniformLocation(program, "u_frame"),
+			u_channelSize0: gl.getUniformLocation(program, "u_channelSize0"),
+			u_channelSize1: gl.getUniformLocation(program, "u_channelSize1"),
+			u_channelSize2: gl.getUniformLocation(program, "u_channelSize2"),
+			u_channelSize3: gl.getUniformLocation(program, "u_channelSize3"),
+			u_channel0: gl.getUniformLocation(program, "u_channel0"),
+			u_channel1: gl.getUniformLocation(program, "u_channel1"),
+			u_channel2: gl.getUniformLocation(program, "u_channel2"),
+			u_channel3: gl.getUniformLocation(program, "u_channel3"),
+			u_keyboard: gl.getUniformLocation(program, "u_keyboard"),
 			u_model: gl.getUniformLocation(program, "u_model"),
 			u_instData0: gl.getUniformLocation(program, "u_instData0"),
 			u_instData1: gl.getUniformLocation(program, "u_instData1"),

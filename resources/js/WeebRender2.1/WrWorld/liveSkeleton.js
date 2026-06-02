@@ -1,7 +1,7 @@
 import { Component } from "./component.js";
 
 export class LiveSkeleton extends Component {
-	skeletonId = null;
+	skeleton = null;
 	bones = [];
 }
 

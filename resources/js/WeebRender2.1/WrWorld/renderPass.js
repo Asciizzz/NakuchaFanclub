@@ -1,29 +1,21 @@
 import { Component } from "./component.js";
 
-function asId(value) {
-	if (value == null) return null;
-	const id = String(value).trim();
-	return id || null;
-}
-
 export class RenderPass extends Component {
-	id = null;
+	pass = null;
 	cfg = null;
 	lastResult = null;
 
 	set(next = {}) {
 		const src = next && typeof next === "object" ? next : {};
-		if (src.id !== undefined) this.id = asId(src.id);
-		if (src.passId !== undefined) this.id = asId(src.passId);
+		if (src.pass !== undefined) this.pass = src.pass ?? null;
 		this.cfg = { ...src };
-		delete this.cfg.id;
-		delete this.cfg.passId;
+		delete this.cfg.pass;
 		return this;
 	}
 
-	usePass(id) {
-		this.id = asId(id);
-		return this.id;
+	usePass(pass) {
+		this.pass = pass && typeof pass === "object" ? pass : null;
+		return this.pass;
 	}
 
 	setResult(result = null) {

@@ -1,35 +1,26 @@
 import { Component } from "./component.js";
 
-function asId(value) {
-	if (value == null) return null;
-	const id = String(value).trim();
-	return id || null;
-}
-
 export class ShaderOBJ extends Component {
-	ids = [];
+	shaders = [];
 
-	useShader(value) {
-		const id = asId(value);
-		if (!id) return false;
-		this.ids.push(id);
+	useShader(shader) {
+		if (!shader || typeof shader !== "object") return false;
+		this.shaders.push(shader);
 		return true;
 	}
 
-	disuseShader(value) {
-		const id = asId(value);
-		if (!id) return false;
-		const index = this.ids.indexOf(id);
+	disuseShader(shader) {
+		const index = this.shaders.indexOf(shader);
 		if (index < 0) return false;
-		this.ids.splice(index, 1);
+		this.shaders.splice(index, 1);
 		return true;
 	}
 
-	setIds(values) {
-		this.ids.length = 0;
+	setShaders(values) {
+		this.shaders.length = 0;
 		const list = Array.isArray(values) ? values : [values];
 		for (const value of list) this.useShader(value);
-		return this.ids;
+		return this.shaders;
 	}
 }
 

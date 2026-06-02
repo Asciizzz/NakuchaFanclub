@@ -161,7 +161,7 @@ export class WrLoader {
 		for (const [sourceId, sourceTexture] of Object.entries(sourceTextures)) {
 			const texSrc = asObject(sourceTexture);
 			const wrap = normalizeWrap(texSrc.wrap);
-			const id = stores.textures.add(new WrTexture({
+			const texture = stores.textures.add(new WrTexture({
 				id: sourceId,
 				name: String(texSrc.name ?? sourceId),
 				source: texSrc.bitmap ?? texSrc.source ?? null,
@@ -176,8 +176,8 @@ export class WrLoader {
 					wrapV: wrap,
 				},
 			}));
-			textureMap.set(sourceId, id);
-			if (src.uploadGpu === true && backend) stores.textures.createGpu(backend, id);
+			textureMap.set(sourceId, texture);
+			if (src.uploadGpu === true && backend) stores.textures.createGpu(backend, texture);
 		}
 
 		const materialMap = new Map();
@@ -188,24 +188,24 @@ export class WrLoader {
 		const skeletonMap = new Map();
 		for (const [sourceId, sourceSkeleton] of Object.entries(sourceSkeletons)) {
 			const skelSrc = asObject(sourceSkeleton);
-			const id = stores.skeletons.add(new WrSkeleton({
+			const skeleton = stores.skeletons.add(new WrSkeleton({
 				id: sourceId,
 				name: String(skelSrc.name ?? sourceId),
 				bones: asList(skelSrc.bones),
 			}));
-			skeletonMap.set(sourceId, id);
+			skeletonMap.set(sourceId, skeleton);
 		}
 
 		const meshMap = new Map();
 		for (const [sourceId, sourceMesh] of Object.entries(sourceMeshes)) {
 			const mesh = rewriteMesh(sourceMesh, materialMap, textureMap);
 			mesh.id = sourceId;
-			const id = stores.meshes.add(mesh);
-			meshMap.set(sourceId, id);
+			const storedMesh = stores.meshes.add(mesh);
+			meshMap.set(sourceId, storedMesh);
 			if (src.uploadGpu === true && backend) {
 				const morphCount = Math.max(1, mesh.getMorphTargetCount ? mesh.getMorphTargetCount() : 1);
 				for (let i = 0; i < morphCount; i += 1) {
-					stores.meshes.createGpu(backend, id, { morphTargetIndex: i });
+					stores.meshes.createGpu(backend, storedMesh, { morphTargetIndex: i });
 				}
 			}
 		}
@@ -258,7 +258,7 @@ export class WrLoader {
 			if (skeletonSource) {
 				const live = node.addComp(LiveSkeleton);
 				const sourceSkelId = asId(skeletonSource.skeletonID ?? skeletonSource.skeletonId ?? skeletonSource.skeleton);
-				live.skeletonId = sourceSkelId ? (skeletonMap.get(sourceSkelId) ?? sourceSkelId) : null;
+				live.skeleton = sourceSkelId ? (skeletonMap.get(sourceSkelId) ?? null) : null;
 				live.bones = Array.isArray(skeletonSource.bones) ? skeletonSource.bones.map((m) => new Float32Array(m)) : [];
 			}
 
@@ -266,7 +266,7 @@ export class WrLoader {
 			if (meshSource) {
 				const mr = node.addComp(MeshRenderer);
 				const sourceMeshId = asId(meshSource.meshID ?? meshSource.meshId ?? meshSource.mesh);
-				mr.meshId = sourceMeshId ? (meshMap.get(sourceMeshId) ?? sourceMeshId) : null;
+				mr.mesh = sourceMeshId ? (meshMap.get(sourceMeshId) ?? null) : null;
 				mr.cfg.hasRig = !!meshSource.hasRig;
 				mr.cfg.display = meshSource.active !== false && meshSource.display !== false;
 				if (Array.isArray(meshSource.morphWeights) || ArrayBuffer.isView(meshSource.morphWeights)) {
@@ -283,12 +283,12 @@ export class WrLoader {
 
 		if (src.passCfg && typeof src.passCfg === "object") {
 			const pass = root.addComp(RenderPassComp);
-			const passId = stores.renderPasses?.add(src.passCfg) ?? null;
-			pass.usePass(passId);
+			const passAsset = stores.renderPasses?.add(src.passCfg) ?? null;
+			pass.usePass(passAsset);
 		}
-		if (src.ids !== undefined) {
+		if (src.shaders !== undefined) {
 			const shader = root.addComp(ShaderOBJComp);
-			shader.setIds(src.ids);
+			shader.setShaders(src.shaders);
 		}
 
 		return root;

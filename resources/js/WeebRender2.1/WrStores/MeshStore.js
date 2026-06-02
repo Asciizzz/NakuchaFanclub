@@ -8,9 +8,16 @@ const WR_GPU_BUFFER_USAGE = Object.freeze({
 });
 
 function asId(value) {
+	if (value && typeof value === "object") return asId(value.ref?.id ?? value.id);
 	if (value == null) return null;
 	const id = String(value).trim();
 	return id || null;
+}
+
+function stampRef(store, asset, id) {
+	asset.id = id;
+	asset.ref = { stores: store.stores ?? null, store, id };
+	return asset;
 }
 
 function alignTo4(n) {
@@ -48,13 +55,11 @@ export class WrMeshStore extends AzStore {
 			const autoId = Array.from(this.map.keys()).pop();
 			if (autoId && autoId !== explicitId) this.map.delete(autoId);
 			this.map.set(explicitId, value);
-			value.id = explicitId;
-			return explicitId;
+			return stampRef(this, value, explicitId);
 		}
 
 		const id = super.add(value);
-		value.id = id;
-		return id;
+		return stampRef(this, value, id);
 	}
 
 	remove(id) {
@@ -70,10 +75,10 @@ export class WrMeshStore extends AzStore {
 		return super.remove(key);
 	}
 
-	createGpu(backend, id, options = {}) {
-		const key = asId(id);
+	createGpu(backend, assetRef, options = {}) {
+		const key = asId(assetRef);
 		if (!backend || !key) return null;
-		const mesh = this.get(key);
+		const mesh = assetRef && typeof assetRef === "object" ? assetRef : this.get(key);
 		if (!mesh) return null;
 
 		const morphTargetIndex = Math.max(0, Number(options.morphTargetIndex ?? 0) | 0);

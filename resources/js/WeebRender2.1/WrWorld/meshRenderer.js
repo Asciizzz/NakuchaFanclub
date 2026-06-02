@@ -11,7 +11,7 @@ function vec4(value = null) {
 }
 
 export class MeshRenderer extends Component {
-	meshId = null;
+	mesh = null;
 	morphWeights = null;
 	instData = {
 		slot0: vec4(),

@@ -14,6 +14,12 @@ export class WrStores {
 		this.shaderOBJs = new WrShaderOBJStore({ prefix: src.shaderOBJPrefix ?? src.shaderPrefix ?? "shaderOBJ_" });
 		this.shaderFSCs = new WrShaderFSCStore({ prefix: src.shaderFSCPrefix ?? "shaderFSC_" });
 		this.renderPasses = new WrRenderPassStore({ prefix: src.renderPassPrefix ?? "pass_" });
+		this.meshes.stores = this;
+		this.textures.stores = this;
+		this.skeletons.stores = this;
+		this.shaderOBJs.stores = this;
+		this.shaderFSCs.stores = this;
+		this.renderPasses.stores = this;
 	}
 
 	clear() {
