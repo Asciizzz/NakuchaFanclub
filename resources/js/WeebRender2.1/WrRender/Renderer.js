@@ -243,52 +243,127 @@ export class WrRenderer {
 		if (!world || !stores || !fromNode) {
 			return { from: null, passNodeId: null, count: 0, ops: [], reason: "missing_input" };
 		}
-
-		const passComp = fromNode.getComp(RenderPassComp) ?? null;
-		if (!passComp) {
+		const modelByNode = this.#updateTransforms(fromNode);
+		const passRoots = this.#collectPassRoots(fromNode);
+		if (passRoots.length <= 0) {
 			return {
 				from: fromNode.id,
 				passNodeId: null,
+				passCount: 0,
 				count: 0,
 				ops: [],
+				passes: [],
 				backend: backend?.kind ?? null,
 				reason: "missing_renderpass",
 			};
 		}
 
-		const modelByNode = this.#updateTransforms(fromNode);
-		const collected = this.#buildQueue(world, stores, fromNode, modelByNode);
-		const queue = collected.ops;
-		if (!backend || src.collectOnly === true) {
-			const result = {
+		const passResults = [];
+		const mergedStats = {
+			passRoots: passRoots.length,
+			nodesVisited: 0,
+			prunedNestedRenderPass: 0,
+			skippedMeshNoShader: 0,
+			skippedMeshInvalidShader: 0,
+		};
+		const allOps = [];
+		for (const passNode of passRoots) {
+			const passComp = passNode.getComp(RenderPassComp) ?? null;
+			if (!passComp) continue;
+			const collected = this.#buildQueue(world, stores, passNode, modelByNode);
+			const passResult = {
 				from: fromNode.id,
-				passNodeId: fromNode.id,
+				passNodeId: passNode.id,
 				passCfg: passComp.cfg,
-				count: queue.length,
-				ops: queue,
+				count: collected.ops.length,
+				ops: collected.ops,
 				stats: collected.stats,
 				backend: backend?.kind ?? null,
 				reason: null,
 			};
-			passComp.setResult(result);
-			return result;
+			passComp.setResult(passResult);
+			passResults.push(passResult);
+			allOps.push(...collected.ops);
+			mergedStats.nodesVisited += collected.stats.nodesVisited;
+			mergedStats.prunedNestedRenderPass += collected.stats.prunedNestedRenderPass;
+			mergedStats.skippedMeshNoShader += collected.stats.skippedMeshNoShader;
+			mergedStats.skippedMeshInvalidShader += collected.stats.skippedMeshInvalidShader;
 		}
 
-		if (backend.kind === "webgpu") this.#renderWgpu(backend, camera, stores, queue, src);
-		if (backend.kind === "webgl2") this.#renderWgl2(backend, camera, stores, queue, src);
+		if (!backend || src.collectOnly === true) {
+			return {
+				from: fromNode.id,
+				passNodeId: passResults[0]?.passNodeId ?? null,
+				passCount: passResults.length,
+				count: allOps.length,
+				ops: allOps,
+				passes: passResults,
+				stats: mergedStats,
+				backend: backend?.kind ?? null,
+				reason: null,
+			};
+		}
 
-		const result = {
+		const passOverrides = (baseOptions, passCfg) => ({
+			...baseOptions,
+			clearColor: baseOptions.clearColor ?? passCfg?.clearColor,
+			clearColorEnabled: baseOptions.clearColorEnabled ?? passCfg?.clearColorEnabled,
+			clearDepth: baseOptions.clearDepth ?? passCfg?.clearDepth,
+			clearDepthEnabled: baseOptions.clearDepthEnabled ?? passCfg?.clearDepthEnabled,
+			useDepth: baseOptions.useDepth ?? passCfg?.useDepth,
+		});
+
+		if (backend.kind === "webgpu") {
+			const firstCfg = passResults[0]?.passCfg ?? null;
+			backend.beginFrame(passOverrides(src, firstCfg));
+			for (const passResult of passResults) {
+				this.#renderWgpu(backend, camera, stores, passResult.ops, {
+					...passOverrides(src, passResult.passCfg),
+					beginFrame: false,
+					endFrame: false,
+				});
+			}
+			backend.endFrame();
+		}
+		if (backend.kind === "webgl2") {
+			const firstCfg = passResults[0]?.passCfg ?? null;
+			backend.beginFrame(passOverrides(src, firstCfg));
+			for (const passResult of passResults) {
+				this.#renderWgl2(backend, camera, stores, passResult.ops, {
+					...passOverrides(src, passResult.passCfg),
+					beginFrame: false,
+					endFrame: false,
+				});
+			}
+			backend.endFrame();
+		}
+
+		return {
 			from: fromNode.id,
-			passNodeId: fromNode.id,
-			passCfg: passComp.cfg,
-			count: queue.length,
-			ops: queue,
-			stats: collected.stats,
+			passNodeId: passResults[0]?.passNodeId ?? null,
+			passCount: passResults.length,
+			count: allOps.length,
+			ops: allOps,
+			passes: passResults.map((entry) => ({ ...entry, backend: backend.kind })),
+			stats: mergedStats,
 			backend: backend.kind,
 			reason: null,
 		};
-		passComp.setResult(result);
-		return result;
+	}
+
+	#collectPassRoots(fromNode) {
+		const roots = [];
+		const bfs = [fromNode];
+		while (bfs.length > 0) {
+			const node = bfs.shift();
+			const passComp = node.getComp(RenderPassComp) ?? null;
+			if (passComp) {
+				roots.push(node);
+				continue;
+			}
+			for (const child of childNodeList(node)) bfs.push(child);
+		}
+		return roots;
 	}
 
 	#buildQueue(world, stores, fromNode, modelByNode) {
@@ -387,7 +462,7 @@ export class WrRenderer {
 		const modelByNode = new Map();
 		const bfs = [fromNode];
 		const parentWorldByNode = new Map();
-		parentWorldByNode.set(fromNode.id, Azm.Mat4.IDENTITY);
+		parentWorldByNode.set(fromNode.id, this.#resolveAncestorWorld(fromNode));
 
 		while (bfs.length > 0) {
 			const node = bfs.shift();
@@ -407,6 +482,24 @@ export class WrRenderer {
 			}
 		}
 		return modelByNode;
+	}
+
+	#resolveAncestorWorld(fromNode) {
+		const chain = [];
+		let current = resolveParentNode(fromNode);
+		while (current) {
+			chain.push(current);
+			current = resolveParentNode(current);
+		}
+
+		let world = Azm.Mat4.IDENTITY;
+		for (let i = chain.length - 1; i >= 0; i -= 1) {
+			const tx = chain[i].getComp(Transform);
+			if (!tx) continue;
+			tx.world = Azm.Mat4.mul(world, tx.local);
+			world = tx.world;
+		}
+		return world;
 	}
 
 	#getGpuState(backend) {
