@@ -169,9 +169,9 @@ async function run() {
 		kind: "object",
 		renderCfg: {
 			depthTest: true,
-			depthWrite: false,
+			depthWrite: true,
 			cull: "front",
-			blend: false,
+			blend: true,
 		},
 		wgsl: {
 			vertex: {
@@ -198,13 +198,13 @@ async function run() {
 						}
 					}
 					let worldNrm = normalize(($INST_MODEL$ * vec4f(skinnedNrm, 0.0)).xyz);
-					let worldPos = ($INST_MODEL$ * skinnedPos).xyz + worldNrm * 0.005;
+					let worldPos = ($INST_MODEL$ * skinnedPos).xyz + worldNrm * 0.02;
 					output.position = $PROJECTION$ * $VIEW$ * vec4f(worldPos, 1.0);
 				`,
 			},
 			fragment: {
 				main: `
-					$OUT_COLOR$ = vec4f(0.0, 0.0, 0.0, 1.0);
+					$OUT_COLOR$ = vec4f(0.0, 0.0, 0.0, 0.0);
 				`,
 			},
 		},
@@ -239,7 +239,7 @@ async function run() {
 			},
 			fragment: {
 				main: `
-					$OUT_COLOR$ = vec4(0.0, 0.0, 0.0, 1.0);
+					$OUT_COLOR$ = vec4(0.0, 0.0, 0.0, 0.0);
 				`,
 			},
 		},
@@ -308,25 +308,43 @@ async function run() {
 		},
 	}));
 
-	const mainPass = stores.renderPasses.add(new WrRenderPassAsset({
+	const backgroundPass = stores.renderPasses.add(new WrRenderPassAsset({
 		target: "screen",
 		clearColor: [0, 0, 0, 0],
 		clearColorEnabled: true,
 		clearDepth: 1,
 		clearDepthEnabled: true,
 		useDepth: true,
+		traverseMode: "bfs",
+		batchMode: "shader",
+	}));
+
+	const mainPass = stores.renderPasses.add(new WrRenderPassAsset({
+		target: "screen",
+		clearColor: [0, 0, 0, 0],
+		clearColorEnabled: false,
+		clearDepth: 1,
+		clearDepthEnabled: true,
+		useDepth: true,
+		traverseMode: "bfs",
+		batchMode: "shader",
 	}));
 
 	const renderRoot = world.addNode(null);
 	renderRoot.name = "render-root";
-	// renderpass
-	const passComp = renderRoot.addComp(WrRenderPass);
-	passComp.usePass(mainPass);
-	// fullscreen shader for background
-	const backgroundComp = renderRoot.addComp(WrShaderFSCComp);
+
+	const backgroundPassNode = world.addNode(renderRoot);
+	backgroundPassNode.name = "background-pass";
+	const backgroundPassComp = backgroundPassNode.addComp(WrRenderPass);
+	backgroundPassComp.usePass(backgroundPass);
+	const backgroundComp = backgroundPassNode.addComp(WrShaderFSCComp);
 	backgroundComp.useShader(backgroundShader);
-	// object shaders for meshes
-	const shaderComp = renderRoot.addComp(WrShaderOBJComp);
+
+	const mainPassNode = world.addNode(renderRoot);
+	mainPassNode.name = "main-pass";
+	const mainPassComp = mainPassNode.addComp(WrRenderPass);
+	mainPassComp.usePass(mainPass);
+	const shaderComp = mainPassNode.addComp(WrShaderOBJComp);
 	shaderComp.useShader(outlineShader);
 	shaderComp.useShader(mainShader);
 
@@ -334,14 +352,12 @@ async function run() {
 	const roomRoot = await loader.registerGLTF("/Models/Room.glb", { uploadGpu: true });
 	const nakuRoot = await loader.registerGLTF("/Models/Nakurin.glb", { uploadGpu: true });
 
-	console.log(roomRoot, nakuRoot);
-
 	// The room is too fcking big
 	const roomTx = roomRoot?.getComp(WrTransform) ?? null;
 	if (roomTx) Azm.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
 
-	renderRoot.attachCopy(roomRoot);
-	renderRoot.attachCopy(nakuRoot);
+	mainPassNode.attachCopy(roomRoot);
+	mainPassNode.attachCopy(nakuRoot);
 
 	let last = performance.now();
 	let dt = 0;
@@ -363,6 +379,6 @@ async function run() {
 	requestAnimationFrame(frame);
 
 	if (typeof window !== "undefined") {
-		window.wr21 = { world, stores, loader, renderer, camera, fcam, backend, renderRoot };
+		window.wr21 = { world, stores, loader, renderer, camera, fcam, backend, renderRoot, backgroundPassNode, mainPassNode };
 	}
 }

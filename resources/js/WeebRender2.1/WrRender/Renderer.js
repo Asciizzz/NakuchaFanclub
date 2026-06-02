@@ -1,5 +1,6 @@
 import * as Azm from "../../AzLib/Azm.js";
 import AzWGPU from "../../AzLib/AzWGPU.js";
+import { Ctx } from "../../AzLib/AzHie.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
 import { ShaderOBJ as ShaderOBJComp } from "../WrWorld/shaderObj.js";
 import { ShaderFSC as ShaderFSCComp } from "../WrWorld/shaderFSC.js";
@@ -25,7 +26,7 @@ const GPU_BUFFER_USAGE = Object.freeze({
 	COPY_DST: globalThis.GPUBufferUsage?.COPY_DST ?? 0x8,
 	UNIFORM: globalThis.GPUBufferUsage?.UNIFORM ?? 0x40,
 	VERTEX: globalThis.GPUBufferUsage?.VERTEX ?? 0x20,
-	INDEX: globalThis.GPUBufferUsage?.INDEX ?? 0x10,
+	INDEX: globalThis.ferUsage?.INDEX ?? 0x10,
 });
 const KEYBOARD_TEX_W = 256;
 const KEYBOARD_TEX_H = 1;
@@ -58,14 +59,23 @@ function pushShaders(target, values) {
 	}
 }
 
-function childNodeList(node) {
-	if (!node || !node.ctx) return [];
-	const out = [];
-	for (const childId of node.childIds) {
-		const child = node.ctx.getNode(childId);
-		if (child) out.push(child);
+function sortRenderQueue(queue, batchMode = "shader") {
+	if (String(batchMode ?? "shader").toLowerCase() === "none") return queue;
+	const fsc = [];
+	const mesh = [];
+	for (const op of queue) {
+		if (op?.type === "mesh") mesh.push(op);
+		else fsc.push(op);
 	}
-	return out;
+	mesh.sort((a, b) => {
+		const shaderA = Number(a.shaderOrder ?? 0) || 0;
+		const shaderB = Number(b.shaderOrder ?? 0) || 0;
+		if (shaderA !== shaderB) return shaderA - shaderB;
+		const orderA = Number(a.queueOrder ?? 0) || 0;
+		const orderB = Number(b.queueOrder ?? 0) || 0;
+		return orderA - orderB;
+	});
+	return [...fsc, ...mesh];
 }
 
 function readColor4(value, fallback = [1, 1, 1, 1]) {
@@ -410,20 +420,26 @@ export class WrRenderer {
 
 	#collectPassRoots(fromNode) {
 		const roots = [];
-		const bfs = [fromNode];
-		while (bfs.length > 0) {
-			const node = bfs.shift();
+		for (const [node] of fromNode.traverse({
+			mode: "bfs",
+			includeFrom: true,
+			ignore: {
+				checkNode: (node) => {
+					const passComp = node.getComp(RenderPassComp) ?? null;
+					if (node !== fromNode && passComp) return 0;
+					return 0;
+				},
+			},
+		})) {
 			const passComp = node.getComp(RenderPassComp) ?? null;
 			if (passComp) {
 				roots.push(node);
-				continue;
 			}
-			for (const child of childNodeList(node)) bfs.push(child);
 		}
 		return roots;
 	}
 
-	#buildQueue(world, fromNode, modelByNode) {
+	#buildQueue(world, fromNode, modelByNode, passAsset = null) {
 		const queue = [];
 		const stats = {
 			nodesVisited: 0,
@@ -431,24 +447,42 @@ export class WrRenderer {
 			skippedMeshNoShader: 0,
 			skippedMeshInvalidShader: 0,
 		};
-		const ctxById = new Map();
-		const bfs = [fromNode];
-		ctxById.set(fromNode.id, { pass: null, shaders: [] });
+		const traverseMode = String(passAsset?.traverseMode ?? "bfs").toLowerCase();
+		const batchMode = String(passAsset?.batchMode ?? "shader").toLowerCase();
+		const ctxById = new Map([[fromNode.id, { pass: null, shaders: [] }]]);
+		const shaderRank = new Map();
+		let nextShaderRank = 0;
+		let queueOrder = 0;
 
-		while (bfs.length > 0) {
-			const node = bfs.shift();
+		for (const [node] of fromNode.traverse({
+			mode: traverseMode,
+			includeFrom: true,
+			ignore: {
+				checkNode: (node) => {
+					if (node === fromNode) return 0;
+					const passComp = node.getComp(RenderPassComp) ?? null;
+					if (passComp) {
+						stats.prunedNestedRenderPass += 1;
+						return Ctx.CHECK.BREAK_BRANCH | Ctx.CHECK.SKIP_YIELD;
+					}
+					return 0;
+				},
+			},
+		})) {
 			stats.nodesVisited += 1;
 			const parentCtx = ctxById.get(node.id) ?? { pass: null, shaders: [] };
 			const ownPass = node.getComp(RenderPassComp) ?? null;
-			if (node !== fromNode && ownPass) {
-				stats.prunedNestedRenderPass += 1;
-				continue;
-			}
 			const passComp = ownPass ?? parentCtx.pass ?? null;
 			const shaderComp = node.getComp(ShaderOBJComp);
 			const shaderFSCComp = node.getComp(ShaderFSCComp);
 			const shaders = parentCtx.shaders.slice();
-			if (shaderComp) pushShaders(shaders, shaderComp.shaders);
+			if (shaderComp) {
+				for (const shader of shaderComp.shaders) {
+					if (!shader || typeof shader !== "object") continue;
+					if (!shaderRank.has(shader)) shaderRank.set(shader, nextShaderRank++);
+				}
+				pushShaders(shaders, shaderComp.shaders);
+			}
 
 			if (shaderFSCComp) {
 				for (const shader of shaderFSCComp.shaders) {
@@ -493,6 +527,8 @@ export class WrRenderer {
 							mesh,
 							meshRenderer,
 							shader,
+							shaderOrder: shaderRank.get(shader) ?? 0,
+							queueOrder: queueOrder++,
 							pass: passComp,
 							modelMatrix: modelByNode.get(node.id) ?? Azm.Mat4.makeIdentity(),
 							skinPalette,
@@ -501,23 +537,20 @@ export class WrRenderer {
 				}
 			}
 
-			for (const child of childNodeList(node)) {
+			for (const child of node.children) {
 				ctxById.set(child.id, { pass: passComp, shaders });
-				bfs.push(child);
 			}
 		}
 
-		return { ops: queue, stats };
+		return { ops: sortRenderQueue(queue, batchMode), stats };
 	}
 
 	#updateTransforms(fromNode) {
 		const modelByNode = new Map();
-		const bfs = [fromNode];
 		const parentWorldByNode = new Map();
 		parentWorldByNode.set(fromNode.id, this.#resolveAncestorWorld(fromNode));
 
-		while (bfs.length > 0) {
-			const node = bfs.shift();
+		for (const [node] of fromNode.traverse({ mode: "bfs", includeFrom: true })) {
 			const parentWorld = parentWorldByNode.get(node.id) ?? Azm.Mat4.IDENTITY;
 			const tx = node.getComp(Transform);
 			let nodeWorld = null;
@@ -528,9 +561,8 @@ export class WrRenderer {
 				nodeWorld = new Float32Array(parentWorld);
 			}
 			modelByNode.set(node.id, nodeWorld);
-			for (const child of childNodeList(node)) {
+			for (const child of node.children) {
 				parentWorldByNode.set(child.id, nodeWorld);
-				bfs.push(child);
 			}
 		}
 		return modelByNode;

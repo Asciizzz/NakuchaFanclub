@@ -32,6 +32,8 @@ export class WrRenderPass {
 	clearDepthEnabled = true;
 	useDepth = true;
 	sampleCount = null;
+	traverseMode = "bfs";
+	batchMode = "shader";
 
 	constructor(options = {}) {
 		this.set(options);
@@ -51,6 +53,8 @@ export class WrRenderPass {
 		if (src.clearDepthEnabled !== undefined) this.clearDepthEnabled = !!src.clearDepthEnabled;
 		if (src.useDepth !== undefined) this.useDepth = !!src.useDepth;
 		if (src.sampleCount !== undefined) this.sampleCount = src.sampleCount == null ? null : Math.max(1, Number(src.sampleCount) || 1);
+		if (src.traverseMode !== undefined) this.traverseMode = String(src.traverseMode || "bfs").toLowerCase();
+		if (src.batchMode !== undefined) this.batchMode = String(src.batchMode || "shader").toLowerCase();
 		this.updateHash();
 		return this;
 	}
@@ -64,6 +68,8 @@ export class WrRenderPass {
 			this.clearDepthEnabled ? 1 : 0,
 			this.useDepth ? 1 : 0,
 			this.sampleCount ?? "",
+			this.traverseMode,
+			this.batchMode,
 		].join("|"))}`;
 		return this.hash;
 	}
@@ -76,6 +82,8 @@ export class WrRenderPass {
 			clearDepthEnabled: this.clearDepthEnabled,
 			useDepth: this.useDepth,
 			sampleCount: this.sampleCount,
+			traverseMode: this.traverseMode,
+			batchMode: this.batchMode,
 		};
 	}
 }
