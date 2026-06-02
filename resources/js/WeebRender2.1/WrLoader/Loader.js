@@ -7,6 +7,7 @@ import { RenderPass as RenderPassComp } from "../WrWorld/renderPass.js";
 import { WrMesh } from "../WrAssets/Mesh.js";
 import { WrTexture } from "../WrAssets/Texture.js";
 import { WrSkeleton } from "../WrAssets/Skeleton.js";
+import { WrRenderPass } from "../WrAssets/RenderPass.js";
 
 function asId(value) {
 	if (value == null) return null;
@@ -146,7 +147,7 @@ export class WrLoader {
 		const backend = src.backend ?? this.backend ?? null;
 		const stores = src.stores ?? src.assets ?? this.stores ?? null;
 		const world = src.world ?? this.world ?? null;
-		if (!stores || !world) return null;
+		if (!world) return null;
 
 		const payload = await loadGLB(targetUrl);
 		const sourceTextures = asObject(payload?.textures);
@@ -161,7 +162,7 @@ export class WrLoader {
 		for (const [sourceId, sourceTexture] of Object.entries(sourceTextures)) {
 			const texSrc = asObject(sourceTexture);
 			const wrap = normalizeWrap(texSrc.wrap);
-			const texture = stores.textures.add(new WrTexture({
+			const textureDesc = {
 				id: sourceId,
 				name: String(texSrc.name ?? sourceId),
 				source: texSrc.bitmap ?? texSrc.source ?? null,
@@ -175,9 +176,12 @@ export class WrLoader {
 					wrapU: wrap,
 					wrapV: wrap,
 				},
-			}));
+			};
+			const texture = stores?.textures
+				? stores.textures.add(textureDesc)
+				: new WrTexture(textureDesc);
 			textureMap.set(sourceId, texture);
-			if (src.uploadGpu === true && backend) stores.textures.createGpu(backend, texture);
+			if (src.uploadGpu === true && backend && stores?.textures) stores.textures.createGpu(backend, texture);
 		}
 
 		const materialMap = new Map();
@@ -188,21 +192,23 @@ export class WrLoader {
 		const skeletonMap = new Map();
 		for (const [sourceId, sourceSkeleton] of Object.entries(sourceSkeletons)) {
 			const skelSrc = asObject(sourceSkeleton);
-			const skeleton = stores.skeletons.add(new WrSkeleton({
+			const skeletonDesc = {
 				id: sourceId,
 				name: String(skelSrc.name ?? sourceId),
 				bones: asList(skelSrc.bones),
-			}));
+			};
+			const skeleton = stores?.skeletons
+				? stores.skeletons.add(skeletonDesc)
+				: new WrSkeleton(skeletonDesc);
 			skeletonMap.set(sourceId, skeleton);
 		}
 
 		const meshMap = new Map();
 		for (const [sourceId, sourceMesh] of Object.entries(sourceMeshes)) {
 			const mesh = rewriteMesh(sourceMesh, materialMap, textureMap);
-			mesh.id = sourceId;
-			const storedMesh = stores.meshes.add(mesh);
+			const storedMesh = stores?.meshes ? stores.meshes.add(mesh) : mesh;
 			meshMap.set(sourceId, storedMesh);
-			if (src.uploadGpu === true && backend) {
+			if (src.uploadGpu === true && backend && stores?.meshes) {
 				const morphCount = Math.max(1, mesh.getMorphTargetCount ? mesh.getMorphTargetCount() : 1);
 				for (let i = 0; i < morphCount; i += 1) {
 					stores.meshes.createGpu(backend, storedMesh, { morphTargetIndex: i });
@@ -225,10 +231,7 @@ export class WrLoader {
 		if (!sourceRootId) return null;
 
 		const attachParentRef = src.parent ?? src.parentId ?? null;
-		const attachParentId = attachParentRef && typeof attachParentRef === "object"
-			? asId(attachParentRef.id)
-			: asId(attachParentRef);
-		const attachParent = attachParentId ? world.getNode(attachParentId) : null;
+		const attachParent = attachParentRef ? world.getNode(attachParentRef) : null;
 		const attachId = attachParent ? attachParent.id : null;
 
 		const childrenMap = buildChildrenMap(sourceById);
@@ -283,7 +286,7 @@ export class WrLoader {
 
 		if (src.passCfg && typeof src.passCfg === "object") {
 			const pass = root.addComp(RenderPassComp);
-			const passAsset = stores.renderPasses?.add(src.passCfg) ?? null;
+			const passAsset = stores?.renderPasses?.add(src.passCfg) ?? WrRenderPass.from(src.passCfg);
 			pass.usePass(passAsset);
 		}
 		if (src.shaders !== undefined) {

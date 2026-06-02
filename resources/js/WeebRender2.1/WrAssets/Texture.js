@@ -1,3 +1,5 @@
+import { wrHashText, wrHashValue } from "./hash.js";
+
 function asText(value, fallback = "") {
 	const text = String(value ?? "").trim();
 	return text.length > 0 ? text : fallback;
@@ -38,8 +40,8 @@ function normalizeSampler(source = {}) {
 
 export class WrTexture {
 	constructor(source = {}) {
-		this.id = null;
 		this.name = "";
+		this.hash = "";
 		this.width = 1;
 		this.height = 1;
 		this.format = "rgba8unorm";
@@ -62,10 +64,6 @@ export class WrTexture {
 
 	configure(source = {}) {
 		const raw = source && typeof source === "object" ? source : {};
-		if (raw.id !== undefined) {
-			const key = asText(raw.id, "");
-			this.id = key || null;
-		}
 		if (raw.name !== undefined) this.name = asText(raw.name, this.name);
 		if (raw.width !== undefined) this.width = Math.max(1, asInt(raw.width, this.width));
 		if (raw.height !== undefined) this.height = Math.max(1, asInt(raw.height, this.height));
@@ -73,6 +71,7 @@ export class WrTexture {
 		if (raw.bytesPerPixel !== undefined) this.bytesPerPixel = Math.max(1, asInt(raw.bytesPerPixel, this.bytesPerPixel));
 		if (raw.source !== undefined) this.setSource(raw.source, raw.width, raw.height);
 		if (raw.sampler !== undefined) this.sampler = normalizeSampler(raw.sampler);
+		this.updateHash();
 		return this;
 	}
 
@@ -88,12 +87,25 @@ export class WrTexture {
 			if (nextHeight > 0) this.height = nextHeight;
 		}
 
+		this.updateHash();
 		return this;
+	}
+
+	updateHash() {
+		this.hash = `tex_${wrHashText([
+			this.name,
+			this.width,
+			this.height,
+			this.format,
+			this.bytesPerPixel,
+			wrHashValue(this.sampler),
+			wrHashValue(this.source),
+		].join("|"))}`;
+		return this.hash;
 	}
 
 	toJSON() {
 		return {
-			id: this.id,
 			name: this.name,
 			width: this.width,
 			height: this.height,

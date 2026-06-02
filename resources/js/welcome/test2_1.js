@@ -82,7 +82,7 @@ async function run() {
 	new ResizeObserver(resize).observe(container);
 
 	const mainShader = stores.shaderOBJs.add(new WrShaderOBJ({
-		id: "main-shader",
+		label: "main-shader",
 		kind: "object",
 		renderCfg: {
 			depthTest: true,
@@ -165,7 +165,7 @@ async function run() {
 	}));
 
 	const outlineShader = stores.shaderOBJs.add(new WrShaderOBJ({
-		id: "outline-shader",
+		label: "outline-shader",
 		kind: "object",
 		renderCfg: {
 			depthTest: true,
@@ -246,7 +246,7 @@ async function run() {
 	}));
 
 	const backgroundShader = stores.shaderFSCs.add(new WrShaderFSC({
-		id: "background-fsc",
+		label: "background-fsc",
 		renderCfg: {
 			depthTest: false,
 			depthWrite: false,
@@ -309,7 +309,6 @@ async function run() {
 	}));
 
 	const mainPass = stores.renderPasses.add(new WrRenderPassAsset({
-		id: "main-pass",
 		target: "screen",
 		clearColor: [0, 0, 0, 0],
 		clearColorEnabled: true,
@@ -341,9 +340,8 @@ async function run() {
 	const roomTx = roomRoot?.getComp(WrTransform) ?? null;
 	if (roomTx) Azm.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
 
-	// Add them to world
-	world.copyBranch(roomRoot.id, renderRoot.id);
-	world.copyBranch(nakuRoot.id, renderRoot.id);
+	renderRoot.attachCopy(roomRoot);
+	renderRoot.attachCopy(nakuRoot);
 
 	let last = performance.now();
 	let dt = 0;

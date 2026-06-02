@@ -1,3 +1,5 @@
+import { wrHashText, wrHashValue } from "../WrAssets/hash.js";
+
 const WR_FSC_KEYS = Object.freeze([
 	"$UV$",
 	"$NDC$",
@@ -182,7 +184,6 @@ function normalizeDescriptor(desc = {}) {
 	const glsl = source.glsl && typeof source.glsl === "object" ? source.glsl : {};
 
 	return {
-		id: asText(source.id, "shaderFSC"),
 		label: asText(source.label, source.id ?? "shaderFSC"),
 		renderCfg: normalizeRenderCfg(source.renderCfg),
 		wgsl: {
@@ -450,7 +451,7 @@ function wgpuPipelineDescriptor(shader, backend, options = {}) {
 	const colorFormat = asText(options.colorFormat, backend?.format ?? "bgra8unorm");
 	const depthFormat = asText(options.depthFormat, "depth24plus");
 	const desc = {
-		label: asText(options.label, `Wr2FSC:${shader.id}|${colorFormat}`),
+		label: asText(options.label, `Wr2FSC:${shader.label ?? shader.hash}|${colorFormat}`),
 		layout: options.layout ?? "auto",
 		vertex: {
 			module: options.module,
@@ -488,8 +489,8 @@ export class WrShaderFSC {
 	static DefaultRenderCfg = WR_DEFAULT_RENDER_CFG;
 
 	constructor(desc = {}) {
-		this.id = "shaderFSC";
 		this.label = "shaderFSC";
+		this.hash = "";
 		this.kind = "fullscreen";
 		this.renderCfg = normalizeRenderCfg(null);
 		this.source = {
@@ -519,7 +520,6 @@ export class WrShaderFSC {
 
 	configure(desc = {}) {
 		const norm = normalizeDescriptor(desc);
-		this.id = norm.id;
 		this.label = norm.label;
 		this.renderCfg = norm.renderCfg;
 		this.features = {
@@ -531,7 +531,20 @@ export class WrShaderFSC {
 			wgsl: buildWgslSource(norm),
 			glsl: buildGlslSource(norm),
 		};
+		this.updateHash();
 		return this;
+	}
+
+	updateHash() {
+		this.hash = `shaderFSC_${wrHashText([
+			this.label,
+			wrHashValue(this.renderCfg),
+			wrHashValue(this.features),
+			this.source.wgsl,
+			this.source.glsl.vertex,
+			this.source.glsl.fragment,
+		].join("|"))}`;
+		return this.hash;
 	}
 
 	buildBackend(backend, options = {}) {
@@ -552,7 +565,7 @@ export class WrShaderFSC {
 	#buildWgpu(backend, options = {}) {
 		try {
 			const module = backend.createShaderModule({
-				label: asText(options.moduleLabel, `${this.id}:fsc:wgsl`),
+				label: asText(options.moduleLabel, `${this.label}:fsc:wgsl`),
 				code: this.source.wgsl,
 			});
 			const pipeline = options.createPipeline === false
@@ -588,12 +601,12 @@ export class WrShaderFSC {
 			const program = backend.createShaderProgram({
 				vertex: this.source.glsl.vertex,
 				fragment: this.source.glsl.fragment,
-				vertexLabel: asText(options.vertexLabel, `${this.id}:fsc:vs`),
-				fragmentLabel: asText(options.fragmentLabel, `${this.id}:fsc:fs`),
+				vertexLabel: asText(options.vertexLabel, `${this.label}:fsc:vs`),
+				fragmentLabel: asText(options.fragmentLabel, `${this.label}:fsc:fs`),
 			});
 			const state = makeWglState(gl, this.renderCfg);
 			const glPipeline = backend.createPipeline({
-				label: asText(options.pipelineLabel, `${this.id}:fsc:pipeline`),
+				label: asText(options.pipelineLabel, `${this.label}:fsc:pipeline`),
 				program,
 				state,
 			});

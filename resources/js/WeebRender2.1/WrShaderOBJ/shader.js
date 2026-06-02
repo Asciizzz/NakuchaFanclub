@@ -1,3 +1,5 @@
+import { wrHashText, wrHashValue } from "../WrAssets/hash.js";
+
 const WR_LINK_RESERVED = new Set([
 	"input",
 	"output",
@@ -715,7 +717,7 @@ ${fragmentMain}
 
 function normalizeDescriptor(desc = {}) {
 	const source = desc && typeof desc === "object" ? desc : {};
-	const id = asText(source.id, "wr-shader");
+	const label = asText(source.label ?? source.id, "wr-shader");
 	const renderCfg = normalizeRenderCfg(source.renderCfg);
 
 	const wgsl = source.wgsl && typeof source.wgsl === "object" ? source.wgsl : {};
@@ -729,8 +731,7 @@ function normalizeDescriptor(desc = {}) {
 	const glslLinks = normalizeLinksByLanguage(glsl.links, "glsl");
 
 	const out = {
-		id,
-		label: asText(source.label, id),
+		label,
 		renderCfg,
 		links: {
 			wgsl: wgslLinks,
@@ -890,7 +891,7 @@ function wgpuPipelineDescriptor(shader, backend, options = {}) {
 		: undefined;
 
 	const desc = {
-		label: asText(options.label, `Wr2:${shader.id}|${colorFormat}`),
+		label: asText(options.label, `Wr2:${shader.label ?? shader.hash}|${colorFormat}`),
 		layout: options.layout ?? "auto",
 		vertex: {
 			module: options.moduleVertex,
@@ -937,8 +938,8 @@ export class WrShaderOBJ {
 	static WgpuVertexLayout = WR_WGPU_VERTEX_LAYOUT;
 
 	constructor(desc = {}) {
-		this.id = "wr-shader";
 		this.label = "wr-shader";
+		this.hash = "";
 		this.kind = "object";
 		this.links = {
 			wgsl: [],
@@ -987,7 +988,6 @@ export class WrShaderOBJ {
 
 	configure(desc = {}) {
 		const norm = WrShaderOBJ.normalize(desc);
-		this.id = norm.id;
 		this.label = norm.label;
 		this.kind = "object";
 		this.links = norm.links;
@@ -1005,7 +1005,21 @@ export class WrShaderOBJ {
 				fragment: norm.glsl.fragment,
 			},
 		};
+		this.updateHash();
 		return this;
+	}
+
+	updateHash() {
+		this.hash = `shaderOBJ_${wrHashText([
+			this.label,
+			this.renderCfgKey,
+			wrHashValue(this.links),
+			this.source.wgsl.vertex,
+			this.source.wgsl.fragment,
+			this.source.glsl.vertex,
+			this.source.glsl.fragment,
+		].join("|"))}`;
+		return this.hash;
 	}
 
 	buildBackend(backend, options = {}) {
@@ -1038,11 +1052,11 @@ export class WrShaderOBJ {
 	#buildWgpu(backend, options = {}) {
 		try {
 			const moduleVertex = backend.createShaderModule({
-				label: asText(options.moduleVertexLabel, `${this.id}:wgsl:vs`),
+				label: asText(options.moduleVertexLabel, `${this.label}:wgsl:vs`),
 				code: this.source.wgsl.vertex,
 			});
 			const moduleFragment = backend.createShaderModule({
-				label: asText(options.moduleFragmentLabel, `${this.id}:wgsl:fs`),
+				label: asText(options.moduleFragmentLabel, `${this.label}:wgsl:fs`),
 				code: this.source.wgsl.fragment,
 			});
 			const pipeline = options.createPipeline === false
@@ -1085,8 +1099,8 @@ export class WrShaderOBJ {
 			const program = backend.createShaderProgram({
 				vertex: this.source.glsl.vertex,
 				fragment: this.source.glsl.fragment,
-				vertexLabel: asText(options.vertexLabel, `${this.id}:vs`),
-				fragmentLabel: asText(options.fragmentLabel, `${this.id}:fs`),
+				vertexLabel: asText(options.vertexLabel, `${this.label}:vs`),
+				fragmentLabel: asText(options.fragmentLabel, `${this.label}:fs`),
 				attribLocations: {
 					a_position: 0,
 					a_normal: 1,
@@ -1098,7 +1112,7 @@ export class WrShaderOBJ {
 			});
 			const state = makeWglState(gl, this.renderCfg);
 			const glPipeline = backend.createPipeline({
-				label: asText(options.pipelineLabel, `${this.id}:pipeline`),
+				label: asText(options.pipelineLabel, `${this.label}:pipeline`),
 				program,
 				state,
 			});

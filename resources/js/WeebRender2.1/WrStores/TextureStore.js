@@ -3,14 +3,13 @@ import { WrTexture } from "../WrAssets/Texture.js";
 import AzWGPU from "../../AzLib/AzWGPU.js";
 
 function asId(value) {
-	if (value && typeof value === "object") return asId(value.ref?.id ?? value.id);
+	if (value && typeof value === "object") return asId(value.ref?.id ?? value.id ?? value.hash);
 	if (value == null) return null;
 	const id = String(value).trim();
 	return id || null;
 }
 
 function stampRef(store, asset, id) {
-	asset.id = id;
 	asset.ref = { stores: store.stores ?? null, store, id };
 	return asset;
 }
@@ -23,14 +22,15 @@ export class WrTextureStore extends AzStore {
 	#gpuByBackend = new Map();
 
 	add(texture) {
+		const explicitId = asId(texture?.ref?.id ?? texture?.id);
 		const value = texture instanceof WrTexture ? texture : WrTexture.from(texture ?? {});
-		const explicitId = asId(value.id);
-		if (explicitId && !this.has(explicitId)) {
+		const preferredId = explicitId ?? asId(value.hash);
+		if (preferredId && !this.has(preferredId)) {
 			super.add(value);
 			const autoId = Array.from(this.map.keys()).pop();
-			if (autoId && autoId !== explicitId) this.map.delete(autoId);
-			this.map.set(explicitId, value);
-			return stampRef(this, value, explicitId);
+			if (autoId && autoId !== preferredId) this.map.delete(autoId);
+			this.map.set(preferredId, value);
+			return stampRef(this, value, preferredId);
 		}
 
 		const id = super.add(value);

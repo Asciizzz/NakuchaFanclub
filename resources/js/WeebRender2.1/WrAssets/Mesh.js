@@ -1,4 +1,5 @@
 import * as Azm from "../../AzLib/Azm.js";
+import { wrHashText, wrHashValue } from "./hash.js";
 
 const WR_FLOATS_PER_VERTEX = 19;
 const WR_VERTEX_LAYOUT_V1 = Object.freeze({
@@ -131,8 +132,8 @@ export class WrMesh {
 	constructor(raw = {}) {
 		const source = cloneData(raw ?? {});
 		Object.assign(this, source);
-		this.id = source.id ?? null;
 		this.name = source.name ?? "mesh";
+		this.hash = "";
 		this.submeshes = Array.isArray(source?.submeshes) ? source.submeshes : [];
 		this.morphTargetCount = Math.max(0, Number(source?.morphTargetCount ?? 0) | 0);
 		this.morphTargetNames = Array.isArray(source?.morphTargetNames)
@@ -144,6 +145,7 @@ export class WrMesh {
 		this.#packCache = new Map();
 		this.rebuildMorphCache();
 		this.rebuildAABBCache();
+		this.updateHash();
 	}
 
 	static from(raw = {}) {
@@ -249,9 +251,22 @@ export class WrMesh {
 			if (key === "morphTargetMap") continue;
 			if (key === "submeshAABB") continue;
 			if (key === "aabb") continue;
+			if (key === "ref") continue;
 			out[key] = cloneData(this[key]);
 		}
 		return out;
+	}
+
+	updateHash() {
+		this.hash = `mesh_${wrHashText([
+			this.name,
+			this.submeshes.length,
+			this.morphTargetCount,
+			wrHashValue(this.morphTargetNames),
+			wrHashValue(this.defaultMorphWeights),
+			wrHashValue(this.submeshes),
+		].join("|"))}`;
+		return this.hash;
 	}
 
 	rebuildMorphCache() {
@@ -266,6 +281,7 @@ export class WrMesh {
 		this.morphTargetNames = names;
 		this.morphTargetMap = buildNameIndexMap(names);
 		this.#packCache.clear();
+		this.updateHash();
 		return this;
 	}
 
@@ -302,6 +318,7 @@ export class WrMesh {
 		let merged = null;
 		for (const submeshBounds of this.submeshAABB) merged = mergeAABB(merged, submeshBounds);
 		this.aabb = merged;
+		this.updateHash();
 		return this;
 	}
 

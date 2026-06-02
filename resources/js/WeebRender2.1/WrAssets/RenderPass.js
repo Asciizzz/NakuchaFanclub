@@ -1,8 +1,4 @@
-function asId(value) {
-	if (value == null) return null;
-	const id = String(value).trim();
-	return id || null;
-}
+import { wrHashText, wrHashValue } from "./hash.js";
 
 function normalizeColor(value) {
 	const src = (Array.isArray(value) || ArrayBuffer.isView(value)) ? value : [0, 0, 0, 0];
@@ -19,8 +15,8 @@ function normalizeTarget(value) {
 	const src = value && typeof value === "object" ? value : {};
 	return {
 		type: String(src.type ?? "screen"),
-		color: asId(src.color),
-		depth: asId(src.depth),
+		color: src.color ?? null,
+		depth: src.depth ?? null,
 		width: src.width ?? null,
 		height: src.height ?? null,
 		format: src.format ?? null,
@@ -28,7 +24,7 @@ function normalizeTarget(value) {
 }
 
 export class WrRenderPass {
-	id = null;
+	hash = "";
 	target = { type: "screen" };
 	clearColor = [0, 0, 0, 0];
 	clearColorEnabled = true;
@@ -48,7 +44,6 @@ export class WrRenderPass {
 
 	set(next = {}) {
 		const src = next && typeof next === "object" ? next : {};
-		if (src.id !== undefined) this.id = asId(src.id);
 		if (src.target !== undefined) this.target = normalizeTarget(src.target);
 		if (src.clearColor !== undefined) this.clearColor = normalizeColor(src.clearColor);
 		if (src.clearColorEnabled !== undefined) this.clearColorEnabled = !!src.clearColorEnabled;
@@ -56,7 +51,21 @@ export class WrRenderPass {
 		if (src.clearDepthEnabled !== undefined) this.clearDepthEnabled = !!src.clearDepthEnabled;
 		if (src.useDepth !== undefined) this.useDepth = !!src.useDepth;
 		if (src.sampleCount !== undefined) this.sampleCount = src.sampleCount == null ? null : Math.max(1, Number(src.sampleCount) || 1);
+		this.updateHash();
 		return this;
+	}
+
+	updateHash() {
+		this.hash = `pass_${wrHashText([
+			wrHashValue(this.target),
+			wrHashValue(this.clearColor),
+			this.clearColorEnabled ? 1 : 0,
+			this.clearDepth,
+			this.clearDepthEnabled ? 1 : 0,
+			this.useDepth ? 1 : 0,
+			this.sampleCount ?? "",
+		].join("|"))}`;
+		return this.hash;
 	}
 
 	toFrameOptions() {

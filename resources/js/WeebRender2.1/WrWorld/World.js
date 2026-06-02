@@ -23,6 +23,9 @@ function cloneData(value) {
 	if (Array.isArray(value)) return value.map((item) => cloneData(item));
 	if (typeof value === "object") {
 		if (value.ref?.store) return value;
+		const proto = Object.getPrototypeOf(value);
+		const isPlain = proto === Object.prototype || proto === null;
+		if (!isPlain) return value;
 		const out = {};
 		for (const [key, next] of Object.entries(value)) out[key] = cloneData(next);
 		return out;
@@ -69,9 +72,9 @@ export class WrNode extends Node {
 		return out;
 	}
 
-	copyBranchTo(toId = null) {
-		if (!this.ctx || typeof this.ctx.copyBranch !== "function") return null;
-		return this.ctx.copyBranch(this.id, toId);
+	attachCopy(source) {
+		if (!(source instanceof WrNode)) return null;
+		return this.ctx.copyBranch(source, this);
 	}
 }
 

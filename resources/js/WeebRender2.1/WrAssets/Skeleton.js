@@ -1,4 +1,5 @@
 import * as Azm from "../../AzLib/Azm.js";
+import { wrHashText, wrHashValue } from "./hash.js";
 
 function cloneData(value) {
 	if (value == null) return value;
@@ -41,17 +42,17 @@ function buildNameMap(bones) {
 }
 
 export class WrSkeleton {
-	id = null;
 	name = "skeleton";
+	hash = "";
 	bones = [];
 	map = new Map();
 
 	constructor(raw = {}) {
 		const src = cloneData(raw ?? {});
-		this.id = src.id ?? null;
 		this.name = src.name ?? "skeleton";
 		this.bones = Array.isArray(src.bones) ? src.bones : [];
 		this.rebuildMap();
+		this.updateHash();
 	}
 
 	static from(raw = {}) {
@@ -63,13 +64,24 @@ export class WrSkeleton {
 		const out = {};
 		for (const key of Object.keys(this)) {
 			if (key === "map") continue;
+			if (key === "ref") continue;
 			out[key] = cloneData(this[key]);
 		}
 		return out;
 	}
 
+	updateHash() {
+		this.hash = `skel_${wrHashText([
+			this.name,
+			this.bones.length,
+			wrHashValue(this.bones),
+		].join("|"))}`;
+		return this.hash;
+	}
+
 	rebuildMap() {
 		this.map = buildNameMap(this.bones);
+		this.updateHash();
 		return this;
 	}
 

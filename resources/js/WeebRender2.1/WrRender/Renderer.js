@@ -1,4 +1,5 @@
 import * as Azm from "../../AzLib/Azm.js";
+import AzWGPU from "../../AzLib/AzWGPU.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
 import { ShaderOBJ as ShaderOBJComp } from "../WrWorld/shaderObj.js";
 import { ShaderFSC as ShaderFSCComp } from "../WrWorld/shaderFSC.js";
@@ -23,6 +24,8 @@ const VERTEX_ATTRS = Object.freeze([
 const GPU_BUFFER_USAGE = Object.freeze({
 	COPY_DST: globalThis.GPUBufferUsage?.COPY_DST ?? 0x8,
 	UNIFORM: globalThis.GPUBufferUsage?.UNIFORM ?? 0x40,
+	VERTEX: globalThis.GPUBufferUsage?.VERTEX ?? 0x20,
+	INDEX: globalThis.GPUBufferUsage?.INDEX ?? 0x10,
 });
 const KEYBOARD_TEX_W = 256;
 const KEYBOARD_TEX_H = 1;
@@ -39,6 +42,12 @@ function asNode(world, from) {
 	const id = asId(from);
 	if (!id) return null;
 	return world.getNode(id);
+}
+
+function assetKey(asset, fallback = "") {
+	if (!asset || typeof asset !== "object") return fallback;
+	const key = asset.ref?.id ?? asset.hash ?? asset.label ?? fallback;
+	return key == null ? fallback : String(key);
 }
 
 function pushShaders(target, values) {
@@ -79,16 +88,12 @@ function resolveTexture(meshRenderer, material) {
 
 function resolveSlotId(shaderFSC, slot) {
 	const tex = shaderFSC?.textureSlots?.[`slot${slot}`] ?? null;
-	return asId(tex);
+	return assetKey(tex, null);
 }
 
 function resolveSlotTexture(shaderFSC, slot) {
 	const tex = shaderFSC?.textureSlots?.[`slot${slot}`] ?? null;
 	return tex && typeof tex === "object" ? tex : null;
-}
-
-function assetStore(asset) {
-	return asset?.ref?.store ?? null;
 }
 
 function resolveMorphWeight(meshRenderer) {
@@ -157,6 +162,10 @@ function normalizeFrameOptions(options = {}, passCfg = null) {
 
 function alignTo4(n) {
 	return Math.ceil(n / 4) * 4;
+}
+
+function alignTo256(n) {
+	return Math.ceil(n / 256) * 256;
 }
 
 function padTo4Bytes(data) {
@@ -295,7 +304,7 @@ export class WrRenderer {
 				const passResult = {
 					from: fromNode.id,
 					passNodeId: passNode.id,
-					passId: passAsset.ref?.id ?? passAsset.id ?? null,
+					passHash: passAsset.hash ?? null,
 					passCfg: renderPassFrameOptions(passAsset),
 					target: passAsset.target,
 					count: 0,
@@ -317,7 +326,7 @@ export class WrRenderer {
 			const passResult = {
 				from: fromNode.id,
 				passNodeId: passNode.id,
-				passId: passAsset.ref?.id ?? passAsset.id ?? null,
+				passHash: passAsset.hash ?? null,
 				passCfg: renderPassFrameOptions(passAsset),
 				target: passAsset.target,
 				count: collected.ops.length,
@@ -553,6 +562,7 @@ export class WrRenderer {
 			objectHeaderScratch: new Float32Array(SKIN_BASE_F32),
 			objectScratch: new Float32Array(OBJECT_UBO_F32),
 			sceneBuffer: null,
+			assetGpu: new WeakMap(),
 			objectBuffers: new Map(),
 			sceneBindGroups: new WeakMap(),
 			objectBindGroups: new WeakMap(),
@@ -583,6 +593,191 @@ export class WrRenderer {
 		for (let i = 0; i < SKIN_BONE_CAP; i += 1) out.set(Azm.Mat4.IDENTITY, i * 16);
 		state.identityPalette = out;
 		return out;
+	}
+
+	#assetCache(state, asset) {
+		if (!asset || typeof asset !== "object") return null;
+		let cache = state.assetGpu.get(asset);
+		if (cache) return cache;
+		cache = new Map();
+		state.assetGpu.set(asset, cache);
+		return cache;
+	}
+
+	#gpuShader(backend, state, shader, options = {}) {
+		if (!backend || !shader || typeof shader.buildBackend !== "function") return null;
+		const cache = this.#assetCache(state, shader);
+		if (!cache) return null;
+		const key = [
+			"shader",
+			backend.kind,
+			`samples:${Math.max(1, Number(options.sampleCount ?? 1) || 1)}`,
+			`depth:${options.useDepth ? "1" : "0"}`,
+			shader.hash ?? shader.label ?? "",
+		].join("|");
+		const cached = cache.get(key);
+		if (cached) return cached;
+		const built = shader.buildBackend(backend, options);
+		if (!built) return null;
+		cache.set(key, built);
+		return built;
+	}
+
+	#gpuMesh(backend, state, mesh, options = {}) {
+		if (!backend || !mesh || typeof mesh.packSubmeshes !== "function") return null;
+		const cache = this.#assetCache(state, mesh);
+		if (!cache) return null;
+		const morphTargetIndex = Math.max(0, Number(options.morphTargetIndex ?? 0) | 0);
+		const key = ["mesh", backend.kind, `morph:${morphTargetIndex}`, mesh.hash ?? ""].join("|");
+		const cached = cache.get(key);
+		if (cached) return cached;
+		const packed = mesh.packSubmeshes({ morphTargetIndex });
+		if (!Array.isArray(packed) || packed.length <= 0) return null;
+		let out = null;
+		if (backend.kind === "webgpu") out = this.#gpuMeshWgpu(backend, packed, mesh.hash ?? "mesh");
+		if (backend.kind === "webgl2") out = this.#gpuMeshWgl2(backend, packed);
+		if (!out) return null;
+		cache.set(key, out);
+		return out;
+	}
+
+	#gpuMeshWgpu(backend, packed, label) {
+		const submeshes = [];
+		for (const item of packed) {
+			const vertexBuffer = backend.createBuffer({
+				label: `Wr21VB:${label}`,
+				size: alignTo4(item.vertexData.byteLength),
+				usage: GPU_BUFFER_USAGE.VERTEX | GPU_BUFFER_USAGE.COPY_DST,
+			});
+			const indexBuffer = backend.createBuffer({
+				label: `Wr21IB:${label}`,
+				size: alignTo4(item.indexData.byteLength),
+				usage: GPU_BUFFER_USAGE.INDEX | GPU_BUFFER_USAGE.COPY_DST,
+			});
+			backend.writeBuffer(vertexBuffer, padTo4Bytes(item.vertexData), 0);
+			backend.writeBuffer(indexBuffer, padTo4Bytes(item.indexData), 0);
+			submeshes.push({
+				vertexBuffer,
+				indexBuffer,
+				indexFormat: item.indexFormat,
+				indexCount: item.indexCount,
+				layout: item.layout,
+			});
+		}
+		return { kind: "webgpu", submeshes };
+	}
+
+	#gpuMeshWgl2(backend, packed) {
+		const gl = backend.gl ?? null;
+		if (!gl) return null;
+		const submeshes = [];
+		for (const item of packed) {
+			const vbo = gl.createBuffer();
+			const ibo = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+			gl.bufferData(gl.ARRAY_BUFFER, item.vertexData, gl.STATIC_DRAW);
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+			gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, item.indexData, gl.STATIC_DRAW);
+			submeshes.push({
+				vbo,
+				ibo,
+				indexCount: item.indexCount,
+				indexType: item.indexFormat === "uint32" ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+				layout: item.layout,
+			});
+		}
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+		return { kind: "webgl2", submeshes };
+	}
+
+	#gpuTexture(backend, state, texture) {
+		if (!backend || !texture) return null;
+		const cache = this.#assetCache(state, texture);
+		if (!cache) return null;
+		const key = ["texture", backend.kind, texture.hash ?? ""].join("|");
+		const cached = cache.get(key);
+		if (cached) return cached;
+		let out = null;
+		if (backend.kind === "webgpu") out = this.#gpuTextureWgpu(backend, texture);
+		if (backend.kind === "webgl2") out = this.#gpuTextureWgl2(backend, texture);
+		if (!out) return null;
+		cache.set(key, out);
+		return out;
+	}
+
+	#gpuTextureWgpu(backend, texture) {
+		const width = Math.max(1, Number(texture.width ?? texture.source?.width ?? 1) | 0);
+		const height = Math.max(1, Number(texture.height ?? texture.source?.height ?? 1) | 0);
+		const gpuTexture = backend.createTexture2D({
+			label: `Wr21Tex:${texture.hash ?? "texture"}`,
+			width,
+			height,
+			format: texture.format ?? "rgba8unorm",
+		});
+		if (!gpuTexture) return null;
+
+		const source = texture.source ?? null;
+		if (ArrayBuffer.isView(source)) {
+			const bytesPerPixel = Math.max(1, Number(texture.bytesPerPixel ?? 4) | 0);
+			const rowBytes = width * bytesPerPixel;
+			const bytesPerRow = alignTo256(rowBytes);
+			let data = source;
+			if (bytesPerRow !== rowBytes) {
+				const srcBytes = new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+				const padded = new Uint8Array(bytesPerRow * height);
+				for (let y = 0; y < height; y += 1) {
+					const srcOffset = y * rowBytes;
+					const dstOffset = y * bytesPerRow;
+					padded.set(srcBytes.subarray(srcOffset, srcOffset + rowBytes), dstOffset);
+				}
+				data = padded;
+			}
+			backend.writeTexture(
+				gpuTexture,
+				data,
+				{ offset: 0, bytesPerRow, rowsPerImage: height },
+				{ width, height, depthOrArrayLayers: 1 },
+			);
+		} else if (source && backend.device?.queue?.copyExternalImageToTexture) {
+			AzWGPU.Texture.writeExternal(backend.device, gpuTexture, source, {
+				width,
+				height,
+				flipY: false,
+			});
+		}
+
+		const view = gpuTexture.createView();
+		const sampler = backend.createSampler({
+			minFilter: texture.sampler?.minFilter ?? "linear",
+			magFilter: texture.sampler?.magFilter ?? "linear",
+			mipmapFilter: texture.sampler?.mipmapFilter ?? "linear",
+			addressModeU: texture.sampler?.wrapU ?? "clamp-to-edge",
+			addressModeV: texture.sampler?.wrapV ?? "clamp-to-edge",
+		});
+		return { kind: "webgpu", texture: gpuTexture, view, sampler };
+	}
+
+	#gpuTextureWgl2(backend, texture) {
+		const gl = backend.gl ?? null;
+		if (!gl) return null;
+		const width = Math.max(1, Number(texture.width ?? texture.source?.width ?? 1) | 0);
+		const height = Math.max(1, Number(texture.height ?? texture.source?.height ?? 1) | 0);
+		const tex = backend.createTexture2D({
+			width,
+			height,
+			wrapS: texture.sampler?.wrapU === "repeat" ? gl.REPEAT : gl.CLAMP_TO_EDGE,
+			wrapT: texture.sampler?.wrapV === "repeat" ? gl.REPEAT : gl.CLAMP_TO_EDGE,
+			minFilter: gl.LINEAR,
+			magFilter: gl.LINEAR,
+		});
+		if (!tex) return null;
+		const source = texture.source ?? null;
+		if (source) {
+			if (ArrayBuffer.isView(source)) backend.writeTexture2D(tex, source, { width, height, format: gl.RGBA, type: gl.UNSIGNED_BYTE });
+			else backend.writeTexture2D(tex, source, { format: gl.RGBA, type: gl.UNSIGNED_BYTE });
+		}
+		return { kind: "webgl2", texture: tex };
 	}
 
 	#updateFscRuntime(backend, state, options) {
@@ -688,8 +883,7 @@ export class WrRenderer {
 
 		for (const draw of queue) {
 			if (draw.type === "fsc") {
-				const shaderStore = assetStore(draw.shader);
-				const backendShader = shaderStore?.createGpu(backend, draw.shader, {
+				const backendShader = this.#gpuShader(backend, state, draw.shader, {
 					createPipeline: true,
 					sampleCount: frameOptions.sampleCount ?? backend.sampleCount ?? 1,
 					useDepth: !!(frameOptions.useDepth || frameOptions.clearDepthEnabled),
@@ -712,8 +906,7 @@ export class WrRenderer {
 			if (draw.type !== "mesh") continue;
 			const shader = draw.shader ?? null;
 			if (!shader) continue;
-			const shaderStore = assetStore(shader);
-			const backendShader = shaderStore?.createGpu(backend, shader, {
+			const backendShader = this.#gpuShader(backend, state, shader, {
 				createPipeline: true,
 				sampleCount: frameOptions.sampleCount ?? backend.sampleCount ?? 1,
 			});
@@ -723,8 +916,7 @@ export class WrRenderer {
 			const mesh = draw.mesh ?? null;
 			if (!mesh) continue;
 			const morphTargetIndex = 0;
-			const meshStore = assetStore(mesh);
-			const gpuMesh = meshStore?.createGpu(backend, mesh, { morphTargetIndex });
+			const gpuMesh = this.#gpuMesh(backend, state, mesh, { morphTargetIndex });
 			if (!gpuMesh?.submeshes?.length) continue;
 
 			const sceneBG = this.#ensureSceneBindGroupWgpu(backend, state, pipeline);
@@ -736,13 +928,13 @@ export class WrRenderer {
 				const submeshGpu = gpuMesh.submeshes[i];
 				const material = mesh.submeshes?.[i]?.material ?? {};
 				const tex = resolveTexture(draw.meshRenderer, material);
-				const textureGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : this.#fallbackWgpuTexture(backend, state);
+				const textureGpu = tex ? this.#gpuTexture(backend, state, tex) : this.#fallbackWgpuTexture(backend, state);
 				if (!textureGpu) continue;
 
 				this.#writeObjectWgpu(
 					backend,
 					state,
-					`${draw.nodeId}|${mesh.ref?.id ?? "mesh"}|${i}`,
+					`${draw.nodeId}|${mesh.hash ?? "mesh"}|${i}`,
 					draw,
 					mesh,
 					i,
@@ -753,7 +945,7 @@ export class WrRenderer {
 					backend,
 					state,
 					pipeline,
-					`${draw.nodeId}|${mesh.ref?.id ?? "mesh"}|${i}`,
+					`${draw.nodeId}|${mesh.hash ?? "mesh"}|${i}`,
 					textureGpu,
 				);
 				if (!objectBG) continue;
@@ -955,7 +1147,7 @@ export class WrRenderer {
 		const entries = [];
 		for (const slot of features?.channels ?? []) {
 			const tex = resolveSlotTexture(shaderFSC, slot);
-			const texGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : null;
+			const texGpu = tex ? this.#gpuTexture(backend, state, tex) : null;
 			const resource = texGpu ?? this.#fallbackWgpuTexture(backend, state);
 			if (!resource) return null;
 			entries.push({ binding: slot * 2, resource: resource.sampler });
@@ -1051,7 +1243,7 @@ export class WrRenderer {
 
 		for (const draw of queue) {
 			if (draw.type === "fsc") {
-				const backendShader = assetStore(draw.shader)?.createGpu(backend, draw.shader, { createPipeline: true });
+				const backendShader = this.#gpuShader(backend, state, draw.shader, { createPipeline: true });
 				const glPipeline = backendShader?.glPipeline ?? null;
 				if (!glPipeline?.program) continue;
 				applyWglState(gl, glPipeline.state);
@@ -1094,7 +1286,7 @@ export class WrRenderer {
 			if (draw.type !== "mesh") continue;
 			const shader = draw.shader ?? null;
 			if (!shader) continue;
-			const backendShader = assetStore(shader)?.createGpu(backend, shader, { createPipeline: true });
+			const backendShader = this.#gpuShader(backend, state, shader, { createPipeline: true });
 			const glPipeline = backendShader?.glPipeline ?? null;
 			if (!glPipeline?.program) continue;
 			applyWglState(gl, glPipeline.state);
@@ -1118,7 +1310,7 @@ export class WrRenderer {
 			const mesh = draw.mesh ?? null;
 			if (!mesh) continue;
 			const morphTargetIndex = 0;
-			const gpuMesh = assetStore(mesh)?.createGpu(backend, mesh, { morphTargetIndex });
+			const gpuMesh = this.#gpuMesh(backend, state, mesh, { morphTargetIndex });
 			if (!gpuMesh?.submeshes?.length) continue;
 
 			for (let i = 0; i < gpuMesh.submeshes.length; i += 1) {
@@ -1173,7 +1365,7 @@ export class WrRenderer {
 				}
 
 				const tex = resolveTexture(draw.meshRenderer, material);
-				const texGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : null;
+				const texGpu = tex ? this.#gpuTexture(backend, state, tex) : null;
 				const texture = texGpu?.texture ?? null;
 				if (uniform.u_albedoTex && texture) {
 					gl.activeTexture(gl.TEXTURE0);
@@ -1202,7 +1394,7 @@ export class WrRenderer {
 		if (!gl || !features) return;
 		for (const slot of features.channels ?? []) {
 			const tex = resolveSlotTexture(shaderFSC, slot);
-			const texGpu = tex ? assetStore(tex)?.createGpu(backend, tex) : null;
+			const texGpu = tex ? this.#gpuTexture(backend, state, tex) : null;
 			const texture = texGpu?.texture ?? this.#fallbackWglTexture(backend, state);
 			const loc = uniform[`u_channel${slot}`];
 			if (!texture || !loc) continue;
