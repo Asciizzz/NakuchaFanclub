@@ -332,7 +332,7 @@ export class WrRenderer {
 				passResults.push(passResult);
 				continue;
 			}
-			const collected = this.#buildQueue(world, passNode, modelByNode);
+			const collected = this.#buildQueue(world, passNode, modelByNode, passAsset);
 			const passResult = {
 				from: fromNode.id,
 				passNodeId: passNode.id,
