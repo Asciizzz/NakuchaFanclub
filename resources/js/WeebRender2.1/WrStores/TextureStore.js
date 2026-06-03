@@ -1,4 +1,4 @@
-import AzStore from "../../AzLib/AzStore.js";
+import WrStore from "../WrStore.js";
 import { WrTexture } from "../WrAssets/Texture.js";
 import AzWGPU from "../../AzLib/AzWGPU.js";
 
@@ -18,7 +18,7 @@ function alignTo256(n) {
 	return Math.ceil(n / 256) * 256;
 }
 
-export class WrTextureStore extends AzStore {
+export class WrTextureStore extends WrStore {
 	#gpuByBackend = new Map();
 
 	add(texture) {

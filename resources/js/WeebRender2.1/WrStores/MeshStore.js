@@ -1,4 +1,4 @@
-import AzStore from "../../AzLib/AzStore.js";
+import WrStore from "../WrStore.js";
 import { WrMesh } from "../WrAssets/Mesh.js";
 
 const WR_GPU_BUFFER_USAGE = Object.freeze({
@@ -43,7 +43,7 @@ function padTo4Bytes(data) {
 	return data;
 }
 
-export class WrMeshStore extends AzStore {
+export class WrMeshStore extends WrStore {
 	#gpuByBackend = new Map();
 
 	add(mesh) {

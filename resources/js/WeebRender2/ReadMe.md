@@ -6,12 +6,11 @@ This file matches current `WrWorld`, `WrShader`, and `WrWorld/Components`
 ## Quick Start
 
 ```js
-import { AzWBackend } from "../AzLib/AzWBackend.js";
 import { AzCamera } from "../AzLib/AzCamera.js";
-import { WrWorld } from "../WeebRender2/index.js";
+import { WrBackend, WrWorld } from "../WeebRender2/index.js";
 
 const canvas = document.getElementById("wr-canvas");
-const { backend } = await AzWBackend.Base.choose(canvas, { prefer: "webgpu" });
+const { backend } = await WrBackend.Base.choose(canvas, { prefer: "webgpu" });
 
 const world = new WrWorld({ backend });
 const camera = new AzCamera({ position: [0, 1.2, 4.5], near: 0.1, far: 250, fov: 45 });

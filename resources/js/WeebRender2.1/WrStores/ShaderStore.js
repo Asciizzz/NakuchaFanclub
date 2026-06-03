@@ -1,4 +1,4 @@
-import AzStore from "../../AzLib/AzStore.js";
+import WrStore from "../WrStore.js";
 import { WrShaderOBJ } from "../WrAssets/ShaderObj.js";
 
 function asId(value) {
@@ -13,7 +13,7 @@ function stampRef(store, asset, id) {
 	return asset;
 }
 
-export class WrShaderOBJStore extends AzStore {
+export class WrShaderOBJStore extends WrStore {
 	#backendCache = new Map();
 
 	add(shader) {

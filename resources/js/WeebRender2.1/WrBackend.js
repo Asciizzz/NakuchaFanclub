@@ -1,4 +1,4 @@
-/* AzWBackend
+/* WrBackend
 By Asciiz
 
 Backend foundation
@@ -56,8 +56,8 @@ It doesn't give a fck what a 3d even it
 	+ destroy()
 */
 
-import AzWGPU from "./AzWGPU.js";
-import AzWGL2 from "./AzWGL2.js";
+import AzWGPU from "../AzLib/AzWGPU.js";
+import AzWGL2 from "../AzLib/AzWGL2.js";
 
 const AZ_WGPU_DEPTH_FORMAT = "depth24plus";
 
@@ -132,7 +132,7 @@ export class Base {
 	 * @returns {Promise<Base>}
 	 */
 	async init() {
-		throw new Error("[AzWBackend.Base] init() is required");
+		throw new Error("[WrBackend.Base] init() is required");
 	}
 
 	/**
@@ -246,7 +246,7 @@ export class Base {
 	 */
 	static async choose(canvasRef, options = {}) {
 		const canvas = Base.resolveCanvas(canvasRef);
-		if (!canvas) throw new Error("[AzWBackend] valid canvas is required");
+		if (!canvas) throw new Error("[WrBackend] valid canvas is required");
 
 		const src = options && typeof options === "object" ? options : {};
 		const preferred = String(src.prefer ?? "webgpu").toLowerCase() === "webgl2"
@@ -300,7 +300,7 @@ export class Base {
 			}
 		}
 
-		throw new Error("[AzWBackend] choose() failed: " + JSON.stringify(report));
+		throw new Error("[WrBackend] choose() failed: " + JSON.stringify(report));
 	}
 }
 
@@ -360,7 +360,7 @@ export class WGPU extends Base {
 	 * @returns {Promise<WGPU>}
 	 */
 	async init() {
-		if (!this.canvas) throw new Error("[AzWBackendWGPU] canvas is required");
+		if (!this.canvas) throw new Error("[WrBackendWGPU] canvas is required");
 
 		const pick = await AzWGPU.Adapter.pickBest(this.options.pickBest ?? {});
 		const adapter = pick.adapter ?? pick;
@@ -762,7 +762,7 @@ export class WGL2 extends Base {
 	 * @returns {Promise<WGL2>}
 	 */
 	async init() {
-		if (!this.canvas) throw new Error("[AzWBackendWGL2] canvas is required");
+		if (!this.canvas) throw new Error("[WrBackendWGL2] canvas is required");
 		const contextSource = this.options.context && typeof this.options.context === "object"
 			? this.options.context
 			: {};
@@ -931,17 +931,17 @@ export class WGL2 extends Base {
 
 }
 
-export const AzWBackend = Object.freeze({
+export const WrBackend = Object.freeze({
 	Base,
 	WGPU,
 	WGL2,
 });
 
 if (typeof window !== "undefined") {
-	window.AzWBackend = AzWBackend;
-	window.AzWBackendBase = Base;
-	window.AzWBackendWGPU = WGPU;
-	window.AzWBackendWGL2 = WGL2;
+	window.WrBackend = WrBackend;
+	window.WrBackendBase = Base;
+	window.WrBackendWGPU = WGPU;
+	window.WrBackendWGL2 = WGL2;
 }
 
-export default AzWBackend;
+export default WrBackend;

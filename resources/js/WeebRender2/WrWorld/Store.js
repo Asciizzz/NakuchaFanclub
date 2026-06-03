@@ -1,4 +1,4 @@
-import AzStore from "../../AzLib/AzStore.js";
+import WrStore from "../WrStore.js";
 import { WrMesh } from "../WrAssets/Mesh.js";
 import { WrTexture } from "../WrAssets/Texture.js";
 import { WrShader } from "../WrShader/WrShader.js";
@@ -10,7 +10,7 @@ function asId(value) {
     return id || null;
 }
 
-export class WrMeshStore extends AzStore {
+export class WrMeshStore extends WrStore {
     #world = null;
 
     constructor(world, options = {}) {
@@ -58,7 +58,7 @@ export class WrMeshStore extends AzStore {
 }
 
 
-export class WrTextureStore extends AzStore {
+export class WrTextureStore extends WrStore {
     #world = null;
 
     constructor(world, options = {}) {
@@ -106,7 +106,7 @@ export class WrTextureStore extends AzStore {
 }
 
 
-export class WrShaderStore extends AzStore {
+export class WrShaderStore extends WrStore {
     #world = null;
 
     constructor(world, options = {}) {
@@ -160,7 +160,7 @@ export class WrShaderStore extends AzStore {
 }
 
 
-export class WrSkeletonStore extends AzStore {
+export class WrSkeletonStore extends WrStore {
     #world = null;
 
     constructor(world, options = {}) {

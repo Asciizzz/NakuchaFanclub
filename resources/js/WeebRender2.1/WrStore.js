@@ -1,5 +1,5 @@
 /*
-AzStore (Storage)
+WrStore (Storage)
 By Asciiz
 
 Lightweight id-object store
@@ -11,7 +11,7 @@ function asId(value) {
 	return id ? id : null;
 }
 
-export class AzStore {
+export class WrStore {
 	#map = new Map();
 	#seed = 1;
 	#prefix = "item_";
@@ -73,7 +73,7 @@ export class AzStore {
 }
 
 if (typeof window !== "undefined") {
-	window.AzStore = AzStore;
+	window.WrStore = WrStore;
 }
 
-export default AzStore;
+export default WrStore;

@@ -1,4 +1,4 @@
-import AzStore from "../../AzLib/AzStore.js";
+import WrStore from "../WrStore.js";
 import { WrSkeleton } from "../WrAssets/Skeleton.js";
 
 function asId(value) {
@@ -13,7 +13,7 @@ function stampRef(store, asset, id) {
 	return asset;
 }
 
-export class WrSkeletonStore extends AzStore {
+export class WrSkeletonStore extends WrStore {
 	add(skeleton) {
 		const explicitId = asId(skeleton?.ref?.id ?? skeleton?.id);
 		const value = skeleton instanceof WrSkeleton ? skeleton : WrSkeleton.from(skeleton ?? {});

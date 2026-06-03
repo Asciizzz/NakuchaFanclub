@@ -1,4 +1,4 @@
-import AzStore from "../../AzLib/AzStore.js";
+import WrStore from "../WrStore.js";
 import { WrRenderPass } from "../WrAssets/RenderPass.js";
 
 function asId(value) {
@@ -13,7 +13,7 @@ function stampRef(store, asset, id) {
 	return asset;
 }
 
-export class WrRenderPassStore extends AzStore {
+export class WrRenderPassStore extends WrStore {
 	add(pass) {
 		const explicitId = asId(pass?.ref?.id ?? pass?.id);
 		const value = pass instanceof WrRenderPass ? pass : WrRenderPass.from(pass ?? {});

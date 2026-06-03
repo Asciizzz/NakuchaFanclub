@@ -1,4 +1,4 @@
-import { AzWBackend } from "../AzLib/AzWBackend.js";
+import { WrBackend } from "../WeebRender2.1/WrBackend.js";
 import { AzCamera } from "../AzLib/AzCamera.js";
 import * as Azm from "../AzLib/Azm.js";
 import { FCamera } from "./FCamera.js";
@@ -34,7 +34,7 @@ async function run() {
 	canvas.style.height = "100%";
 	container.replaceChildren(canvas);
 
-	const { backend, report } = await AzWBackend.Base.choose(canvas, { prefer });
+	const { backend, report } = await WrBackend.Base.choose(canvas, { prefer });
 	console.info("[WrScene2_1] backend", report);
 
 	const world = new WrWorld();

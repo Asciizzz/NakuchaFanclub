@@ -43,7 +43,7 @@
 	<div id="root"></div>
 	<div id="hud">init</div>
 	<script type="module">
-		import { AzWBackend } from "../AzLib/AzWBackend.js";
+		import { WrBackend } from "../WeebRender2.1/WrBackend.js";
 		import { AzCamera } from "../AzLib/AzCamera.js";
 		import { GrassField, SkyObject } from "./GrassField.js";
 
@@ -54,7 +54,7 @@
 		canvas.style.height = "100%";
 		root.replaceChildren(canvas);
 
-		const { backend, report } = await AzWBackend.Base.choose(canvas, { prefer: "webgpu" });
+		const { backend, report } = await WrBackend.Base.choose(canvas, { prefer: "webgpu" });
 		if (backend.kind !== "webgpu") throw new Error("This test requires WebGPU");
 
 		const camera = new AzCamera({ position: [0, 1.2, 2.6], near: 0.1, far: 200, fov: 50 });
