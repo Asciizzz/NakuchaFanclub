@@ -88,20 +88,23 @@ async function run() {
 			depthTest: true,
 			depthWrite: true,
 			cull: "back",
-			blend: false,
+			blend: true,
 		},
 		wgsl: {
 			links: [
 				{ name: "out_uv", type: "vec2f" },
+				{ name: "out_normal", type: "vec3f" },
 			],
 			vertex: {
 				main: `
 					out_uv = $UV$;
 					var localPos = $POSITION$;
+					var localNrm = normalize($NORMAL$);
 					if ($HAS_MORPH$) {
 						localPos += $MORPH_POS$ * $MORPH_WEIGHT$;
 					}
 					var skinnedPos = vec4f(localPos, 1.0);
+					var skinnedNrm = localNrm;
 					if ($SKIN_ENABLED$) {
 						let weights = $BONE_WEIGHT$;
 						let wsum = weights.x + weights.y + weights.z + weights.w;
@@ -113,15 +116,21 @@ async function run() {
 								weights.z * $SKIN_PALETTE$[clamp(ids.z, 0, 127)] +
 								weights.w * $SKIN_PALETTE$[clamp(ids.w, 0, 127)];
 							skinnedPos = skin * vec4f(localPos, 1.0);
+							skinnedNrm = normalize((skin * vec4f(localNrm, 0.0)).xyz);
 						}
 					}
+					out_normal = normalize(($INST_MODEL$ * vec4f(skinnedNrm, 0.0)).xyz);
 					output.position = $PROJECTION$ * $VIEW$ * $INST_MODEL$ * skinnedPos;
 				`,
 			},
 			fragment: {
 				main: `
 					var texColor = textureSample($ALBEDO_TEX$, texSampler, out_uv) * $ALBEDO_COLOR$;
-					if (texColor.a < 0.5) { discard; }
+					// if (texColor.a < 0.5) { discard; }
+
+					var lit = dot(out_normal, normalize(vec3f(0.5, 1.0, 0.5)));
+					texColor.a *= 0.8 + 0.2 * lit; // Extremely cool effect to expose the fsc layer
+
 					$OUT_COLOR$ = texColor;
 				`,
 			},
@@ -129,15 +138,18 @@ async function run() {
 		glsl: {
 			links: [
 				{ name: "out_uv", type: "vec2" },
+				{ name: "out_normal", type: "vec3" },
 			],
 			vertex: {
 				main: `
 					out_uv = $UV$;
 					vec3 localPos = $POSITION$;
+					vec3 localNrm = normalize($NORMAL$);
 					if ($HAS_MORPH$) {
 						localPos += $MORPH_POS$ * $MORPH_WEIGHT$;
 					}
 					vec4 skinnedPos = vec4(localPos, 1.0);
+					vec3 skinnedNrm = localNrm;
 					if ($SKIN_ENABLED$) {
 						vec4 weights = $BONE_WEIGHT$;
 						float wsum = weights.x + weights.y + weights.z + weights.w;
@@ -149,8 +161,10 @@ async function run() {
 								weights.z * $SKIN_PALETTE$[clamp(ids.z, 0, 127)] +
 								weights.w * $SKIN_PALETTE$[clamp(ids.w, 0, 127)];
 							skinnedPos = skin * vec4(localPos, 1.0);
+							skinnedNrm = normalize((skin * vec4(localNrm, 0.0)).xyz);
 						}
 					}
+					out_normal = normalize(($INST_MODEL$ * vec4(skinnedNrm, 0.0)).xyz);
 					gl_Position = $PROJECTION$ * $VIEW$ * $INST_MODEL$ * skinnedPos;
 				`,
 			},
@@ -204,7 +218,7 @@ async function run() {
 			},
 			fragment: {
 				main: `
-					$OUT_COLOR$ = vec4f(0.0, 0.0, 0.0, 0.0);
+					$OUT_COLOR$ = vec4f(0.0, 0.0, 0.0, 1.0);
 				`,
 			},
 		},
@@ -239,7 +253,7 @@ async function run() {
 			},
 			fragment: {
 				main: `
-					$OUT_COLOR$ = vec4(0.0, 0.0, 0.0, 0.0);
+					$OUT_COLOR$ = vec4(0.0, 0.0, 0.0, 1.0);
 				`,
 			},
 		},
@@ -253,56 +267,154 @@ async function run() {
 			blend: false,
 		},
 		wgsl: {
+			methods: [`
+				const PI: f32 = 3.141592653589793;
+
+				fn wrRot(v: vec2f, a: f32) -> vec2f {
+					let c = cos(a);
+					let s = sin(a);
+					return vec2f(c * v.x - s * v.y, s * v.x + c * v.y);
+				}
+
+				fn wrHash(p: vec2f) -> f32 {
+					let h = dot(p, vec2f(127.1, 311.7));
+					return fract(sin(h) * 43758.5453123);
+				}
+
+				fn wrNoise(p: vec2f) -> f32 {
+					let i = floor(p);
+					let f = fract(p);
+					let u = f * f * (vec2f(3.0, 3.0) - 2.0 * f);
+					let a = wrHash(i);
+					let b = wrHash(i + vec2f(1.0, 0.0));
+					let c = wrHash(i + vec2f(0.0, 1.0));
+					let d = wrHash(i + vec2f(1.0, 1.0));
+					return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+				}
+
+				fn wrFbm(p: vec2f, t: f32) -> f32 {
+					var pos = p;
+					var amp = 0.5;
+					var sum = 0.0;
+					for (var i = 0; i < 5; i++) {
+						sum += amp * wrNoise(pos + vec2f(t, -t * 0.37));
+						pos = wrRot(pos * 2.03, 0.5);
+						amp *= 0.5;
+					}
+					return sum;
+				}
+
+				fn wrBounceOut(x: f32) -> f32 {
+					let n1 = 7.5625;
+					let d1 = 2.75;
+					if (x < 1.0 / d1) {
+						return n1 * x * x;
+					}
+					if (x < 2.0 / d1) {
+						let y = x - 1.5 / d1;
+						return n1 * y * y + 0.75;
+					}
+					if (x < 2.5 / d1) {
+						let y = x - 2.25 / d1;
+						return n1 * y * y + 0.9375;
+					}
+					let y = x - 2.625 / d1;
+					return n1 * y * y + 0.984375;
+				}
+
+				fn wrBounceIn(x: f32) -> f32 {
+					let v = clamp(x, 0.0, 1.0);
+					return 1.0 - wrBounceOut(1.0 - v);
+				}
+			`],
 			fragment: `
-				let t = $TIME$;
-				let uv = $UV$;
-				let horizon = smoothstep(0.0, 1.0, uv.y);
-				let pulse = 0.5 + 0.5 * sin(t * 1.2 + uv.x * 4.0 + uv.y * 2.0);
-				let timeWave = 0.5 + 0.5 * sin(t * 2.0 + (uv.x + uv.y) * 10.0);
-				let frameStep = step(0.5, fract($FRAME$ / 36.0));
-				let fpsTint = clamp($FRAME_RATE$ / 120.0, 0.0, 1.0);
-				let dayPulse = 0.5 + 0.5 * sin($DATE$.w * 0.02);
-				let mouseUv = $MOUSE$.xy / max($RESOLUTION$, vec2f(1.0, 1.0));
-				let mouseOn = select(0.0, 1.0, $MOUSE$.x > 0.0 || $MOUSE$.y > 0.0);
-				let mouseGlow = exp(-dot(uv - mouseUv, uv - mouseUv) * 14.0) * mouseOn;
-				let skyTop = vec3f(0.54, 0.64, 0.94);
-				let skyMid = vec3f(0.76, 0.72, 0.98);
-				let skyLow = vec3f(0.93, 0.79, 0.92);
-				var color = mix(skyLow, skyMid, smoothstep(0.05, 0.55, horizon));
-				color = mix(color, skyTop, smoothstep(0.45, 1.0, horizon));
-				color += vec3f(0.025, 0.018, 0.04) * pulse;
-				color += vec3f(0.05, 0.025, 0.07) * timeWave;
-				color += vec3f(0.015, 0.0, 0.03) * frameStep;
-				color = mix(color, color + vec3f(0.0, 0.025, 0.04), fpsTint);
-				color += vec3f(0.015, 0.01, 0.0) * dayPulse;
-				color += vec3f(0.05, 0.04, 0.08) * mouseGlow;
+				let res = max($RESOLUTION$, vec2f(1.0, 1.0));
+				let mouse = $MOUSE$.xy / res;
+				var st = $UV$ * vec2f(res.x / res.y, 1.0);
+				st = wrRot(st, -PI / 8.0);
+				let n = wrFbm(vec2f(3.0, 3.0) * st, 1.2 * $TIME$ + mouse.y * PI);
+				let lines = cos((st.x + n * 0.1 + mouse.x + 0.2) * PI);
+				let band = wrBounceIn(lines * 0.5 + 0.5);
+				let pink = vec3f(0.949, 0.561, 0.792);
+				let purple = vec3f(0.463, 0.169, 0.690);
+				let glow = 0.08 * pow(1.0 - abs(lines), 2.0);
+				let color = mix(pink, purple, band) + vec3f(glow, glow * 0.35, glow * 0.8);
 				$OUT_COLOR$ = vec4f(color, 1.0);
 			`,
 		},
 		glsl: {
+			methods: [`
+				const float PI = 3.141592653589793;
+
+				vec2 wrRot(vec2 v, float a) {
+					float c = cos(a);
+					float s = sin(a);
+					return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
+				}
+
+				float wrHash(vec2 p) {
+					float h = dot(p, vec2(127.1, 311.7));
+					return fract(sin(h) * 43758.5453123);
+				}
+
+				float wrNoise(vec2 p) {
+					vec2 i = floor(p);
+					vec2 f = fract(p);
+					vec2 u = f * f * (vec2(3.0) - 2.0 * f);
+					float a = wrHash(i);
+					float b = wrHash(i + vec2(1.0, 0.0));
+					float c = wrHash(i + vec2(0.0, 1.0));
+					float d = wrHash(i + vec2(1.0, 1.0));
+					return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+				}
+
+				float wrFbm(vec2 p, float t) {
+					vec2 pos = p;
+					float amp = 0.5;
+					float sum = 0.0;
+					for (int i = 0; i < 5; i++) {
+						sum += amp * wrNoise(pos + vec2(t, -t * 0.37));
+						pos = wrRot(pos * 2.03, 0.5);
+						amp *= 0.5;
+					}
+					return sum;
+				}
+
+				float wrBounceOut(float x) {
+					float n1 = 7.5625;
+					float d1 = 2.75;
+					if (x < 1.0 / d1) {
+						return n1 * x * x;
+					}
+					if (x < 2.0 / d1) {
+						float y = x - 1.5 / d1;
+						return n1 * y * y + 0.75;
+					}
+					if (x < 2.5 / d1) {
+						float y = x - 2.25 / d1;
+						return n1 * y * y + 0.9375;
+					}
+					float y = x - 2.625 / d1;
+					return n1 * y * y + 0.984375;
+				}
+
+				float wrBounceIn(float x) {
+					float v = clamp(x, 0.0, 1.0);
+					return 1.0 - wrBounceOut(1.0 - v);
+				}
+			`],
 			fragment: `
-				float t = $TIME$;
-				vec2 uv = $UV$;
-				float horizon = smoothstep(0.0, 1.0, uv.y);
-				float pulse = 0.5 + 0.5 * sin(t * 1.2 + uv.x * 4.0 + uv.y * 2.0);
-				float timeWave = 0.5 + 0.5 * sin(t * 2.0 + (uv.x + uv.y) * 10.0);
-				float frameStep = step(0.5, fract($FRAME$ / 36.0));
-				float fpsTint = clamp($FRAME_RATE$ / 120.0, 0.0, 1.0);
-				float dayPulse = 0.5 + 0.5 * sin($DATE$.w * 0.02);
-				vec2 mouseUv = $MOUSE$.xy / max($RESOLUTION$, vec2(1.0, 1.0));
-				float mouseOn = ($MOUSE$.x > 0.0 || $MOUSE$.y > 0.0) ? 1.0 : 0.0;
-				float mouseGlow = exp(-dot(uv - mouseUv, uv - mouseUv) * 14.0) * mouseOn;
-				vec3 skyTop = vec3(0.54, 0.64, 0.94);
-				vec3 skyMid = vec3(0.76, 0.72, 0.98);
-				vec3 skyLow = vec3(0.93, 0.79, 0.92);
-				vec3 color = mix(skyLow, skyMid, smoothstep(0.05, 0.55, horizon));
-				color = mix(color, skyTop, smoothstep(0.45, 1.0, horizon));
-				color += vec3(0.025, 0.018, 0.04) * pulse;
-				color += vec3(0.05, 0.025, 0.07) * timeWave;
-				color += vec3(0.015, 0.0, 0.03) * frameStep;
-				color = mix(color, color + vec3(0.0, 0.025, 0.04), fpsTint);
-				color += vec3(0.015, 0.01, 0.0) * dayPulse;
-				color += vec3(0.05, 0.04, 0.08) * mouseGlow;
+				vec2 res = max($RESOLUTION$, vec2(1.0, 1.0));
+				vec2 mouse = $MOUSE$.xy / res;
+				vec2 st = $UV$ * vec2(res.x / res.y, 1.0);
+				st = wrRot(st, -PI / 8.0);
+				float n = wrFbm(vec2(3.0) * st, 1.2 * $TIME$ + mouse.y * PI);
+				float lines = cos((st.x + n * 0.1 + mouse.x + 0.2) * PI);
+				float band = wrBounceIn(lines * 0.5 + 0.5);
+				vec3 pink = vec3(0.949, 0.561, 0.792);
+				vec3 purple = vec3(0.463, 0.169, 0.690);
+				float glow = 0.08 * pow(1.0 - abs(lines), 2.0);
+				vec3 color = mix(pink, purple, band) + vec3(glow, glow * 0.35, glow * 0.8);
 				$OUT_COLOR$ = vec4(color, 1.0);
 			`,
 		},
@@ -345,8 +457,8 @@ async function run() {
 	const mainPassComp = mainPassNode.addComp(WrRenderPass);
 	mainPassComp.usePass(mainPass);
 	const shaderComp = mainPassNode.addComp(WrShaderOBJComp);
-	shaderComp.useShader(outlineShader);
 	shaderComp.useShader(mainShader);
+	// shaderComp.useShader(outlineShader);
 
 	// Create 2 new models
 	const roomRoot = await loader.registerGLTF("/Models/Room.glb", { uploadGpu: true });

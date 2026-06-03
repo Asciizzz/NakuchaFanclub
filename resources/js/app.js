@@ -1,1 +1,1 @@
-import './welcome/test2_1.js';
+import './welcome/test3.js';

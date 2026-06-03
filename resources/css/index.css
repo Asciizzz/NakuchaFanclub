@@ -1,5 +1,5 @@
 body {
-	background: red;
+	background: var(--color-0);
 }
 
 #main-canvas {
