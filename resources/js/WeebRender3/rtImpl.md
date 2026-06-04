@@ -13,7 +13,6 @@ Make this work:
 ```js
 const backend = await WrWGPU.Backend.create(canvas);
 const ctx = new WrCtx();
-const runner = new WrWGPU.Runner({ backend });
 
 const shader = backend.device.createShaderModule({ code });
 const pipeline = backend.device.createRenderPipeline({
@@ -40,7 +39,13 @@ const tri = pass.addChild();
 tri.addComp(new WrWGPU.UsePipeline(pipeline));
 tri.addComp(new WrWGPU.Draw({ vertexCount: 3 }));
 
-runner.run(root);
+const endPass = root.addChild();
+endPass.addComp(new WrWGPU.EndPass());
+
+const endFrame = root.addChild();
+endFrame.addComp(new WrWGPU.EndFrame());
+
+ctx.exec(root, backend.newState());
 ```
 
 That is the first milestone.
@@ -54,7 +59,7 @@ WeebRender3/
   index.js
   rtImpl.md
   impl.md
-  WrCtx/
+  WrCtx.js
     component.js
     ctx.js
   WrWGPU/
@@ -67,7 +72,6 @@ WeebRender3/
       bind.js
       draw.js
       dispatch.js
-    runner.js
 ```
 
 Do not create buffer/texture/bindgroup/compute/resource wrapper files yet.
@@ -87,7 +91,7 @@ class WrComponent {
 		this.enabled = options.enabled !== false;
 	}
 
-	exec(_run, _node) {}
+	exec(_state, _node) {}
 	destroy() {}
 }
 ```
@@ -179,36 +183,30 @@ getScreenColorAttachment(options = {}) {
 }
 ```
 
-## Step 3: WGPU Run State
+## Step 3: WGPU State
 
-Keep it as a plain object inside `runner.js` for now.
+State is a plain object created by `backend.newState`.
 
 ```js
-function makeRun(backend, options) {
+class Backend {
+	newState() {
 	return {
-		backend,
-		device: backend.device,
-		queue: backend.queue,
+		backend: this,
+		device: this.device,
+		queue: this.queue,
 		encoder: null,
 		pass: null,
 		passKind: null,
 		pipeline: null,
 		ended: false,
-		stats: {
-			nodes: 0,
-			components: 0,
-			draws: 0,
-			skipped: {
-				noPass: 0,
-				noPipeline: 0,
-			},
-		},
-		options,
+		buffers: { vertex: new Map(), index: null, indirect: null },
+		bindGroups: new Map(),
 	};
+	}
 }
 ```
 
-No separate `state.js` yet.
+Stats are ignored for now.
 
 ## Step 4: Command Components
 
@@ -228,9 +226,9 @@ Uniform and storage buffers are not part of `SetBuffers`. They are resources ins
 
 ```js
 class BeginFrame extends WrComponent {
-	exec(run) {
-		if (run.encoder) return;
-		run.encoder = run.backend.createEncoder("Wr3Frame");
+	exec(state) {
+		if (state.encoder) return;
+		state.encoder = state.backend.createEncoder("Wr3Frame");
 	}
 }
 ```
@@ -244,16 +242,16 @@ class RenderPass extends WrComponent {
 		this.options = options;
 	}
 
-	exec(run) {
-		if (!run.encoder) run.encoder = run.backend.createEncoder("Wr3Frame");
-		if (run.pass) run.pass.end();
-		run.pass = run.encoder.beginRenderPass({
+	exec(state) {
+		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
+		if (!state.encoder || state.pass) return;
+		state.pass = state.encoder.beginRenderPass({
 			colorAttachments: [
-				run.backend.getScreenColorAttachment(this.options),
+				state.backend.getScreenColorAttachment(this.options),
 			],
 		});
-		run.passKind = "render";
-		run.pipeline = null;
+		state.passKind = "render";
+		state.pipeline = null;
 	}
 }
 ```
@@ -267,10 +265,10 @@ class UsePipeline extends WrComponent {
 		this.pipeline = pipeline;
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "render") return;
-		run.pass.setPipeline(this.pipeline);
-		run.pipeline = this.pipeline;
+	exec(state) {
+		if (!state.pass || state.passKind !== "render") return;
+		state.pass.setPipeline(this.pipeline);
+		state.pipeline = this.pipeline;
 	}
 }
 ```
@@ -315,69 +313,36 @@ class Draw extends WrComponent {
 		this.firstInstance = options.firstInstance ?? 0;
 	}
 
-	exec(run) {
-		if (!run.pass) {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		if (!run.pipeline) {
-			run.stats.skipped.noPipeline++;
-			return;
-		}
-		run.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
-		run.stats.draws++;
+	exec(state) {
+		if (!state.pass || state.passKind !== "render") return;
+		if (!state.pipeline) return;
+		state.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
 	}
 }
 ```
 
 `DrawIndexed`, `DrawIndirect`, and `DrawIndexedIndirect` follow the same rule: they only draw if a render pass and pipeline are active.
 
-## Step 5: Runner
+## Step 5: Ctx Exec
 
 ```js
-class Runner {
-	constructor(options = {}) {
-		this.backend = options.backend ?? null;
-	}
-
-	run(from, options = {}) {
-		const node = resolveNode(from);
-		const run = makeRun(this.backend, options);
-
-		for (const [current] of node.walk({
-			mode: options.mode ?? "dfs_pre",
-			includeFrom: options.includeFrom !== false,
-		})) {
-			run.stats.nodes++;
-			for (const comp of current.components) {
+class WrCtx extends AzDAG.Ctx {
+	exec(from, state, options = {}) {
+		const node = this.getNode(from);
+		if (!node || !state) return state;
+		for (const [current] of node.walk(options)) {
+			for (const comp of current.components ?? []) {
 				if (!comp || comp.enabled === false) continue;
 				if (typeof comp.exec !== "function") continue;
-				run.stats.components++;
-				comp.exec(run, current);
+				comp.exec(state, current);
 			}
 		}
-
-		if (run.pass) {
-			run.pass.end();
-			run.pass = null;
-		}
-
-		if (run.encoder && !run.ended) {
-			run.backend.submit(run.encoder);
-			run.ended = true;
-		}
-
-		return run.stats;
+		return state;
 	}
 }
 ```
 
-Keep `resolveNode` simple:
-
-- If object has `walk`, use it
-- Else return null
-
-Do not support node id lookup in the runner yet.
+Frame and pass ending is explicit. Use `EndPass` and `EndFrame` nodes in the graph.
 
 ## Step 6: Test
 
@@ -421,3 +386,5 @@ Do not immediately add:
 - shader/pipeline wrapper assets
 
 The first goal is proving the graph executes WGPU render flow correctly.
+
+

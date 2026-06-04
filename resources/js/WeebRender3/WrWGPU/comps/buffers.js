@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx/component.js";
+import { WrComponent } from "../../WrCtx.js";
 
 function list(value) {
 	if (Array.isArray(value)) return value;
@@ -22,35 +22,32 @@ export class SetBuffers extends WrComponent {
 		this.indirect = options.indirect ?? null;
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "render") {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		this.setVertexBuffers(run);
-		this.setIndexBuffer(run);
-		this.setIndirectBuffer(run);
+	exec(state) {
+		if (!state.pass || state.passKind !== "render") return;
+		this.setVertexBuffers(state);
+		this.setIndexBuffer(state);
+		this.setIndirectBuffer(state);
 	}
 
-	setVertexBuffers(run) {
+	setVertexBuffers(state) {
 		for (const entry of this.vertex) {
 			const slot = uint(entry?.slot);
 			const buffer = entry?.buffer ?? null;
 			if (!buffer) continue;
 			const offset = uint(entry.offset);
-			if (entry.size == null) run.pass.setVertexBuffer(slot, buffer, offset);
-			else run.pass.setVertexBuffer(slot, buffer, offset, uint(entry.size));
-			run.buffers.vertex.set(slot, { buffer, offset, size: entry.size ?? null });
+			if (entry.size == null) state.pass.setVertexBuffer(slot, buffer, offset);
+			else state.pass.setVertexBuffer(slot, buffer, offset, uint(entry.size));
+			state.buffers.vertex.set(slot, { buffer, offset, size: entry.size ?? null });
 		}
 	}
 
-	setIndexBuffer(run) {
+	setIndexBuffer(state) {
 		if (this.index?.buffer) {
 			const offset = uint(this.index.offset);
 			const format = this.index.format ?? "uint32";
-			if (this.index.size == null) run.pass.setIndexBuffer(this.index.buffer, format, offset);
-			else run.pass.setIndexBuffer(this.index.buffer, format, offset, uint(this.index.size));
-			run.buffers.index = {
+			if (this.index.size == null) state.pass.setIndexBuffer(this.index.buffer, format, offset);
+			else state.pass.setIndexBuffer(this.index.buffer, format, offset, uint(this.index.size));
+			state.buffers.index = {
 				buffer: this.index.buffer,
 				format,
 				offset,
@@ -59,12 +56,13 @@ export class SetBuffers extends WrComponent {
 		}
 	}
 
-	setIndirectBuffer(run) {
+	setIndirectBuffer(state) {
 		if (this.indirect?.buffer) {
-			run.buffers.indirect = {
+			state.buffers.indirect = {
 				buffer: this.indirect.buffer,
 				offset: uint(this.indirect.offset),
 			};
 		}
 	}
 }
+

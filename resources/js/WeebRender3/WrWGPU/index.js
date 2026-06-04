@@ -5,7 +5,6 @@ import { SetBuffers } from "./comps/buffers.js";
 import { SetBindGroups } from "./comps/bind.js";
 import { Draw, DrawIndexed, DrawIndirect, DrawIndexedIndirect } from "./comps/draw.js";
 import { Dispatch, DispatchIndirect } from "./comps/dispatch.js";
-import { Runner } from "./runner.js";
 import { Backend } from "./backend.js";
 
 export {
@@ -25,7 +24,6 @@ export {
 	Dispatch,
 	DispatchIndirect,
 	// Other
-	Runner,
 	Backend,
 };
 
@@ -45,7 +43,6 @@ export const WrWGPU = Object.freeze({
 	Dispatch,
 	DispatchIndirect,
 	
-	Runner,
 	Backend,
 });
 

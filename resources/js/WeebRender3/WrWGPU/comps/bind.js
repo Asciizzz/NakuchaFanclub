@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx/component.js";
+import { WrComponent } from "../../WrCtx.js";
 
 export class SetBindGroups extends WrComponent {
 	groups = [];
@@ -8,19 +8,17 @@ export class SetBindGroups extends WrComponent {
 		this.groups = Array.isArray(groups) ? groups.slice() : [];
 	}
 
-	exec(run) {
-		if (!run.pass) {
-			run.stats.skipped.noPass++;
-			return;
-		}
+	exec(state) {
+		if (!state.pass) return;
 		for (const entry of this.groups) {
 			const index = Math.max(0, Number(entry?.index ?? entry?.group ?? 0) | 0);
 			const bindGroup = entry?.bindGroup ?? entry?.groupRef ?? null;
 			if (!bindGroup) continue;
 			const offsets = entry?.offsets ?? entry?.dynamicOffsets;
-			if (offsets) run.pass.setBindGroup(index, bindGroup, offsets);
-			else run.pass.setBindGroup(index, bindGroup);
-			run.bindGroups.set(index, { bindGroup, offsets: offsets ?? null });
+			if (offsets) state.pass.setBindGroup(index, bindGroup, offsets);
+			else state.pass.setBindGroup(index, bindGroup);
+			state.bindGroups.set(index, { bindGroup, offsets: offsets ?? null });
 		}
 	}
 }
+

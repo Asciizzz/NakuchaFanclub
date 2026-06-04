@@ -1,8 +1,20 @@
-import { Ctx, Node } from "../../AzLib/AzDAG.js";
-import { WrComponent } from "./component.js";
+import { Ctx, Node } from "../AzLib/AzDAG.js";
 
 function isComp(value) {
 	return value && typeof value === "object";
+}
+
+export class WrComponent {
+	node = null;
+	enabled = true;
+
+	constructor(options = {}) {
+		this.enabled = options?.enabled !== false;
+	}
+
+	exec(_state, _node) {}
+
+	destroy() {}
 }
 
 export class WrNode extends Node {
@@ -34,6 +46,20 @@ export class WrNode extends Node {
 export class WrCtx extends Ctx {
 	createNode(id) {
 		return new WrNode(this, id);
+	}
+
+	exec(from, state, options = {}) {
+		if (!state) return state;
+		const node = this.getNode(from);
+		if (!node) return state;
+		for (const [current] of node.walk(options)) {
+			for (const comp of current.components ?? []) {
+				if (!comp || comp.enabled === false) continue;
+				if (typeof comp.exec !== "function") continue;
+				comp.exec(state, current);
+			}
+		}
+		return state;
 	}
 
 	copyBranch(from, parent = null, index = -1) {
@@ -101,8 +127,6 @@ export class WrCtx extends Ctx {
 		return out;
 	}
 }
-
-export { WrComponent };
 
 if (typeof window !== "undefined") {
 	window.WrCtx3 = WrCtx;

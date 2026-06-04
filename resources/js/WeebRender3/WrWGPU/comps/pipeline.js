@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx/component.js";
+import { WrComponent } from "../../WrCtx.js";
 
 export class UsePipeline extends WrComponent {
 	pipeline = null;
@@ -8,9 +8,10 @@ export class UsePipeline extends WrComponent {
 		this.pipeline = pipeline ?? null;
 	}
 
-	exec(run) {
-		if (!run.pass || !this.pipeline) return;
-		run.pass.setPipeline(this.pipeline);
-		run.pipeline = this.pipeline;
+	exec(state) {
+		if (!state.pass || !this.pipeline) return;
+		state.pass.setPipeline(this.pipeline);
+		state.pipeline = this.pipeline;
 	}
 }
+

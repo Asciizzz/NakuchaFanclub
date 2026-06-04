@@ -577,7 +577,7 @@ deform.updateSkinMatrices();
 deform.write();
 ```
 
-The next runner execution uses the updated GPU buffer data through the same attached node.
+The next `ctx.exec` uses the updated GPU buffer data through the same attached node.
 
 ## Material Binding
 
@@ -860,7 +860,7 @@ RenderPass
 - render pipeline
 - compute pipeline
 - render pass
-- runner
+- execution state
 - camera
 - transform system
 - hidden instance buffer
@@ -868,3 +868,4 @@ RenderPass
 - global asset store
 
 This keeps WR3 flexible while making real mesh rendering less painful.
+

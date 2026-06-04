@@ -97,6 +97,25 @@ export class Backend {
 		return this.device.createCommandEncoder({ label });
 	}
 
+	newState() {
+		return {
+			backend: this,
+			device: this.device,
+			queue: this.queue,
+			encoder: null,
+			pass: null,
+			passKind: null,
+			pipeline: null,
+			buffers: {
+				vertex: new Map(),
+				index: null,
+				indirect: null,
+			},
+			bindGroups: new Map(),
+			ended: false,
+		};
+	}
+
 	getScreenColorAttachment(options = {}) {
 		if (!this.context) return null;
 		return {

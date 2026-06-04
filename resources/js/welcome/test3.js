@@ -30,17 +30,26 @@ function createCanvas() {
 	return canvas;
 }
 
-function createCube() {
+function createCubeData() {
 	const p = 0.5;
+	const positions = new Float32Array([
+		-p, -p,  p,  p, -p,  p,  p,  p,  p, -p,  p,  p,
+		 p, -p, -p, -p, -p, -p, -p,  p, -p,  p,  p, -p,
+		-p, -p, -p, -p, -p,  p, -p,  p,  p, -p,  p, -p,
+		 p, -p,  p,  p, -p, -p,  p,  p, -p,  p,  p,  p,
+		-p,  p,  p,  p,  p,  p,  p,  p, -p, -p,  p, -p,
+		-p, -p, -p,  p, -p, -p,  p, -p,  p, -p, -p,  p,
+	]);
+	const uvs = new Float32Array([
+		0, 1, 1, 1, 1, 0, 0, 0,
+		0, 1, 1, 1, 1, 0, 0, 0,
+		1, 1, 0, 1, 0, 0, 1, 0,
+		1, 1, 0, 1, 0, 0, 1, 0,
+		0, 1, 1, 1, 1, 0, 0, 0,
+		0, 1, 1, 1, 1, 0, 0, 0,
+	]);
 	return {
-		vertices: new Float32Array([
-			-p, -p,  p, 0, 1,  p, -p,  p, 1, 1,  p,  p,  p, 1, 0, -p,  p,  p, 0, 0,
-			 p, -p, -p, 0, 1, -p, -p, -p, 1, 1, -p,  p, -p, 1, 0,  p,  p, -p, 0, 0,
-			-p, -p, -p, 0, 1, -p, -p,  p, 1, 1, -p,  p,  p, 1, 0, -p,  p, -p, 0, 0,
-			 p, -p,  p, 0, 1,  p, -p, -p, 1, 1,  p,  p, -p, 1, 0,  p,  p,  p, 0, 0,
-			-p,  p,  p, 0, 1,  p,  p,  p, 1, 1,  p,  p, -p, 1, 0, -p,  p, -p, 0, 0,
-			-p, -p, -p, 0, 1,  p, -p, -p, 1, 1,  p, -p,  p, 1, 0, -p, -p,  p, 0, 0,
-		]),
+		vertices: ExtWGPU.Mesh.packVertices({ positions, uvs }),
 		indices: new Uint16Array([
 			 0,  1,  2,  0,  2,  3,
 			 4,  5,  6,  4,  6,  7,
@@ -49,6 +58,14 @@ function createCube() {
 			16, 17, 18, 16, 18, 19,
 			20, 21, 22, 20, 22, 23,
 		]),
+		submeshes: [
+			{ name: "side-front", indexStart: 0, indexCount: 6 },
+			{ name: "side-back", indexStart: 6, indexCount: 6 },
+			{ name: "side-left", indexStart: 12, indexCount: 6 },
+			{ name: "side-right", indexStart: 18, indexCount: 6 },
+			{ name: "cap-top", indexStart: 24, indexCount: 6 },
+			{ name: "cap-bottom", indexStart: 30, indexCount: 6 },
+		],
 	};
 }
 
@@ -99,31 +116,27 @@ async function run() {
 	});
 
 	// ---------- Cube mesh
-	const cube = createCube();
-	const cubeMesh = {
-		indexCount: cube.indices.length,
-		vertexBuffer: makeBuffer(device, "WR3CubeVertexBuffer", cube.vertices, usage.VERTEX | usage.COPY_DST),
-		indexBuffer: makeBuffer(device, "WR3CubeIndexBuffer", cube.indices, usage.INDEX | usage.COPY_DST),
-		vertexLayout: [
-			{
-				arrayStride: 20,
-				attributes: [
-					{ shaderLocation: 0, offset: 0, format: "float32x3" },
-					{ shaderLocation: 1, offset: 12, format: "float32x2" },
-				],
-			},
-			{
-				arrayStride: 64,
-				stepMode: "instance",
-				attributes: [
-					{ shaderLocation: 2, offset: 0, format: "float32x4" },
-					{ shaderLocation: 3, offset: 16, format: "float32x4" },
-					{ shaderLocation: 4, offset: 32, format: "float32x4" },
-					{ shaderLocation: 5, offset: 48, format: "float32x4" },
-				],
-			},
-		],
-	};
+	const cubeData = createCubeData();
+	const cubeMesh = new ExtWGPU.Mesh({
+		backend,
+		label: "WR3CubeMesh",
+		vertices: cubeData.vertices,
+		indices: cubeData.indices,
+		submeshes: cubeData.submeshes,
+	});
+	cubeMesh.vertexLayout = [
+		ExtWGPU.Mesh.STD_VERTEX_BUFFER,
+		{
+			arrayStride: 64,
+			stepMode: "instance",
+			attributes: [
+				{ shaderLocation: 7, offset: 0, format: "float32x4" },
+				{ shaderLocation: 8, offset: 16, format: "float32x4" },
+				{ shaderLocation: 9, offset: 32, format: "float32x4" },
+				{ shaderLocation: 10, offset: 48, format: "float32x4" },
+			],
+		},
+	];
 
 	// ---------- Cube render shared state
 	const cubeRender = {
@@ -344,11 +357,11 @@ async function run() {
 
 	// ---------- Render graph
 	const ctx = new WrCtx();
-	const runner = new WrWGPU.Runner({ backend });
 	const root = ctx.addNode();
 	root.addComp(new WrWGPU.BeginFrame());
 
-	const gradientPass = root.addChild();
+	const gradientCycle = root.addChild();
+	const gradientPass = gradientCycle.addChild();
 	gradientPass.addComp(new WrWGPU.RenderPass(gradient.passOptions));
 
 	const gradientDraw = gradientPass.addChild();
@@ -357,18 +370,24 @@ async function run() {
 		{ index: 0, bindGroup: gradient.bindGroup },
 	]));
 	gradientDraw.addComp(new WrWGPU.Draw({ vertexCount: 3 }));
-	gradientDraw.addComp(new WrWGPU.EndPass());
 
-	const compute = root.addChild();
+	const gradientEnd = gradientCycle.addChild();
+	gradientEnd.addComp(new WrWGPU.EndPass());
+
+	const computeCycle = root.addChild();
+	const compute = computeCycle.addChild();
 	compute.addComp(new WrWGPU.ComputePass({ label: "compute-instances" }));
 	compute.addComp(new WrWGPU.UsePipeline(instanceCompute.pipeline));
 	compute.addComp(new WrWGPU.SetBindGroups([
 		{ index: 0, bindGroup: instanceCompute.bindGroup },
 	]));
 	compute.addComp(new WrWGPU.Dispatch({ x: 1 }));
-	compute.addComp(new WrWGPU.EndPass());
 
-	const pass = root.addChild();
+	const computeEnd = computeCycle.addChild();
+	computeEnd.addComp(new WrWGPU.EndPass());
+
+	const mainCycle = root.addChild();
+	const pass = mainCycle.addChild();
 	pass.addComp(new WrWGPU.RenderPass({
 		clearColor: [0, 0, 0, 1],
 		clearDepth: 1,
@@ -381,24 +400,24 @@ async function run() {
 	const mainShader = pass.addChild();
 	mainShader.addComp(new WrWGPU.UsePipeline(mainRender.pipeline));
 
-	const cubes = ctx.addNode();
-	outlineShader.linkChild(cubes);
-	mainShader.linkChild(cubes);
-	cubes.addComp(new WrWGPU.SetBindGroups([cubeRender.bindEntry]));
-	cubes.addComp(new WrWGPU.SetBuffers({
+	const cubeState = ctx.addNode();
+	outlineShader.linkChild(cubeState);
+	mainShader.linkChild(cubeState);
+	cubeState.addComp(new WrWGPU.SetBindGroups([cubeRender.bindEntry]));
+	cubeState.addComp(new WrWGPU.SetBuffers({
 		vertex: [
-			{ slot: 0, buffer: cubeMesh.vertexBuffer },
 			{ slot: 1, buffer: instanceCompute.instanceBuffer },
 		],
-		index: {
-			buffer: cubeMesh.indexBuffer,
-			format: "uint16",
-		},
 	}));
-	cubes.addComp(new WrWGPU.DrawIndexed({
-		indexCount: cubeMesh.indexCount,
+	const cubeDraw = cubeMesh.attach(ctx, cubeState, {
 		instanceCount: INSTANCE_COUNT,
-	}));
+	});
+
+	const mainEnd = mainCycle.addChild();
+	mainEnd.addComp(new WrWGPU.EndPass());
+
+	const frameEnd = root.addChild();
+	frameEnd.addComp(new WrWGPU.EndFrame());
 
 	// ---------- Frame loop
 	let last = performance.now();
@@ -422,12 +441,12 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
-		runner.run(root);
+		ctx.exec(root, backend.newState());
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);
 
 	if (typeof window !== "undefined") {
-		window.wr3 = { backend, ctx, runner, root, gradient, instanceCompute, cubeMesh, cubeRender, mainRender, outlineRender, camera, fcam };
+		window.wr3 = { backend, ctx, root, gradient, instanceCompute, cubeMesh, cubeDraw, cubeRender, mainRender, outlineRender, camera, fcam };
 	}
 }

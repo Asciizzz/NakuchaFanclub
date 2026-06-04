@@ -1,5 +1,4 @@
-export { WrComponent } from "./WrCtx/component.js";
-export { WrCtx, WrNode } from "./WrCtx/ctx.js";
+export { WrComponent, WrCtx, WrNode } from "./WrCtx.js";
 export * as WrWGPU from "./WrWGPU/index.js";
 export * as ExtWGPU from "./ExtWGPU/index.js";
 

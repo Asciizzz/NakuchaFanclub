@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx/component.js";
+import { WrComponent } from "../../WrCtx.js";
 
 function hasOwn(obj, key) {
 	return Object.prototype.hasOwnProperty.call(obj, key);
@@ -40,27 +40,26 @@ export class RenderPass extends WrComponent {
 		this.options = options ?? {};
 	}
 
-	exec(run) {
-		if (!run.encoder) run.encoder = run.backend.createEncoder("Wr3Frame");
-		if (!run.encoder) return;
-		if (run.pass) run.pass.end();
+	exec(state) {
+		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
+		if (!state.encoder || state.pass) return;
 
 		const colorAttachments = hasOwn(this.options, "colorAttachments")
 			? normalizeColorAttachments(this.options.colorAttachments)
-			: [run.backend.getScreenColorAttachment(this.options)].filter(Boolean);
+			: [state.backend.getScreenColorAttachment(this.options)].filter(Boolean);
 		const depthStencilAttachment = hasOwn(this.options, "depthStencilAttachment")
 			? (this.options.depthStencilAttachment ?? undefined)
-			: (run.backend.getDepthAttachment(this.options) ?? undefined);
+			: (state.backend.getDepthAttachment(this.options) ?? undefined);
 
 		if (colorAttachments.length <= 0 && !depthStencilAttachment) return;
 
-		run.pass = run.encoder.beginRenderPass({
+		state.pass = state.encoder.beginRenderPass({
 			label: this.options.label,
 			colorAttachments,
 			depthStencilAttachment,
 		});
-		run.passKind = "render";
-		run.pipeline = null;
+		state.passKind = "render";
+		state.pipeline = null;
 	}
 }
 
@@ -72,25 +71,25 @@ export class ComputePass extends WrComponent {
 		this.options = options ?? {};
 	}
 
-	exec(run) {
-		if (!run.encoder) run.encoder = run.backend.createEncoder("Wr3Frame");
-		if (!run.encoder) return;
-		if (run.pass) run.pass.end();
-		run.pass = run.encoder.beginComputePass({
+	exec(state) {
+		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
+		if (!state.encoder || state.pass) return;
+		state.pass = state.encoder.beginComputePass({
 			label: this.options.label,
 			timestampWrites: this.options.timestampWrites,
 		});
-		run.passKind = "compute";
-		run.pipeline = null;
+		state.passKind = "compute";
+		state.pipeline = null;
 	}
 }
 
 export class EndPass extends WrComponent {
-	exec(run) {
-		if (!run.pass) return;
-		run.pass.end();
-		run.pass = null;
-		run.passKind = null;
-		run.pipeline = null;
+	exec(state) {
+		if (!state.pass) return;
+		state.pass.end();
+		state.pass = null;
+		state.passKind = null;
+		state.pipeline = null;
 	}
 }
+

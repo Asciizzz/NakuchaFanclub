@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx/component.js";
+import { WrComponent } from "../../WrCtx.js";
 
 export class Draw extends WrComponent {
 	vertexCount = 0;
@@ -14,17 +14,10 @@ export class Draw extends WrComponent {
 		this.firstInstance = Math.max(0, Number(options.firstInstance ?? 0) | 0);
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "render") {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		if (!run.pipeline) {
-			run.stats.skipped.noPipeline++;
-			return;
-		}
-		run.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
-		run.stats.draws++;
+	exec(state) {
+		if (!state.pass || state.passKind !== "render") return;
+		if (!state.pipeline) return;
+		state.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
 	}
 }
 
@@ -44,17 +37,10 @@ export class DrawIndexed extends WrComponent {
 		this.firstInstance = Math.max(0, Number(options.firstInstance ?? 0) | 0);
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "render") {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		if (!run.pipeline) {
-			run.stats.skipped.noPipeline++;
-			return;
-		}
-		run.pass.drawIndexed(this.indexCount, this.instanceCount, this.firstIndex, this.baseVertex, this.firstInstance);
-		run.stats.draws++;
+	exec(state) {
+		if (!state.pass || state.passKind !== "render") return;
+		if (!state.pipeline) return;
+		state.pass.drawIndexed(this.indexCount, this.instanceCount, this.firstIndex, this.baseVertex, this.firstInstance);
 	}
 }
 
@@ -68,22 +54,12 @@ export class DrawIndirect extends WrComponent {
 		this.offset = Math.max(0, Number(options.offset ?? 0) | 0);
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "render") {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		if (!run.pipeline) {
-			run.stats.skipped.noPipeline++;
-			return;
-		}
-		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : run.buffers.indirect;
-		if (!indirect?.buffer) {
-			run.stats.skipped.noIndirectBuffer++;
-			return;
-		}
-		run.pass.drawIndirect(indirect.buffer, indirect.offset ?? 0);
-		run.stats.draws++;
+	exec(state) {
+		if (!state.pass || state.passKind !== "render") return;
+		if (!state.pipeline) return;
+		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : state.buffers.indirect;
+		if (!indirect?.buffer) return;
+		state.pass.drawIndirect(indirect.buffer, indirect.offset ?? 0);
 	}
 }
 
@@ -97,21 +73,12 @@ export class DrawIndexedIndirect extends WrComponent {
 		this.offset = Math.max(0, Number(options.offset ?? 0) | 0);
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "render") {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		if (!run.pipeline) {
-			run.stats.skipped.noPipeline++;
-			return;
-		}
-		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : run.buffers.indirect;
-		if (!indirect?.buffer) {
-			run.stats.skipped.noIndirectBuffer++;
-			return;
-		}
-		run.pass.drawIndexedIndirect(indirect.buffer, indirect.offset ?? 0);
-		run.stats.draws++;
+	exec(state) {
+		if (!state.pass || state.passKind !== "render") return;
+		if (!state.pipeline) return;
+		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : state.buffers.indirect;
+		if (!indirect?.buffer) return;
+		state.pass.drawIndexedIndirect(indirect.buffer, indirect.offset ?? 0);
 	}
 }
+

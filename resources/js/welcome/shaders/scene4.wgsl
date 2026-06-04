@@ -152,11 +152,16 @@ fn fs_gradient(input: GradientOut) -> @location(0) vec4f {
 
 struct CubeIn {
 	@location(0) position: vec3f,
-	@location(1) uv: vec2f,
-	@location(2) model0: vec4f,
-	@location(3) model1: vec4f,
-	@location(4) model2: vec4f,
-	@location(5) model3: vec4f,
+	@location(1) normal: vec3f,
+	@location(2) uv: vec2f,
+	@location(3) tangent: vec4f,
+	@location(4) color: vec4f,
+	@location(5) boneID: vec4f,
+	@location(6) boneWeight: vec4f,
+	@location(7) model0: vec4f,
+	@location(8) model1: vec4f,
+	@location(9) model2: vec4f,
+	@location(10) model3: vec4f,
 }
 
 struct CubeOut {

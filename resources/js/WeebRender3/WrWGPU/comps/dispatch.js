@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx/component.js";
+import { WrComponent } from "../../WrCtx.js";
 
 function uint(value, fallback = 1) {
 	return Math.max(1, Number(value ?? fallback) | 0);
@@ -16,17 +16,10 @@ export class Dispatch extends WrComponent {
 		this.z = uint(options.z);
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "compute") {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		if (!run.pipeline) {
-			run.stats.skipped.noPipeline++;
-			return;
-		}
-		run.pass.dispatchWorkgroups(this.x, this.y, this.z);
-		run.stats.dispatches++;
+	exec(state) {
+		if (!state.pass || state.passKind !== "compute") return;
+		if (!state.pipeline) return;
+		state.pass.dispatchWorkgroups(this.x, this.y, this.z);
 	}
 }
 
@@ -40,20 +33,10 @@ export class DispatchIndirect extends WrComponent {
 		this.offset = Math.max(0, Number(options.offset ?? 0) | 0);
 	}
 
-	exec(run) {
-		if (!run.pass || run.passKind !== "compute") {
-			run.stats.skipped.noPass++;
-			return;
-		}
-		if (!run.pipeline) {
-			run.stats.skipped.noPipeline++;
-			return;
-		}
-		if (!this.buffer) {
-			run.stats.skipped.noIndirectBuffer++;
-			return;
-		}
-		run.pass.dispatchWorkgroupsIndirect(this.buffer, this.offset);
-		run.stats.dispatches++;
+	exec(state) {
+		if (!state.pass || state.passKind !== "compute") return;
+		if (!state.pipeline || !this.buffer) return;
+		state.pass.dispatchWorkgroupsIndirect(this.buffer, this.offset);
 	}
 }
+

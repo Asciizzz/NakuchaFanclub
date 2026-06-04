@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx/component.js";
+import { WrComponent } from "../../WrCtx.js";
 
 export class BeginFrame extends WrComponent {
 	label = "Wr3Frame";
@@ -8,22 +8,19 @@ export class BeginFrame extends WrComponent {
 		this.label = options.label ?? "Wr3Frame";
 	}
 
-	exec(run) {
-		if (run.encoder) return;
-		run.encoder = run.backend.createEncoder(this.label);
+	exec(state) {
+		if (state.encoder) return;
+		state.encoder = state.backend.createEncoder(this.label);
+		state.ended = false;
 	}
 }
 
 export class EndFrame extends WrComponent {
-	exec(run) {
-		if (run.pass) {
-			run.pass.end();
-			run.pass = null;
-			run.passKind = null;
-		}
-		if (run.encoder && !run.ended) {
-			run.backend.submit(run.encoder);
-			run.ended = true;
+	exec(state) {
+		if (state.encoder && !state.ended) {
+			state.backend.submit(state.encoder);
+			state.ended = true;
 		}
 	}
 }
+
