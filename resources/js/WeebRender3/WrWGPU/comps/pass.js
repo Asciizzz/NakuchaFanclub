@@ -1,5 +1,37 @@
 import { WrComponent } from "../../WrCtx/component.js";
 
+function hasOwn(obj, key) {
+	return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function toNumber(value, fallback = 0) {
+	const n = Number(value);
+	return Number.isFinite(n) ? n : fallback;
+}
+
+function toColor(value) {
+	const src = (Array.isArray(value) || ArrayBuffer.isView(value)) ? value : null;
+	if (!src) return value;
+	return {
+		r: toNumber(src[0], 0),
+		g: toNumber(src[1], 0),
+		b: toNumber(src[2], 0),
+		a: toNumber(src[3], 1),
+	};
+}
+
+function normalizeColorAttachments(value) {
+	const list = Array.isArray(value) ? value : [];
+	return list.map((attachment) => {
+		if (!attachment || typeof attachment !== "object") return attachment;
+		if (!Array.isArray(attachment.clearValue) && !ArrayBuffer.isView(attachment.clearValue)) return attachment;
+		return {
+			...attachment,
+			clearValue: toColor(attachment.clearValue),
+		};
+	});
+}
+
 export class RenderPass extends WrComponent {
 	options = null;
 
@@ -12,13 +44,20 @@ export class RenderPass extends WrComponent {
 		if (!run.encoder) run.encoder = run.backend.createEncoder("Wr3Frame");
 		if (!run.encoder) return;
 		if (run.pass) run.pass.end();
-		const color = run.backend.getScreenColorAttachment(this.options);
-		if (!color) return;
-		const depth = run.backend.getDepthAttachment(this.options);
+
+		const colorAttachments = hasOwn(this.options, "colorAttachments")
+			? normalizeColorAttachments(this.options.colorAttachments)
+			: [run.backend.getScreenColorAttachment(this.options)].filter(Boolean);
+		const depthStencilAttachment = hasOwn(this.options, "depthStencilAttachment")
+			? (this.options.depthStencilAttachment ?? undefined)
+			: (run.backend.getDepthAttachment(this.options) ?? undefined);
+
+		if (colorAttachments.length <= 0 && !depthStencilAttachment) return;
+
 		run.pass = run.encoder.beginRenderPass({
 			label: this.options.label,
-			colorAttachments: [color],
-			depthStencilAttachment: depth ?? undefined,
+			colorAttachments,
+			depthStencilAttachment,
 		});
 		run.passKind = "render";
 		run.pipeline = null;
