@@ -1,4 +1,4 @@
-export { Loader } from "./loader.js";
+export { ShaderBuilder, ShaderModule } from "./Shader/index.js";
 export {
 	STD_VERTEX_BUFFER,
 	STD_VERTEX_STRIDE,

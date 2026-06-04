@@ -1,27 +1,14 @@
 import { AzCamera } from "../AzLib/AzCamera.js";
 import * as Azm from "../AzLib/Azm.js";
 import { FCamera } from "./FCamera.js";
-import { Other, WrCtx, WrWGPU } from "../WeebRender3/index.js";
+import { ExtWGPU, Other, WrCtx, WrWGPU } from "../WeebRender3/index.js";
 
 const container = document.getElementById("main-canvas");
 const INSTANCE_COUNT = 3;
-const SCENE_SHADER_URL = new URL("./shaders/scene4.wgsl", import.meta.url).href;
-const STD_VERTEX_STRIDE = 96;
-const STD_VERTEX_BUFFER = Object.freeze({
-	arrayStride: STD_VERTEX_STRIDE,
-	attributes: Object.freeze([
-		Object.freeze({ shaderLocation: 0, offset: 0, format: "float32x3" }),
-		Object.freeze({ shaderLocation: 1, offset: 12, format: "float32x3" }),
-		Object.freeze({ shaderLocation: 2, offset: 24, format: "float32x2" }),
-		Object.freeze({ shaderLocation: 3, offset: 32, format: "float32x4" }),
-		Object.freeze({ shaderLocation: 4, offset: 48, format: "float32x4" }),
-		Object.freeze({ shaderLocation: 5, offset: 64, format: "float32x4" }),
-		Object.freeze({ shaderLocation: 6, offset: 80, format: "float32x4" }),
-	]),
-});
+const SCENE_SHADER_URL = new URL("./shaders/scene4_ext.wgsl", import.meta.url).href;
 
 run().catch((error) => {
-	console.error("[WR3Test] fatal", error);
+	console.error("[WR3ExtTest] fatal", error);
 });
 
 function makeBuffer(device, label, data, usage) {
@@ -43,40 +30,6 @@ function createCanvas() {
 	return canvas;
 }
 
-function packVertices(attributes = {}) {
-	const positions = attributes.positions ?? [];
-	const count = Math.max(0, Number(attributes.count ?? (positions.length / 3)) | 0);
-	const out = new Float32Array(count * 24);
-	for (let i = 0; i < count; i++) {
-		const o = i * 24;
-		out[o + 0] = positions[i * 3 + 0] ?? 0;
-		out[o + 1] = positions[i * 3 + 1] ?? 0;
-		out[o + 2] = positions[i * 3 + 2] ?? 0;
-		out[o + 3] = attributes.normals?.[i * 3 + 0] ?? 0;
-		out[o + 4] = attributes.normals?.[i * 3 + 1] ?? 1;
-		out[o + 5] = attributes.normals?.[i * 3 + 2] ?? 0;
-		out[o + 6] = attributes.uvs?.[i * 2 + 0] ?? 0;
-		out[o + 7] = attributes.uvs?.[i * 2 + 1] ?? 0;
-		out[o + 8] = attributes.tangents?.[i * 4 + 0] ?? 1;
-		out[o + 9] = attributes.tangents?.[i * 4 + 1] ?? 0;
-		out[o + 10] = attributes.tangents?.[i * 4 + 2] ?? 0;
-		out[o + 11] = attributes.tangents?.[i * 4 + 3] ?? 1;
-		out[o + 12] = attributes.colors?.[i * 4 + 0] ?? 1;
-		out[o + 13] = attributes.colors?.[i * 4 + 1] ?? 1;
-		out[o + 14] = attributes.colors?.[i * 4 + 2] ?? 1;
-		out[o + 15] = attributes.colors?.[i * 4 + 3] ?? 1;
-		out[o + 16] = attributes.boneIDs?.[i * 4 + 0] ?? 0;
-		out[o + 17] = attributes.boneIDs?.[i * 4 + 1] ?? 0;
-		out[o + 18] = attributes.boneIDs?.[i * 4 + 2] ?? 0;
-		out[o + 19] = attributes.boneIDs?.[i * 4 + 3] ?? 0;
-		out[o + 20] = attributes.boneWeights?.[i * 4 + 0] ?? 0;
-		out[o + 21] = attributes.boneWeights?.[i * 4 + 1] ?? 0;
-		out[o + 22] = attributes.boneWeights?.[i * 4 + 2] ?? 0;
-		out[o + 23] = attributes.boneWeights?.[i * 4 + 3] ?? 0;
-	}
-	return out;
-}
-
 function createCubeData() {
 	const p = 0.5;
 	const positions = new Float32Array([
@@ -95,8 +48,32 @@ function createCubeData() {
 		0, 1, 1, 1, 1, 0, 0, 0,
 		0, 1, 1, 1, 1, 0, 0, 0,
 	]);
+	const normals = new Float32Array(positions.length);
+	const faceNormals = [
+		[0, 0, 1],
+		[0, 0, -1],
+		[-1, 0, 0],
+		[1, 0, 0],
+		[0, 1, 0],
+		[0, -1, 0],
+	];
+	for (let face = 0; face < faceNormals.length; face++) {
+		for (let i = 0; i < 4; i++) {
+			normals.set(faceNormals[face], (face * 4 + i) * 3);
+		}
+	}
+
+	const count = positions.length / 3;
+	const boneIDs = new Float32Array(count * 4);
+	const boneWeights = new Float32Array(count * 4);
+	for (let i = 0; i < count; i++) {
+		const topHalf = positions[i * 3 + 1] > 0;
+		boneIDs[i * 4] = topHalf ? 1 : 0;
+		boneWeights[i * 4] = 1;
+	}
+
 	return {
-		vertices: packVertices({ positions, uvs }),
+		vertices: ExtWGPU.Mesh.packVertices({ positions, normals, uvs, boneIDs, boneWeights }),
 		indices: new Uint16Array([
 			 0,  1,  2,  0,  2,  3,
 			 4,  5,  6,  4,  6,  7,
@@ -157,32 +134,73 @@ async function run() {
 
 	// ---------- Source modules
 	const sceneCode = await loadShaderCode();
-	const sceneModule = device.createShaderModule({
+	const sceneShader = ExtWGPU.ShaderBuilder.create({
+		backend,
 		label: "WR3SceneShader",
-		code: sceneCode,
+		source: sceneCode,
+		cfg: {
+			testGroup: 0,
+			deformGroup: 1,
+			maxBones: 2,
+			maxMorphs: 4,
+		},
+		keys: {
+			"$STD_TEST_BINDINGS$": ({ cfg }) => `
+@group(${cfg.testGroup}) @binding(0) var<uniform> scene: Scene;
+@group(${cfg.testGroup}) @binding(1) var texSampler: sampler;
+@group(${cfg.testGroup}) @binding(2) var tex: texture_2d<f32>;
+@group(${cfg.testGroup}) @binding(3) var<uniform> params: ComputeParams;
+@group(${cfg.testGroup}) @binding(4) var<storage, read_write> states: array<InstanceState>;
+@group(${cfg.testGroup}) @binding(5) var<storage, read_write> models: array<mat4x4f>;
+@group(${cfg.testGroup}) @binding(6) var<uniform> gradient: GradientTime;`,
+			"$VIEW_PROJ$": "scene.viewProj",
+			"$ALBEDO_TEXTURE$": "tex",
+			"$ALBEDO_SAMPLER$": "texSampler",
+		},
 	});
+	const sceneModule = sceneShader.module;
 
 	// ---------- Cube mesh
 	const cubeData = createCubeData();
-	const cubeMesh = {
-		vertexBuffer: makeBuffer(device, "WR3CubeVertexBuffer", cubeData.vertices, usage.VERTEX | usage.COPY_DST),
-		indexBuffer: makeBuffer(device, "WR3CubeIndexBuffer", cubeData.indices, usage.INDEX | usage.COPY_DST),
-		indexFormat: "uint16",
+	const cubeMesh = new ExtWGPU.Mesh({
+		backend,
+		label: "WR3CubeMesh",
+		vertices: cubeData.vertices,
+		indices: cubeData.indices,
+		skeleton: {
+			joints: [
+				{ name: "base", parentIndex: -1 },
+				{ name: "top", parentIndex: -1 },
+			],
+		},
 		submeshes: cubeData.submeshes,
-		vertexLayout: [
-			STD_VERTEX_BUFFER,
-			{
-				arrayStride: 64,
-				stepMode: "instance",
-				attributes: [
-					{ shaderLocation: 7, offset: 0, format: "float32x4" },
-					{ shaderLocation: 8, offset: 16, format: "float32x4" },
-					{ shaderLocation: 9, offset: 32, format: "float32x4" },
-					{ shaderLocation: 10, offset: 48, format: "float32x4" },
-				],
-			},
+	});
+	cubeMesh.vertexLayout = [
+		ExtWGPU.Mesh.STD_VERTEX_BUFFER,
+		{
+			arrayStride: 64,
+			stepMode: "instance",
+			attributes: [
+				{ shaderLocation: 7, offset: 0, format: "float32x4" },
+				{ shaderLocation: 8, offset: 16, format: "float32x4" },
+				{ shaderLocation: 9, offset: 32, format: "float32x4" },
+				{ shaderLocation: 10, offset: 48, format: "float32x4" },
+			],
+		},
+	];
+	const deformBindGroupLayout = device.createBindGroupLayout({
+		label: "WR3DeformBGL",
+		entries: [
+			{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
+			{ binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
 		],
-	};
+	});
+	const cubeDeform = cubeMesh.createDeform({
+		backend,
+		bindGroupLayout: deformBindGroupLayout,
+		groupIndex: 1,
+		morphCount: 1,
+	});
 
 	// ---------- Cube render shared state
 	const cubeRender = {
@@ -214,7 +232,7 @@ async function run() {
 	};
 	cubeRender.pipelineLayout = device.createPipelineLayout({
 		label: "WR3RenderPipelineLayout",
-		bindGroupLayouts: [cubeRender.bindGroupLayout],
+		bindGroupLayouts: [cubeRender.bindGroupLayout, deformBindGroupLayout],
 	});
 
 	// ---------- Main cube render
@@ -452,25 +470,13 @@ async function run() {
 	cubeState.addComp(new WrWGPU.SetBindGroups([cubeRender.bindEntry]));
 	cubeState.addComp(new WrWGPU.SetBuffers({
 		vertex: [
-			{ slot: 0, buffer: cubeMesh.vertexBuffer },
 			{ slot: 1, buffer: instanceCompute.instanceBuffer },
 		],
-		index: {
-			buffer: cubeMesh.indexBuffer,
-			format: cubeMesh.indexFormat,
-		},
 	}));
-	const cubeDraw = [];
-	for (const submesh of cubeMesh.submeshes) {
-		const node = cubeState.addChild();
-		node.addComp(new WrWGPU.DrawIndexed({
-			indexCount: submesh.indexCount,
-			instanceCount: INSTANCE_COUNT,
-			firstIndex: submesh.indexStart,
-			baseVertex: submesh.vertexStart ?? 0,
-		}));
-		cubeDraw.push(node);
-	}
+	const cubeDeformNode = cubeDeform.attach(ctx, cubeState);
+	const cubeDraw = cubeMesh.attach(ctx, cubeDeformNode ?? cubeState, {
+		instanceCount: INSTANCE_COUNT,
+	});
 
 	const mainEnd = mainCycle.addChild();
 	mainEnd.addComp(new WrWGPU.EndPass());
@@ -479,6 +485,7 @@ async function run() {
 	frameEnd.addComp(new WrWGPU.EndFrame());
 
 	// ---------- Frame loop
+	const topBoneMatrix = new Float32Array(16);
 	let last = performance.now();
 	function frame(now) {
 		const dt = Math.max(0, (now - last) * 0.001);
@@ -500,12 +507,22 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
+		cubeDeform.setWorldBone(0, Azm.Mat4.IDENTITY);
+		Azm.Mat4.fromTranslation([
+			Math.sin(now * 0.0021) * 0.32,
+			Math.sin(now * 0.0013) * 0.08,
+			Math.cos(now * 0.0017) * 0.12,
+		], topBoneMatrix);
+		cubeDeform.setWorldBone(1, topBoneMatrix);
+		cubeDeform.setMorph(0, 0.06 + Math.sin(now * 0.003) * 0.05);
+		cubeDeform.write();
+
 		ctx.exec(root, backend.newState());
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);
 
 	if (typeof window !== "undefined") {
-		window.wr3 = { backend, ctx, root, gradient, instanceCompute, cubeMesh, cubeDraw, cubeRender, mainRender, outlineRender, camera, fcam };
+		window.wr3 = { backend, ctx, root, sceneShader, gradient, instanceCompute, cubeMesh, cubeDeform, cubeDraw, cubeRender, mainRender, outlineRender, camera, fcam };
 	}
 }

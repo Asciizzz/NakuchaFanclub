@@ -656,9 +656,12 @@ Exact group index cannot be hardcoded by the builder unless the user asks for it
 Better:
 
 ```js
-ExtWGPU.ShaderBuilder.build({
-	materialGroup: 2,
-	code: `$STD_MATERIAL$`,
+ExtWGPU.ShaderBuilder.create({
+	backend,
+	source: `$STD_MATERIAL$`,
+	cfg: {
+		materialGroup: 2,
+	},
 });
 ```
 
