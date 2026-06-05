@@ -11,14 +11,12 @@ function isComp(value) {
 }
 
 export class Component {
-	node = null;
-	enabled = true;
 
 	constructor(options = {}) {
-		this.enabled = options?.enabled !== false;
+		this.options = options ?? {};
 	}
 
-	exec(_state, _node) {}
+	exec(_state) {}
 
 	destroy() {}
 }

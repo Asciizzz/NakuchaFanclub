@@ -238,7 +238,6 @@ class BeginFrame extends WrComponent {
 ```js
 class RenderPass extends WrComponent {
 	constructor(options = {}) {
-		super(options);
 		this.options = options;
 	}
 
@@ -306,7 +305,6 @@ node.addComp(new WrWGPU.SetBindGroups([
 ```js
 class Draw extends WrComponent {
 	constructor(options = {}) {
-		super(options);
 		this.vertexCount = options.vertexCount ?? 0;
 		this.instanceCount = options.instanceCount ?? 1;
 		this.firstVertex = options.firstVertex ?? 0;

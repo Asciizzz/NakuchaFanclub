@@ -104,7 +104,7 @@ function createInstanceState() {
 }
 
 async function loadShaderCode() {
-	return Other.Loader.readWGSL(SCENE_SHADER_URL);
+	return Other.readText(SCENE_SHADER_URL);
 }
 
 async function run() {
