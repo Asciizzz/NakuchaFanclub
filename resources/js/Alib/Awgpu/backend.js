@@ -23,6 +23,11 @@ function toColor(value) {
 	};
 }
 
+function sampleCountOf(value, fallback = 1) {
+	const n = Math.max(1, Math.floor(toNumber(value, fallback)));
+	return n > 1 ? 4 : 1;
+}
+
 export class Backend {
 	canvas = null;
 	options = null;
@@ -32,11 +37,21 @@ export class Backend {
 	context = null;
 	format = null;
 	depthFormat = "depth24plus";
+	sampleCount = 1;
+	msaa = {
+		texture: null,
+		view: null,
+		width: 0,
+		height: 0,
+		sampleCount: 1,
+		format: null,
+	};
 	depth = {
 		texture: null,
 		view: null,
 		width: 0,
 		height: 0,
+		sampleCount: 1,
 	};
 	ready = false;
 
@@ -72,6 +87,7 @@ export class Backend {
 		this.context = context;
 		this.format = format;
 		this.depthFormat = this.options.depthFormat ?? "depth24plus";
+		this.sampleCount = sampleCountOf(this.options.sampleCount ?? this.options.msaa, 1);
 		this.ready = true;
 		return this;
 	}
@@ -91,6 +107,7 @@ export class Backend {
 			format: this.format,
 			alphaMode: this.options.context?.alphaMode ?? "premultiplied",
 		});
+		this.releaseMsaa();
 		this.releaseDepth();
 		return true;
 	}
@@ -125,6 +142,7 @@ export class Backend {
 
 	getScreenColorAttachment(options = {}, state = null) {
 		if (!this.context) return null;
+		const sampleCount = sampleCountOf(options.sampleCount ?? this.sampleCount, this.sampleCount);
 		let view = state?.screen?.view ?? null;
 		if (!view) {
 			const texture = this.context.getCurrentTexture();
@@ -134,8 +152,10 @@ export class Backend {
 				state.screen.view = view;
 			}
 		}
+		const msaaView = sampleCount > 1 ? this.getMsaaColorView(sampleCount) : null;
 		return {
-			view,
+			view: msaaView ?? view,
+			resolveTarget: msaaView ? view : undefined,
 			loadOp: options.clearColorEnabled === false ? "load" : "clear",
 			storeOp: options.storeOp ?? "store",
 			clearValue: toColor(options.clearColor ?? [0, 0, 0, 1]),
@@ -144,7 +164,7 @@ export class Backend {
 
 	getDepthAttachment(options = {}) {
 		if (options.useDepth === false) return null;
-		const view = this.getDepthView();
+		const view = this.getDepthView(options.sampleCount ?? this.sampleCount);
 		if (!view) return null;
 		return {
 			view,
@@ -154,11 +174,48 @@ export class Backend {
 		};
 	}
 
-	getDepthView() {
+	getMsaaColorView(sampleCount = 4) {
 		if (!this.device || !this.canvas) return null;
+		const normalized = sampleCountOf(sampleCount, 1);
+		if (normalized <= 1) return null;
 		const width = Math.max(1, this.canvas.width | 0);
 		const height = Math.max(1, this.canvas.height | 0);
-		if (this.depth.view && this.depth.width === width && this.depth.height === height) {
+		if (
+			this.msaa.view
+			&& this.msaa.width === width
+			&& this.msaa.height === height
+			&& this.msaa.sampleCount === normalized
+			&& this.msaa.format === this.format
+		) {
+			return this.msaa.view;
+		}
+		this.releaseMsaa();
+		this.msaa.texture = this.device.createTexture({
+			label: "AwgpuMSAAColor",
+			size: [width, height, 1],
+			format: this.format,
+			sampleCount: normalized,
+			usage: globalThis.GPUTextureUsage.RENDER_ATTACHMENT,
+		});
+		this.msaa.view = this.msaa.texture.createView();
+		this.msaa.width = width;
+		this.msaa.height = height;
+		this.msaa.sampleCount = normalized;
+		this.msaa.format = this.format;
+		return this.msaa.view;
+	}
+
+	getDepthView(sampleCount = 1) {
+		if (!this.device || !this.canvas) return null;
+		const normalized = sampleCountOf(sampleCount, this.sampleCount);
+		const width = Math.max(1, this.canvas.width | 0);
+		const height = Math.max(1, this.canvas.height | 0);
+		if (
+			this.depth.view
+			&& this.depth.width === width
+			&& this.depth.height === height
+			&& this.depth.sampleCount === normalized
+		) {
 			return this.depth.view;
 		}
 		this.releaseDepth();
@@ -166,11 +223,13 @@ export class Backend {
 			label: "AwgpuDepth",
 			size: [width, height, 1],
 			format: this.depthFormat,
+			sampleCount: normalized,
 			usage: globalThis.GPUTextureUsage.RENDER_ATTACHMENT,
 		});
 		this.depth.view = this.depth.texture.createView();
 		this.depth.width = width;
 		this.depth.height = height;
+		this.depth.sampleCount = normalized;
 		return this.depth.view;
 	}
 
@@ -190,11 +249,22 @@ export class Backend {
 			} catch (_error) {}
 		}
 		this.ready = false;
+		this.releaseMsaa();
 		this.releaseDepth();
 		this.adapter = null;
 		this.device = null;
 		this.queue = null;
 		this.context = null;
+	}
+
+	releaseMsaa() {
+		if (this.msaa.texture?.destroy) this.msaa.texture.destroy();
+		this.msaa.texture = null;
+		this.msaa.view = null;
+		this.msaa.width = 0;
+		this.msaa.height = 0;
+		this.msaa.sampleCount = 1;
+		this.msaa.format = null;
 	}
 
 	releaseDepth() {
@@ -203,6 +273,7 @@ export class Backend {
 		this.depth.view = null;
 		this.depth.width = 0;
 		this.depth.height = 0;
+		this.depth.sampleCount = 1;
 	}
 }
 

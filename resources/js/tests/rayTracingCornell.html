@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Ray tracing again because why not</title>
+	<style>
+		:root {
+			--bg: #05070b;
+			--fg: #e8edf7;
+			--muted: #9aa7bb;
+			--panel: rgba(9, 13, 21, 0.72);
+			--line: rgba(255, 255, 255, 0.12);
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		html,
+		body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			overflow: hidden;
+			background: var(--bg);
+			color: var(--fg);
+			font-family: ui-sans-serif, system-ui, sans-serif;
+		}
+
+		canvas {
+			display: block;
+			width: 100vw;
+			height: 100vh;
+		}
+
+		.panel {
+			position: fixed;
+			left: 16px;
+			top: 16px;
+			width: min(360px, calc(100vw - 32px));
+			padding: 14px 16px;
+			border: 1px solid var(--line);
+			border-radius: 16px;
+			background: var(--panel);
+			backdrop-filter: blur(12px);
+		}
+
+		.panel h1 {
+			margin: 0 0 8px;
+			font-size: 15px;
+			font-weight: 700;
+			letter-spacing: 0.02em;
+		}
+
+		.panel p {
+			margin: 0;
+			color: var(--muted);
+			font-size: 12px;
+			line-height: 1.45;
+		}
+
+		.stats {
+			margin-top: 10px;
+			font-size: 12px;
+			color: #b8f2cf;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="view"></canvas>
+	<div class="panel">
+		<h1>Cornell Box UwU</h1>
+		<div class="stats" id="stats">Starting WebGPU</div>
+	</div>
+
+	<script type="module">
+		import { Acamera } from "../Alib/Acamera.js";
+		import * as Alm from "../Alib/Alm.js";
+		import { Awgpu } from "../Alib/Awgpu/index.js";
+		import { Ctx } from "../Alib/AwDAG.js";
+		import { FCamera } from "../welcome/FCamera.js";
+
+		const canvas = document.querySelector("#view");
+		const stats = document.querySelector("#stats");
+
+		const LIGHTMAP_SIZE = 192;
+		const PHOTONS_PER_WORKGROUP = 256;
+		const PHOTON_WORKGROUPS_PER_FRAME = 768;
+		const PHOTON_ENERGY = 100000;
+		const ACCUM_TO_LIGHT_WORKGROUP = 16;
+		const RAY_WORKGROUP = 16;
+		const FRAMEBUFFER_FORMAT = "rgba16float";
+
+		const WGSL = `
+const pi = 3.14159265359;
+const kNoHit = 0xffffffffu;
+const PhotonBounces = 4;
+const LightAbsorbtion = 0.5;
+const NumReflectionRays = 5;
+const TonemapExposure = 0.5;
+const Gamma = 2.2;
+
+struct Quad {
+	plane: vec4f,
+	right: vec4f,
+	up: vec4f,
+	color: vec3f,
+	emissive: f32,
+};
+
+struct Ray {
+	start: vec3f,
+	dir: vec3f,
+};
+
+struct HitInfo {
+	dist: f32,
+	quad: u32,
+	pos: vec3f,
+	uv: vec2f,
+};
+
+struct CommonUniforms {
+	mvp: mat4x4f,
+	inv_mvp: mat4x4f,
+	seed: vec3u,
+	frame: u32,
+	camera_pos: vec4f,
+	camera_right: vec4f,
+	camera_up: vec4f,
+	camera_forward: vec4f,
+	resolution: vec4f,
+};
+
+struct RadiosityUniforms {
+	accumulation_to_lightmap_scale: f32,
+	accumulation_buffer_scale: f32,
+	light_width: f32,
+	light_height: f32,
+	light_center: vec3f,
+};
+
+struct VSOut {
+	@builtin(position) position: vec4f,
+	@location(0) uv: vec2f,
+};
+
+@group(0) @binding(0) var<uniform> common_uniforms: CommonUniforms;
+@group(0) @binding(1) var<storage, read> quads: array<Quad>;
+
+@group(1) @binding(0) var<storage, read_write> accumulation: array<atomic<u32>>;
+@group(1) @binding(1) var radiosity_lightmap: texture_storage_2d_array<rgba16float, write>;
+@group(1) @binding(2) var<uniform> radiosity_uniforms: RadiosityUniforms;
+
+@group(2) @binding(0) var ray_lightmap: texture_2d_array<f32>;
+@group(2) @binding(1) var ray_sampler: sampler;
+@group(2) @binding(2) var ray_framebuffer: texture_storage_2d<rgba16float, write>;
+
+@group(3) @binding(0) var present_framebuffer: texture_2d<f32>;
+@group(3) @binding(1) var present_sampler: sampler;
+
+override PhotonsPerWorkgroup: u32;
+override PhotonEnergy: f32;
+override AccumulationToLightmapWorkgroupSizeX: u32;
+override AccumulationToLightmapWorkgroupSizeY: u32;
+override RayWorkgroupSizeX: u32;
+override RayWorkgroupSizeY: u32;
+
+var<private> rnd: vec3u;
+
+fn intersect_ray_quad(ray: Ray, quadIndex: u32, closest: HitInfo) -> HitInfo {
+	let quad = quads[quadIndex];
+	let plane_dist = dot(quad.plane, vec4f(ray.start, 1.0));
+	let denom = -dot(quad.plane.xyz, ray.dir);
+	let ray_dist = plane_dist / denom;
+	let pos = ray.start + ray.dir * ray_dist;
+	let uv = vec2f(
+		dot(vec4f(pos, 1.0), quad.right),
+		dot(vec4f(pos, 1.0), quad.up)
+	) * 0.5 + 0.5;
+	let hit = plane_dist > 0.0
+		&& abs(denom) > 0.000001
+		&& ray_dist > 0.0
+		&& ray_dist < closest.dist
+		&& all((uv > vec2f(0.0)) & (uv < vec2f(1.0)));
+	return HitInfo(
+		select(closest.dist, ray_dist, hit),
+		select(closest.quad, quadIndex, hit),
+		select(closest.pos, pos, hit),
+		select(closest.uv, uv, hit)
+	);
+}
+
+fn raytrace(ray: Ray) -> HitInfo {
+	var hit = HitInfo(1e20, kNoHit, vec3f(0.0), vec2f(0.0));
+	for (var quadIndex = 0u; quadIndex < arrayLength(&quads); quadIndex++) {
+		hit = intersect_ray_quad(ray, quadIndex, hit);
+	}
+	return hit;
+}
+
+fn init_rand(invocation_id: vec3u) {
+	let a = vec3u(1741651u * 1009u, 140893u * 1609u * 13u, 6521u * 983u * 7u * 2u);
+	rnd = (invocation_id * a) ^ common_uniforms.seed;
+}
+
+fn rand() -> f32 {
+	let c = vec3u(60493u * 9377u, 11279u * 2539u * 23u, 7919u * 631u * 5u * 3u);
+	rnd = (rnd * c) ^ (rnd.yzx >> vec3u(4u));
+	return f32(rnd.x ^ rnd.y) / f32(0xffffffffu);
+}
+
+fn rand_unit_sphere() -> vec3f {
+	let u = rand();
+	let v = rand();
+	let theta = u * 2.0 * pi;
+	let phi = acos(2.0 * v - 1.0);
+	let r = pow(rand(), 1.0 / 3.0);
+	return vec3f(
+		r * sin(phi) * sin(theta),
+		r * sin(phi) * cos(theta),
+		r * cos(phi)
+	);
+}
+
+fn rand_concentric_disk() -> vec2f {
+	let u = vec2f(rand(), rand());
+	let offset = 2.0 * u - vec2f(1.0);
+	if (offset.x == 0.0 && offset.y == 0.0) {
+		return vec2f(0.0);
+	}
+
+	var theta = 0.0;
+	var radius = 0.0;
+	if (abs(offset.x) > abs(offset.y)) {
+		radius = offset.x;
+		theta = (pi / 4.0) * (offset.y / offset.x);
+	} else {
+		radius = offset.y;
+		theta = (pi / 2.0) - (pi / 4.0) * (offset.x / offset.y);
+	}
+	return radius * vec2f(cos(theta), sin(theta));
+}
+
+fn rand_cosine_weighted_hemisphere() -> vec3f {
+	let d = rand_concentric_disk();
+	let z = sqrt(max(0.0, 1.0 - d.x * d.x - d.y * d.y));
+	return vec3f(d.x, d.y, z);
+}
+
+fn accumulation_base_index(coord: vec2u, quad: u32) -> u32 {
+	let dims = textureDimensions(radiosity_lightmap);
+	let c = min(vec2u(dims) - 1u, coord);
+	return 3u * (c.x + dims.x * c.y + dims.x * dims.y * quad);
+}
+
+fn accumulate(uv: vec2f, quad: u32, color: vec3f) {
+	let dims = textureDimensions(radiosity_lightmap);
+	let base_idx = accumulation_base_index(vec2u(uv * vec2f(dims)), quad);
+	atomicAdd(&accumulation[base_idx + 0u], u32(max(color.r, 0.0) + 0.5));
+	atomicAdd(&accumulation[base_idx + 1u], u32(max(color.g, 0.0) + 0.5));
+	atomicAdd(&accumulation[base_idx + 2u], u32(max(color.b, 0.0) + 0.5));
+}
+
+fn new_light_ray() -> Ray {
+	let center = radiosity_uniforms.light_center;
+	let pos = center + vec3f(
+		radiosity_uniforms.light_width * (rand() - 0.5),
+		0.0,
+		radiosity_uniforms.light_height * (rand() - 0.5)
+	);
+	var dir = rand_cosine_weighted_hemisphere().xzy;
+	dir.y = -dir.y;
+	return Ray(pos, dir);
+}
+
+@compute @workgroup_size(PhotonsPerWorkgroup)
+fn cs_radiosity(@builtin(global_invocation_id) invocation_id: vec3u) {
+	init_rand(invocation_id);
+
+	var ray = new_light_ray();
+	var color = PhotonEnergy * vec3f(1.0, 0.8, 0.6);
+
+	for (var i = 0; i < PhotonBounces + 1; i++) {
+		let hit = raytrace(ray);
+		if (hit.quad == kNoHit) {
+			break;
+		}
+
+		let quad = quads[hit.quad];
+		ray.start = hit.pos + quad.plane.xyz * 0.00001;
+		ray.dir = normalize(reflect(ray.dir, quad.plane.xyz) + rand_unit_sphere() * 0.75);
+		color *= quad.color;
+		accumulate(hit.uv, hit.quad, color * LightAbsorbtion);
+		color *= 1.0 - LightAbsorbtion;
+	}
+}
+
+@compute @workgroup_size(AccumulationToLightmapWorkgroupSizeX, AccumulationToLightmapWorkgroupSizeY)
+fn cs_accumulation_to_lightmap(
+	@builtin(global_invocation_id) invocation_id: vec3u,
+	@builtin(workgroup_id) workgroup_id: vec3u
+) {
+	let dims = textureDimensions(radiosity_lightmap);
+	let quad = workgroup_id.z;
+	let coord = invocation_id.xy;
+	if (all(coord < dims)) {
+		let base_idx = accumulation_base_index(coord, quad);
+		let color = vec3f(
+			f32(atomicLoad(&accumulation[base_idx + 0u])),
+			f32(atomicLoad(&accumulation[base_idx + 1u])),
+			f32(atomicLoad(&accumulation[base_idx + 2u]))
+		);
+		textureStore(radiosity_lightmap, coord, quad, vec4f(color * radiosity_uniforms.accumulation_to_lightmap_scale, 1.0));
+
+		if (radiosity_uniforms.accumulation_buffer_scale != 1.0) {
+			let scaled = color * radiosity_uniforms.accumulation_buffer_scale + vec3f(0.5);
+			atomicStore(&accumulation[base_idx + 0u], u32(scaled.r));
+			atomicStore(&accumulation[base_idx + 1u], u32(scaled.g));
+			atomicStore(&accumulation[base_idx + 2u], u32(scaled.b));
+		}
+	}
+}
+
+fn sample_hit(hit: HitInfo) -> vec3f {
+	if (hit.quad == kNoHit) {
+		return vec3f(0.015, 0.018, 0.026);
+	}
+	let quad = quads[hit.quad];
+	return textureSampleLevel(ray_lightmap, ray_sampler, hit.uv, hit.quad, 0.0).rgb
+		+ quad.emissive * quad.color;
+}
+
+@compute @workgroup_size(RayWorkgroupSizeX, RayWorkgroupSizeY)
+fn cs_raytrace(@builtin(global_invocation_id) invocation_id: vec3u) {
+	let dims = textureDimensions(ray_framebuffer);
+	if (!all(invocation_id.xy < dims)) {
+		return;
+	}
+
+	init_rand(invocation_id + vec3u(19u, 73u, 151u));
+
+	let uv = (vec2f(invocation_id.xy) + vec2f(0.5)) / vec2f(dims);
+	let ndc = uv * 2.0 - vec2f(1.0);
+	let screen = vec2f(ndc.x, -ndc.y);
+	let ray = Ray(
+		common_uniforms.camera_pos.xyz,
+		normalize(
+			common_uniforms.camera_forward.xyz
+			+ common_uniforms.camera_right.xyz * screen.x
+			+ common_uniforms.camera_up.xyz * screen.y
+		)
+	);
+	let hit = raytrace(ray);
+	var color = sample_hit(hit);
+
+	if (hit.quad != kNoHit) {
+		let normal = quads[hit.quad].plane.xyz;
+		let bounce = reflect(ray.dir, normal);
+		var reflection = vec3f(0.0);
+		for (var i = 0; i < NumReflectionRays; i++) {
+			let reflection_dir = normalize(bounce + rand_unit_sphere() * 0.1);
+			let reflection_ray = Ray(hit.pos + normal * 0.00001, reflection_dir);
+			reflection += sample_hit(raytrace(reflection_ray));
+		}
+		color = mix(reflection / f32(NumReflectionRays), color, 0.95);
+	}
+
+	textureStore(ray_framebuffer, invocation_id.xy, vec4f(color, 1.0));
+}
+
+@vertex
+fn vs_fullscreen(@builtin(vertex_index) index: u32) -> VSOut {
+	let pos = array<vec2f, 3>(
+		vec2f(-1.0, -3.0),
+		vec2f(3.0, 1.0),
+		vec2f(-1.0, 1.0)
+	);
+	var out: VSOut;
+	out.position = vec4f(pos[index], 0.0, 1.0);
+	out.uv = pos[index] * vec2f(0.5, -0.5) + vec2f(0.5);
+	return out;
+}
+
+fn reinhard_tonemap(linearColor: vec3f) -> vec3f {
+	let color = linearColor * TonemapExposure;
+	let mapped = color / (vec3f(1.0) + color);
+	return pow(mapped, vec3f(1.0 / Gamma));
+}
+
+@fragment
+fn fs_present(input: VSOut) -> @location(0) vec4f {
+	let color = textureSample(present_framebuffer, present_sampler, input.uv).rgb;
+	return vec4f(reinhard_tonemap(color), 1.0);
+}
+`;
+
+		function v3(x, y, z) {
+			return [x, y, z];
+		}
+
+		function add(a, b) {
+			return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+		}
+
+		function sub(a, b) {
+			return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+		}
+
+		function neg(a) {
+			return [-a[0], -a[1], -a[2]];
+		}
+
+		function mul(a, s) {
+			return [a[0] * s, a[1] * s, a[2] * s];
+		}
+
+		function dot(a, b) {
+			return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+		}
+
+		function cross(a, b) {
+			return [
+				a[1] * b[2] - a[2] * b[1],
+				a[2] * b[0] - a[0] * b[2],
+				a[0] * b[1] - a[1] * b[0],
+			];
+		}
+
+		function lenSq(a) {
+			return dot(a, a);
+		}
+
+		function len(a) {
+			return Math.sqrt(lenSq(a));
+		}
+
+		function norm(a) {
+			const l = len(a) || 1;
+			return [a[0] / l, a[1] / l, a[2] / l];
+		}
+
+		function reciprocal(a) {
+			return mul(a, 1 / lenSq(a));
+		}
+
+		function box(params) {
+			const x = v3(
+				Math.cos(params.rotation) * (params.width / 2),
+				0,
+				Math.sin(params.rotation) * (params.depth / 2),
+			);
+			const y = v3(0, params.height / 2, 0);
+			const z = v3(
+				Math.sin(params.rotation) * (params.width / 2),
+				0,
+				-Math.cos(params.rotation) * (params.depth / 2),
+			);
+			const colors = Array.isArray(params.color[0]) ? params.color : new Array(6).fill(params.color);
+			const sign = (value) => params.type === "concave" ? value : neg(value);
+			return [
+				{ center: add(params.center, x), right: sign(neg(z)), up: y, color: colors[0] },
+				{ center: add(params.center, y), right: sign(x), up: neg(z), color: colors[1] },
+				{ center: add(params.center, z), right: sign(x), up: y, color: colors[2] },
+				{ center: sub(params.center, x), right: sign(z), up: y, color: colors[3] },
+				{ center: sub(params.center, y), right: sign(x), up: z, color: colors[4] },
+				{ center: sub(params.center, z), right: sign(neg(x)), up: y, color: colors[5] },
+			];
+		}
+
+		function createSceneQuads() {
+			const light = {
+				center: v3(0, 9.95, 0),
+				right: v3(1, 0, 0),
+				up: v3(0, 0, 1),
+				color: v3(5, 5, 5),
+				emissive: 1,
+			};
+			const quads = [
+				...box({
+					center: v3(0, 5, 0),
+					width: 10,
+					height: 10,
+					depth: 10,
+					rotation: 0,
+					color: [
+						v3(0.0, 0.5, 0.0),
+						v3(0.5, 0.5, 0.5),
+						v3(0.5, 0.5, 0.5),
+						v3(0.5, 0.0, 0.0),
+						v3(0.5, 0.5, 0.5),
+						v3(0.5, 0.5, 0.5),
+					],
+					type: "concave",
+				}),
+				...box({
+					center: v3(1.5, 1.5, 1),
+					width: 3,
+					height: 3,
+					depth: 3,
+					rotation: 0.3,
+					color: v3(0.8, 0.8, 0.8),
+					type: "convex",
+				}),
+				...box({
+					center: v3(-2, 3, -2),
+					width: 3,
+					height: 6,
+					depth: 3,
+					rotation: -0.4,
+					color: v3(0.8, 0.8, 0.8),
+					type: "convex",
+				}),
+				light,
+			];
+			return {
+				quads,
+				lightCenter: light.center,
+				lightWidth: len(light.right) * 2,
+				lightHeight: len(light.up) * 2,
+			};
+		}
+
+		function packQuadData(quads) {
+			const data = new Float32Array(quads.length * 16);
+			let o = 0;
+			for (const quad of quads) {
+				const normal = norm(cross(quad.right, quad.up));
+				const invRight = reciprocal(quad.right);
+				const invUp = reciprocal(quad.up);
+				data[o++] = normal[0];
+				data[o++] = normal[1];
+				data[o++] = normal[2];
+				data[o++] = -dot(normal, quad.center);
+				data[o++] = invRight[0];
+				data[o++] = invRight[1];
+				data[o++] = invRight[2];
+				data[o++] = -dot(invRight, quad.center);
+				data[o++] = invUp[0];
+				data[o++] = invUp[1];
+				data[o++] = invUp[2];
+				data[o++] = -dot(invUp, quad.center);
+				data[o++] = quad.color[0];
+				data[o++] = quad.color[1];
+				data[o++] = quad.color[2];
+				data[o++] = quad.emissive ?? 0;
+			}
+			return data;
+		}
+
+		function writeBuffer(device, buffer, data) {
+			device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength);
+		}
+
+		async function main() {
+			const backend = await Awgpu.Backend.create(canvas, {
+				context: { alphaMode: "opaque" },
+			});
+			const device = backend.device;
+			const scene = createSceneQuads();
+			const quadData = packQuadData(scene.quads);
+			const quadBuffer = device.createBuffer({
+				label: "AwrayQuads",
+				size: quadData.byteLength,
+				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+			});
+			writeBuffer(device, quadBuffer, quadData);
+
+			const commonBuffer = device.createBuffer({
+				label: "AwrayCommon",
+				size: 224,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+			});
+			const radiosityBuffer = device.createBuffer({
+				label: "AwrayRadiosityUniforms",
+				size: 32,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+			});
+			const accumulationBuffer = device.createBuffer({
+				label: "AwrayAccumulation",
+				size: LIGHTMAP_SIZE * LIGHTMAP_SIZE * scene.quads.length * 16,
+				usage: GPUBufferUsage.STORAGE,
+			});
+
+			const lightmap = device.createTexture({
+				label: "AwrayLightmapArray",
+				size: [LIGHTMAP_SIZE, LIGHTMAP_SIZE, scene.quads.length],
+				format: FRAMEBUFFER_FORMAT,
+				usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+			});
+			const sampler = device.createSampler({
+				label: "AwrayLinearSampler",
+				addressModeU: "clamp-to-edge",
+				addressModeV: "clamp-to-edge",
+				addressModeW: "clamp-to-edge",
+				magFilter: "linear",
+				minFilter: "linear",
+			});
+			const module = device.createShaderModule({
+				label: "AwrayCornellModule",
+				code: WGSL,
+			});
+
+			const commonBGL = device.createBindGroupLayout({
+				label: "AwrayCommonBGL",
+				entries: [
+					{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+					{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+				],
+			});
+			const radiosityBGL = device.createBindGroupLayout({
+				label: "AwrayRadiosityBGL",
+				entries: [
+					{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+					{ binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: FRAMEBUFFER_FORMAT, viewDimension: "2d-array" } },
+					{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+				],
+			});
+			const rayBGL = device.createBindGroupLayout({
+				label: "AwrayRayBGL",
+				entries: [
+					{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float", viewDimension: "2d-array" } },
+					{ binding: 1, visibility: GPUShaderStage.COMPUTE, sampler: { type: "filtering" } },
+					{ binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: FRAMEBUFFER_FORMAT } },
+				],
+			});
+			const presentBGL = device.createBindGroupLayout({
+				label: "AwrayPresentBGL",
+				entries: [
+					{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+					{ binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+				],
+			});
+			const emptyBGL = device.createBindGroupLayout({ label: "AwrayEmptyBGL", entries: [] });
+
+			const commonBG = device.createBindGroup({
+				label: "AwrayCommonBG",
+				layout: commonBGL,
+				entries: [
+					{ binding: 0, resource: { buffer: commonBuffer } },
+					{ binding: 1, resource: { buffer: quadBuffer } },
+				],
+			});
+			const radiosityBG = device.createBindGroup({
+				label: "AwrayRadiosityBG",
+				layout: radiosityBGL,
+				entries: [
+					{ binding: 0, resource: { buffer: accumulationBuffer } },
+					{ binding: 1, resource: lightmap.createView() },
+					{ binding: 2, resource: { buffer: radiosityBuffer } },
+				],
+			});
+
+			const radiosityPipelineLayout = device.createPipelineLayout({
+				label: "AwrayRadiosityPipelineLayout",
+				bindGroupLayouts: [commonBGL, radiosityBGL],
+			});
+			const radiosityPipeline = device.createComputePipeline({
+				label: "AwrayRadiosityPipeline",
+				layout: radiosityPipelineLayout,
+				compute: {
+					module,
+					entryPoint: "cs_radiosity",
+					constants: {
+						PhotonsPerWorkgroup: PHOTONS_PER_WORKGROUP,
+						PhotonEnergy: PHOTON_ENERGY,
+					},
+				},
+			});
+			const accumulationPipeline = device.createComputePipeline({
+				label: "AwrayAccumulationToLightmapPipeline",
+				layout: radiosityPipelineLayout,
+				compute: {
+					module,
+					entryPoint: "cs_accumulation_to_lightmap",
+					constants: {
+						AccumulationToLightmapWorkgroupSizeX: ACCUM_TO_LIGHT_WORKGROUP,
+						AccumulationToLightmapWorkgroupSizeY: ACCUM_TO_LIGHT_WORKGROUP,
+					},
+				},
+			});
+			const rayPipeline = device.createComputePipeline({
+				label: "AwrayRayPipeline",
+				layout: device.createPipelineLayout({
+					label: "AwrayRayPipelineLayout",
+					bindGroupLayouts: [commonBGL, emptyBGL, rayBGL],
+				}),
+				compute: {
+					module,
+					entryPoint: "cs_raytrace",
+					constants: {
+						RayWorkgroupSizeX: RAY_WORKGROUP,
+						RayWorkgroupSizeY: RAY_WORKGROUP,
+					},
+				},
+			});
+			const presentPipeline = device.createRenderPipeline({
+				label: "AwrayPresentPipeline",
+				layout: device.createPipelineLayout({
+					label: "AwrayPresentPipelineLayout",
+					bindGroupLayouts: [emptyBGL, emptyBGL, emptyBGL, presentBGL],
+				}),
+				vertex: { module, entryPoint: "vs_fullscreen" },
+				fragment: {
+					module,
+					entryPoint: "fs_present",
+					targets: [{ format: backend.format }],
+				},
+				primitive: { topology: "triangle-list" },
+			});
+
+			const camera = new Acamera({
+				position: [0, 5.0, 15.0],
+				near: 0.5,
+				far: 100,
+				fov: 45,
+			});
+			camera.lookAt([0, 5, 0]);
+			const fcam = new FCamera({
+				canvas,
+				camera,
+				cfg: {
+					look: { sensitivity: 0.002 },
+					move: { walkSpeed: 5.0, sprintScale: 2.4 },
+					zoom: { wheelScale: 0.04, minFov: 28, maxFov: 82 },
+				},
+			});
+			fcam.attach();
+
+			let framebuffer = null;
+			let rayBG = null;
+			let presentBG = null;
+			let graph = null;
+			let root = null;
+			let frame = 0;
+			let lastStats = 0;
+			let lastTime = performance.now();
+			let fps = 0;
+			let accumulationMean = 0;
+
+			function releaseFramebuffer() {
+				framebuffer?.destroy?.();
+				framebuffer = null;
+				rayBG = null;
+				presentBG = null;
+			}
+
+			function createFramebuffer() {
+				releaseFramebuffer();
+				framebuffer = device.createTexture({
+					label: "AwrayFramebuffer",
+					size: [canvas.width, canvas.height, 1],
+					format: FRAMEBUFFER_FORMAT,
+					usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+				});
+				const view = framebuffer.createView();
+				rayBG = device.createBindGroup({
+					label: "AwrayRayBG",
+					layout: rayBGL,
+					entries: [
+						{ binding: 0, resource: lightmap.createView() },
+						{ binding: 1, resource: sampler },
+						{ binding: 2, resource: view },
+					],
+				});
+				presentBG = device.createBindGroup({
+					label: "AwrayPresentBG",
+					layout: presentBGL,
+					entries: [
+						{ binding: 0, resource: view },
+						{ binding: 1, resource: sampler },
+					],
+				});
+			}
+
+			function buildGraph() {
+				graph = new Ctx();
+				root = graph.addNode();
+				root.addComp(new Awgpu.BeginFrame({ label: "AwrayFrame" }));
+
+				const radiosityPass = graph.addNode(root);
+				radiosityPass.addComp(new Awgpu.ComputePass({ label: "radiosity" }));
+				radiosityPass.addComp(new Awgpu.SetBindGroups([
+					{ index: 0, bindGroup: commonBG },
+					{ index: 1, bindGroup: radiosityBG },
+				]));
+				radiosityPass.addComp(new Awgpu.UsePipeline(radiosityPipeline));
+				radiosityPass.addComp(new Awgpu.Dispatch({ x: PHOTON_WORKGROUPS_PER_FRAME }));
+				radiosityPass.addComp(new Awgpu.UsePipeline(accumulationPipeline));
+				radiosityPass.addComp(new Awgpu.Dispatch({
+					x: Math.ceil(LIGHTMAP_SIZE / ACCUM_TO_LIGHT_WORKGROUP),
+					y: Math.ceil(LIGHTMAP_SIZE / ACCUM_TO_LIGHT_WORKGROUP),
+					z: scene.quads.length,
+				}));
+				radiosityPass.addComp(new Awgpu.EndPass());
+
+				const rayPass = graph.addNode(root);
+				rayPass.addComp(new Awgpu.ComputePass({ label: "raytrace" }));
+				rayPass.addComp(new Awgpu.UsePipeline(rayPipeline));
+				rayPass.addComp(new Awgpu.SetBindGroups([
+					{ index: 0, bindGroup: commonBG },
+					{ index: 2, bindGroup: rayBG },
+				]));
+				rayPass.addComp(new Awgpu.Dispatch({
+					x: Math.ceil(canvas.width / RAY_WORKGROUP),
+					y: Math.ceil(canvas.height / RAY_WORKGROUP),
+				}));
+				rayPass.addComp(new Awgpu.EndPass());
+
+				const presentPass = graph.addNode(root);
+				presentPass.addComp(new Awgpu.RenderPass({
+					label: "present",
+					useDepth: false,
+					clearColor: [0, 0, 0, 1],
+				}));
+				presentPass.addComp(new Awgpu.UsePipeline(presentPipeline));
+				presentPass.addComp(new Awgpu.SetBindGroups([
+					{ index: 3, bindGroup: presentBG },
+				]));
+				presentPass.addComp(new Awgpu.Draw({ vertexCount: 3 }));
+				presentPass.addComp(new Awgpu.EndPass());
+
+				graph.addNode(root).addComp(new Awgpu.EndFrame());
+			}
+
+			function resize() {
+				const changed = backend.resize({ maxPixelRatio: 1 });
+				camera.aspect = Math.max(1, canvas.width) / Math.max(1, canvas.height);
+				if (!framebuffer || changed) {
+					createFramebuffer();
+					buildGraph();
+				}
+			}
+
+			function updateCommon() {
+				const mvp = Alm.Mat4.mul(camera.projection, camera.view);
+				const inv = Alm.Mat4.invert(mvp) ?? Alm.Mat4.makeIdentity();
+				const tanHalf = Math.tan(camera.fov * Math.PI / 360);
+				const aspect = Math.max(1, canvas.width) / Math.max(1, canvas.height);
+				const right = camera.right;
+				const up = camera.up;
+				const forward = camera.forward;
+				const data = new Float32Array(56);
+				const seed = new Uint32Array(data.buffer);
+				data.set(mvp, 0);
+				data.set(inv, 16);
+				seed[32] = Math.floor(Math.random() * 0xffffffff);
+				seed[33] = Math.floor(Math.random() * 0xffffffff);
+				seed[34] = Math.floor(Math.random() * 0xffffffff);
+				seed[35] = frame;
+				data.set([camera.position[0], camera.position[1], camera.position[2], 0], 36);
+				data.set([right[0] * tanHalf * aspect, right[1] * tanHalf * aspect, right[2] * tanHalf * aspect, 0], 40);
+				data.set([up[0] * tanHalf, up[1] * tanHalf, up[2] * tanHalf, 0], 44);
+				data.set([forward[0], forward[1], forward[2], 0], 48);
+				data.set([canvas.width, canvas.height, 0, 0], 52);
+				writeBuffer(device, commonBuffer, data);
+			}
+
+			function updateRadiosityUniforms() {
+				const photonsPerFrame = PHOTONS_PER_WORKGROUP * PHOTON_WORKGROUPS_PER_FRAME;
+				const totalTexels = LIGHTMAP_SIZE * LIGHTMAP_SIZE * scene.quads.length;
+				accumulationMean += (photonsPerFrame * PHOTON_ENERGY) / totalTexels;
+				const accumulationToLightmapScale = 1 / Math.max(accumulationMean, 1);
+				const accumulationBufferScale = accumulationMean > 0x20000000 ? 0.5 : 1;
+				accumulationMean *= accumulationBufferScale;
+
+				const data = new Float32Array(8);
+				data[0] = accumulationToLightmapScale;
+				data[1] = accumulationBufferScale;
+				data[2] = scene.lightWidth;
+				data[3] = scene.lightHeight;
+				data[4] = scene.lightCenter[0];
+				data[5] = scene.lightCenter[1];
+				data[6] = scene.lightCenter[2];
+				writeBuffer(device, radiosityBuffer, data);
+			}
+
+			function tick(now) {
+				resize();
+				const dt = Math.max(0, (now - lastTime) * 0.001);
+				fcam.update(dt);
+				updateCommon();
+				updateRadiosityUniforms();
+				graph.exec(root, backend.newState());
+				frame++;
+
+				lastTime = now;
+				fps = fps * 0.92 + (1 / Math.max(dt, 0.001)) * 0.08;
+				if (now - lastStats > 160) {
+					stats.textContent = `${canvas.width}x${canvas.height} | ${fps.toFixed(1)} fps | ${scene.quads.length} quads | lightmap ${LIGHTMAP_SIZE}`;
+					lastStats = now;
+				}
+				requestAnimationFrame(tick);
+			}
+
+			resize();
+			requestAnimationFrame(tick);
+		}
+
+		main().catch((error) => {
+			console.error("[Awray] fatal", error);
+			stats.textContent = error?.message ?? String(error);
+		});
+	</script>
+</body>
+</html>

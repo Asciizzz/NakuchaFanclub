@@ -6,6 +6,7 @@ import { FCamera } from "./FCamera.js";
 import { WrGPU } from "../WeebRender3/index.js";
 
 const container = document.getElementById("main-canvas");
+const SAMPLE_COUNT = 4;
 
 run().catch((error) => {
 	console.error("[WR3WorldTest] fatal", error);
@@ -242,6 +243,9 @@ function createObjectShader(backend, sceneBindGroupLayout, deformBindGroupLayout
 			topology: "triangle-list",
 			cullMode: "back",
 		},
+		multisample: {
+			count: SAMPLE_COUNT,
+		},
 		depthStencil,
 	});
 	const outlinePipeline = device.createRenderPipeline({
@@ -260,6 +264,9 @@ function createObjectShader(backend, sceneBindGroupLayout, deformBindGroupLayout
 		primitive: {
 			topology: "triangle-list",
 			cullMode: "front",
+		},
+		multisample: {
+			count: SAMPLE_COUNT,
 		},
 		depthStencil,
 	});
@@ -303,6 +310,9 @@ function createBackground(backend) {
 		},
 		primitive: {
 			topology: "triangle-list",
+		},
+		multisample: {
+			count: SAMPLE_COUNT,
 		},
 	});
 	return {
@@ -416,7 +426,7 @@ function setOutline(root, thickness) {
 
 async function run() {
 	const canvas = createCanvas();
-	const backend = await Awgpu.Backend.create(canvas);
+	const backend = await Awgpu.Backend.create(canvas, { sampleCount: SAMPLE_COUNT });
 	const device = backend.device;
 
 	const camera = new Acamera({
@@ -499,6 +509,7 @@ async function run() {
 		label: "wr3-background-pass",
 		clearColor: [0, 0, 0, 1],
 		useDepth: false,
+		sampleCount: SAMPLE_COUNT,
 	}));
 	const bgDraw = bgPass.addChild();
 	bgDraw.addComp(new Awgpu.UsePipeline(background.pipeline));
@@ -514,6 +525,7 @@ async function run() {
 		clearDepth: 1,
 		clearDepthEnabled: true,
 		useDepth: true,
+		sampleCount: SAMPLE_COUNT,
 	}));
 	const worldSlot = mainPass.addChild();
 	const worldBinding = world.bind(worldSlot, {
