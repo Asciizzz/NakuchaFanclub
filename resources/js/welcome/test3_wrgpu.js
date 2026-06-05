@@ -109,9 +109,7 @@ fn vs_main(input: VertexIn) -> VertexOut {
 @fragment
 fn fs_main(input: VertexOut) -> @location(0) vec4f {
 	let tex = textureSample(albedoTexture, albedoSampler, input.uv);
-	let lit = max(0.18, dot(normalize(input.normal), normalize(scene.lightDir.xyz)));
-	let rgb = tex.rgb * material.albedoColor.rgb * (0.62 + 0.38 * lit);
-	return vec4f(rgb, tex.a * material.albedoColor.a);
+	return tex * material.albedoColor;
 }
 
 @vertex
@@ -209,6 +207,8 @@ function createObjectShader(backend, sceneBindGroupLayout, deformBindGroupLayout
 		slot0: "outlineThickness",
 	});
 	doc.setRaw(objectShaderSource());
+
+	console.log(doc);
 
 	const module = doc.createModule({ backend, label: "WR3WorldObjectShader" }).module;
 	const layout = device.createPipelineLayout({
@@ -498,8 +498,7 @@ async function run() {
 	bgPass.addComp(new Awgpu.RenderPass({
 		label: "wr3-background-pass",
 		clearColor: [0, 0, 0, 1],
-		clearDepth: 1,
-		useDepth: true,
+		useDepth: false,
 	}));
 	const bgDraw = bgPass.addChild();
 	bgDraw.addComp(new Awgpu.UsePipeline(background.pipeline));

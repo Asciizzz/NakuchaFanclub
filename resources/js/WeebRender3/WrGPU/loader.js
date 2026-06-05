@@ -27,8 +27,12 @@ function asList(value) {
 	return [value];
 }
 
+function absoluteURL(url) {
+	return new URL(String(url ?? ""), globalThis.location?.href ?? "http://localhost/").href;
+}
+
 function baseURL(url) {
-	return new URL(".", url).href;
+	return new URL(".", absoluteURL(url)).href;
 }
 
 function isDataURL(uri) {

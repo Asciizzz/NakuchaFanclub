@@ -115,14 +115,27 @@ export class Backend {
 				indirect: null,
 			},
 			bindGroups: new Map(),
+			screen: {
+				texture: null,
+				view: null,
+			},
 			ended: false,
 		};
 	}
 
-	getScreenColorAttachment(options = {}) {
+	getScreenColorAttachment(options = {}, state = null) {
 		if (!this.context) return null;
+		let view = state?.screen?.view ?? null;
+		if (!view) {
+			const texture = this.context.getCurrentTexture();
+			view = texture.createView();
+			if (state?.screen) {
+				state.screen.texture = texture;
+				state.screen.view = view;
+			}
+		}
 		return {
-			view: this.context.getCurrentTexture().createView(),
+			view,
 			loadOp: options.clearColorEnabled === false ? "load" : "clear",
 			storeOp: options.storeOp ?? "store",
 			clearValue: toColor(options.clearColor ?? [0, 0, 0, 1]),

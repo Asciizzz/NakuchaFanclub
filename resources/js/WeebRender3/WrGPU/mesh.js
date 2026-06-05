@@ -362,16 +362,19 @@ export class MeshDeform {
 
 		const jointCount = this.skeleton?.joints.length ?? 0;
 		const morphCount = Math.max(0, Number(cfg.morphCount ?? this.morphs?.targets?.length ?? 0) | 0);
-		this.localBoneMatrices = new Float32Array(Math.max(1, jointCount) * 16);
-		this.worldBoneMatrices = new Float32Array(Math.max(1, jointCount) * 16);
-		this.skinMatrices = new Float32Array(Math.max(1, jointCount) * 16);
-		this.morphWeights = new Float32Array(Math.max(4, morphCount));
+		this.boneCapacity = Math.max(1, Number(cfg.maxBones ?? 128) | 0, jointCount);
+		this.morphCapacity = Math.max(4, Number(cfg.maxMorphs ?? 64) | 0, morphCount);
+		this.localBoneMatrices = new Float32Array(this.boneCapacity * 16);
+		this.worldBoneMatrices = new Float32Array(this.boneCapacity * 16);
+		this.skinMatrices = new Float32Array(this.boneCapacity * 16);
+		this.morphWeights = new Float32Array(this.morphCapacity);
 
-		for (let i = 0; i < Math.max(1, jointCount); i++) {
+		for (let i = 0; i < this.boneCapacity; i++) {
 			copyMat4(this.skeleton?.joints[i]?.bindMatrix ?? Mat4.IDENTITY, this.localBoneMatrices, i);
 			copyMat4(Mat4.IDENTITY, this.worldBoneMatrices, i);
 			copyMat4(Mat4.IDENTITY, this.skinMatrices, i);
 		}
+		this.updateSkinMatrices();
 
 		const usage = gpuUsage();
 		const device = deviceOf(cfg.backend ?? mesh?.backend);

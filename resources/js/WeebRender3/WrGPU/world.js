@@ -316,7 +316,10 @@ export class WorldBinding {
 		const ctx = node?.ctx ?? null;
 		if (!node || !ctx) return this;
 		node.clearComp?.();
-		for (const childId of node.childIds.slice()) ctx.deleteNode(childId, true);
+		for (const childId of node.childIds.slice()) {
+			ctx.unlink(node.id, childId);
+			ctx.deleteNode(childId, true);
+		}
 		this.result = null;
 		return this;
 	}
@@ -514,7 +517,11 @@ export class World extends TreeCtx {
 
 		const mesh = renderer.mesh;
 		if (!renderer.deform && options.deformBindGroupLayout) {
-			renderer.deform = mesh.createDeform({ backend: state.backend });
+			renderer.deform = mesh.createDeform({
+				backend: state.backend,
+				maxBones: options.maxBones ?? 128,
+				maxMorphs: options.maxMorphs ?? 64,
+			});
 		}
 		const deform = renderer.deform ?? null;
 		if (deform && !deform.bindGroup && options.deformBindGroupLayout) {

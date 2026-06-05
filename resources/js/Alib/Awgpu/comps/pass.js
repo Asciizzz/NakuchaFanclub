@@ -46,7 +46,7 @@ export class RenderPass extends Component {
 
 		const colorAttachments = hasOwn(this.options, "colorAttachments")
 			? normalizeColorAttachments(this.options.colorAttachments)
-			: [state.backend.getScreenColorAttachment(this.options)].filter(Boolean);
+			: [state.backend.getScreenColorAttachment(this.options, state)].filter(Boolean);
 		const depthStencilAttachment = hasOwn(this.options, "depthStencilAttachment")
 			? (this.options.depthStencilAttachment ?? undefined)
 			: (state.backend.getDepthAttachment(this.options) ?? undefined);
@@ -92,5 +92,4 @@ export class EndPass extends Component {
 		state.pipeline = null;
 	}
 }
-
 

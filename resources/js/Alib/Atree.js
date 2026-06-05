@@ -7,6 +7,11 @@ Best used as inherited base (Scene extends Ctx, Entity extends Node, etc)
 */
 
 function asId(value) {
+	if (value && typeof value === "object") {
+		const raw = value.id ?? value.ref?.id ?? null;
+		const id = String(raw ?? "").trim();
+		return id ? id : null;
+	}
 	const id = String(value ?? "").trim();
 	return id ? id : null;
 }
@@ -148,6 +153,7 @@ export class Ctx {
 	 * @returns {Node|null}
 	 */
 	getNode(id) {
+		if (id && typeof id === "object" && id.ctx === this) return id;
 		const key = asId(id);
 		if (!key) return null;
 		return this.#nodes.get(key) ?? null;
