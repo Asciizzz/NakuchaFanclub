@@ -1,5 +1,5 @@
 import { Acamera } from "../Alib/Acamera.js";
-import * as mAth from "../Alib/mAth.js";
+import * as Alm from "../Alib/Alm.js";
 import { Awgpu } from "../Alib/Awgpu/index.js";
 import { Ctx } from "../Alib/AwDAG.js";
 import { FCamera } from "./FCamera.js";
@@ -494,7 +494,7 @@ async function run() {
 		last = now;
 		fcam.update(dt);
 
-		const viewProj = mAth.Mat4.mul(camera.projection, camera.view);
+		const viewProj = Alm.Mat4.mul(camera.projection, camera.view);
 		device.queue.writeBuffer(cubeRender.sceneBuffer, 0, viewProj);
 
 		gradient.time[0] = now * 0.001;
@@ -509,8 +509,8 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
-		cubeDeform.setWorldBone(0, mAth.Mat4.IDENTITY);
-		mAth.Mat4.fromTranslation([
+		cubeDeform.setWorldBone(0, Alm.Mat4.IDENTITY);
+		Alm.Mat4.fromTranslation([
 			Math.sin(now * 0.0021) * 0.32,
 			Math.sin(now * 0.0013) * 0.08,
 			Math.cos(now * 0.0017) * 0.12,

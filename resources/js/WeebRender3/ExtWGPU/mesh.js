@@ -1,4 +1,4 @@
-import { Mat4 } from "../../Alib/mAth.js";
+import { Mat4 } from "../../Alib/Alm.js";
 import { Awgpu } from "../../Alib/Awgpu/index.js";
 
 export const STD_VERTEX_STRIDE = 96;

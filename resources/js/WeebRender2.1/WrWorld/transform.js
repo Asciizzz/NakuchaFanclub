@@ -1,9 +1,9 @@
-import * as mAth from "../../Alib/mAth.js";
+import * as Alm from "../../Alib/Alm.js";
 import { Component } from "./component.js";
 
 export class Transform extends Component {
-	local = mAth.Mat4.makeIdentity();
-	world = mAth.Mat4.makeIdentity();
+	local = Alm.Mat4.makeIdentity();
+	world = Alm.Mat4.makeIdentity();
 }
 
 if (typeof window !== "undefined") {

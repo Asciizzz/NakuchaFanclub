@@ -1,3 +1,9 @@
+/*
+
+An ECS-like extension of ADAG
+
+*/
+
 import { Ctx as BaseCtx, Node as BaseNode } from "./ADAG.js";
 
 function isComp(value) {

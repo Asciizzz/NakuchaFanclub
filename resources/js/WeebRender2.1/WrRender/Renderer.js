@@ -1,4 +1,4 @@
-import * as mAth from "../../Alib/mAth.js";
+import * as Alm from "../../Alib/Alm.js";
 import Awgpu from "../WrGPU.js";
 import { Ctx } from "../../Alib/Atree.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
@@ -530,7 +530,7 @@ export class WrRenderer {
 							shaderOrder: shaderRank.get(shader) ?? 0,
 							queueOrder: queueOrder++,
 							pass: passComp,
-							modelMatrix: modelByNode.get(node.id) ?? mAth.Mat4.makeIdentity(),
+							modelMatrix: modelByNode.get(node.id) ?? Alm.Mat4.makeIdentity(),
 							skinPalette,
 						});
 					}
@@ -551,11 +551,11 @@ export class WrRenderer {
 		parentWorldByNode.set(fromNode.id, this.#resolveAncestorWorld(fromNode));
 
 		for (const [node] of fromNode.traverse({ mode: "bfs", includeFrom: true })) {
-			const parentWorld = parentWorldByNode.get(node.id) ?? mAth.Mat4.IDENTITY;
+			const parentWorld = parentWorldByNode.get(node.id) ?? Alm.Mat4.IDENTITY;
 			const tx = node.getComp(Transform);
 			let nodeWorld = null;
 			if (tx) {
-				tx.world = mAth.Mat4.mul(parentWorld, tx.local);
+				tx.world = Alm.Mat4.mul(parentWorld, tx.local);
 				nodeWorld = tx.world;
 			} else {
 				nodeWorld = new Float32Array(parentWorld);
@@ -576,11 +576,11 @@ export class WrRenderer {
 			current = resolveParentNode(current);
 		}
 
-		let world = mAth.Mat4.IDENTITY;
+		let world = Alm.Mat4.IDENTITY;
 		for (let i = chain.length - 1; i >= 0; i -= 1) {
 			const tx = chain[i].getComp(Transform);
 			if (!tx) continue;
-			tx.world = mAth.Mat4.mul(world, tx.local);
+			tx.world = Alm.Mat4.mul(world, tx.local);
 			world = tx.world;
 		}
 		return world;
@@ -622,7 +622,7 @@ export class WrRenderer {
 	#identityPalette(state) {
 		if (state.identityPalette) return state.identityPalette;
 		const out = new Float32Array(SKIN_BONE_CAP * 16);
-		for (let i = 0; i < SKIN_BONE_CAP; i += 1) out.set(mAth.Mat4.IDENTITY, i * 16);
+		for (let i = 0; i < SKIN_BONE_CAP; i += 1) out.set(Alm.Mat4.IDENTITY, i * 16);
 		state.identityPalette = out;
 		return out;
 	}
@@ -996,9 +996,9 @@ export class WrRenderer {
 	#writeSceneWgpu(backend, state, camera, time, deltaTime, shaderFSC = null) {
 		const scene = state.sceneScratch;
 		scene.fill(0);
-		const view = camera?.view ?? mAth.Mat4.IDENTITY;
-		const projection = camera?.projection ?? mAth.Mat4.IDENTITY;
-		const viewProj = mAth.Mat4.mul(projection, view);
+		const view = camera?.view ?? Alm.Mat4.IDENTITY;
+		const projection = camera?.projection ?? Alm.Mat4.IDENTITY;
+		const viewProj = Alm.Mat4.mul(projection, view);
 		scene.set(view, 0);
 		scene.set(projection, 16);
 		scene.set(viewProj, 32);
@@ -1269,9 +1269,9 @@ export class WrRenderer {
 
 		const time = Number(options.time ?? 0) || 0;
 		const deltaTime = Number(options.deltaTime ?? 0) || 0;
-		const view = camera?.view ?? mAth.Mat4.IDENTITY;
-		const projection = camera?.projection ?? mAth.Mat4.IDENTITY;
-		const viewProj = mAth.Mat4.mul(projection, view);
+		const view = camera?.view ?? Alm.Mat4.IDENTITY;
+		const projection = camera?.projection ?? Alm.Mat4.IDENTITY;
+		const viewProj = Alm.Mat4.mul(projection, view);
 
 		for (const draw of queue) {
 			if (draw.type === "fsc") {

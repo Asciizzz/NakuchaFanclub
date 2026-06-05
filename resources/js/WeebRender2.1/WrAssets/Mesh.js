@@ -1,4 +1,4 @@
-import * as mAth from "../../Alib/mAth.js";
+import * as Alm from "../../Alib/Alm.js";
 import { wrHashText, wrHashValue } from "./hash.js";
 
 const WR_FLOATS_PER_VERTEX = 19;
@@ -125,7 +125,7 @@ function readMat4(value) {
 			return Float32Array.from(value.slice ? value.slice(0, 16) : value.subarray(0, 16));
 		}
 	}
-	return mAth.Mat4.makeIdentity();
+	return Alm.Mat4.makeIdentity();
 }
 
 export class WrMesh {
@@ -154,7 +154,7 @@ export class WrMesh {
 	}
 
 	static resolveNodeModelMatrix(node) {
-		if (!node || typeof node !== "object") return mAth.Mat4.makeIdentity();
+		if (!node || typeof node !== "object") return Alm.Mat4.makeIdentity();
 		if (node.components instanceof Map) {
 			for (const comp of node.components.values()) {
 				if (comp?.world && (ArrayBuffer.isView(comp.world) || Array.isArray(comp.world))) return readMat4(comp.world);
@@ -163,7 +163,7 @@ export class WrMesh {
 		}
 		if (node.Transform?.world) return readMat4(node.Transform.world);
 		if (node.Transform?.local) return readMat4(node.Transform.local);
-		return mAth.Mat4.makeIdentity();
+		return Alm.Mat4.makeIdentity();
 	}
 
 	static packSubmesh(submesh, options = {}) {

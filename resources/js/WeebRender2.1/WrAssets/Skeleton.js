@@ -1,4 +1,4 @@
-import * as mAth from "../../Alib/mAth.js";
+import * as Alm from "../../Alib/Alm.js";
 import { wrHashText, wrHashValue } from "./hash.js";
 
 function cloneData(value) {
@@ -26,7 +26,7 @@ function readMat4(value) {
 			return Float32Array.from(copy);
 		}
 	}
-	return mAth.Mat4.makeIdentity();
+	return Alm.Mat4.makeIdentity();
 }
 
 function buildNameMap(bones) {
@@ -102,7 +102,7 @@ export class WrSkeleton {
 
 	ensurePoseCapacity(poseList, count = this.getBoneCount()) {
 		const out = Array.isArray(poseList) ? poseList : [];
-		while (out.length < count) out.push(mAth.Mat4.makeIdentity());
+		while (out.length < count) out.push(Alm.Mat4.makeIdentity());
 		for (let i = 0; i < out.length; i += 1) {
 			const pose = out[i];
 			if (pose instanceof Float32Array && pose.length >= 16) continue;
@@ -116,7 +116,7 @@ export class WrSkeleton {
 
 		const cap = Math.max(1, Number(maxBones) | 0);
 		const out = new Float32Array(cap * 16);
-		for (let i = 0; i < cap; i += 1) out.set(mAth.Mat4.IDENTITY, i * 16);
+		for (let i = 0; i < cap; i += 1) out.set(Alm.Mat4.IDENTITY, i * 16);
 
 		const poses = this.ensurePoseCapacity(localPoses, this.bones.length);
 		const global = new Array(this.bones.length);
@@ -126,14 +126,14 @@ export class WrSkeleton {
 			const bone = this.bones[i] ?? {};
 			const localBind = readMat4(bone.localBind);
 			const pose = readMat4(poses[i]);
-			const local = mAth.Mat4.mul(localBind, pose);
+			const local = Alm.Mat4.mul(localBind, pose);
 
 			const parent = Number(bone.parent ?? -1) | 0;
 			if (parent < 0 || !global[parent]) global[i] = local;
-			else global[i] = mAth.Mat4.mul(global[parent], local);
+			else global[i] = Alm.Mat4.mul(global[parent], local);
 
 			const inverseBind = readMat4(bone.inverseBind);
-			const skinned = mAth.Mat4.mul(global[i], inverseBind);
+			const skinned = Alm.Mat4.mul(global[i], inverseBind);
 			out.set(skinned, i * 16);
 		}
 

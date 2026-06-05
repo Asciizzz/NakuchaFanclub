@@ -1,4 +1,4 @@
-/* mAth (Math)
+/* Alm (Math)
 By Asciiz
 
 Lightweight mathlib for Float32Array vectors/matrices/quater-onions(yummers)
@@ -888,7 +888,7 @@ Mat4.transformV4 = function(m, v, out = null) {
     return out;
 };
 
-export const mAth = {
+export const Alm = {
     // Constants
     EPSILON,
     DEG2RAD,
@@ -902,7 +902,7 @@ export const mAth = {
 };
 
 if (typeof window !== "undefined") {
-    window.mAth = mAth;
+    window.Alm = Alm;
 }
 
-export default mAth;
+export default Alm;

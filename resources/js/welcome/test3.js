@@ -1,5 +1,5 @@
 import { Acamera } from "../Alib/Acamera.js";
-import * as mAth from "../Alib/mAth.js";
+import * as Alm from "../Alib/Alm.js";
 import { Awgpu } from "../Alib/Awgpu/index.js";
 import { Ctx } from "../Alib/AwDAG.js";
 import { FCamera } from "./FCamera.js";
@@ -487,7 +487,7 @@ async function run() {
 		last = now;
 		fcam.update(dt);
 
-		const viewProj = mAth.Mat4.mul(camera.projection, camera.view);
+		const viewProj = Alm.Mat4.mul(camera.projection, camera.view);
 		device.queue.writeBuffer(cubeRender.sceneBuffer, 0, viewProj);
 
 		gradient.time[0] = now * 0.001;

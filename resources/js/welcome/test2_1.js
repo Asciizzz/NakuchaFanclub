@@ -1,6 +1,6 @@
 import { WrBackend } from "../WeebRender2.1/WrBackend.js";
 import { Acamera } from "../Alib/Acamera.js";
-import * as mAth from "../Alib/mAth.js";
+import * as Alm from "../Alib/Alm.js";
 import { FCamera } from "./FCamera.js";
 import {
 	WrWorld,
@@ -466,7 +466,7 @@ async function run() {
 
 	// The room is too fcking big
 	const roomTx = roomRoot?.getComp(WrTransform) ?? null;
-	if (roomTx) mAth.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
+	if (roomTx) Alm.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
 
 	mainPassNode.attachCopy(roomRoot);
 	mainPassNode.attachCopy(nakuRoot);
