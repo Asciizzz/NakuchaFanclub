@@ -52,7 +52,7 @@ export class Ctx extends BaseCtx {
 		return new Node(this, id);
 	}
 
-	exec(from, state, options = {}) {
+	*execEach(from, state, options = {}) {
 		if (!state) return state;
 		const node = this.getNode(from);
 		if (!node) return state;
@@ -60,9 +60,14 @@ export class Ctx extends BaseCtx {
 			for (const comp of current.components ?? []) {
 				if (!comp || comp.enabled === false) continue;
 				if (typeof comp.exec !== "function") continue;
-				comp.exec(state, current);
+				const result = comp.exec(state, current);
+				yield { node: current, comp, result };
 			}
 		}
+	}
+
+	exec(from, state, options = {}) {
+		for (const _event of this.execEach(from, state, options)) {}
 		return state;
 	}
 

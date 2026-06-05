@@ -150,7 +150,7 @@ export function builtInKeys() {
 
 export function assertKeyName(key) {
 	if (!KEY_PATTERN.test(String(key ?? ""))) {
-		throw new Error(`[ExtWGPU.ShaderBuilder] invalid key "${key}"`);
+		throw new Error(`[WrGPU.ShaderBuilder] invalid key "${key}"`);
 	}
 }
 

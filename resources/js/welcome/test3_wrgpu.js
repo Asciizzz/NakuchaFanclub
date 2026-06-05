@@ -3,11 +3,11 @@ import * as Alm from "../Alib/Alm.js";
 import { Awgpu } from "../Alib/Awgpu/index.js";
 import { Ctx } from "../Alib/AwDAG.js";
 import { FCamera } from "./FCamera.js";
-import { ExtWGPU, Other } from "../WeebRender3/index.js";
+import { WrGPU, Other } from "../WeebRender3/index.js";
 
 const container = document.getElementById("main-canvas");
 const INSTANCE_COUNT = 3;
-const SCENE_SHADER_URL = new URL("./shaders/scene4_ext.wgsl", import.meta.url).href;
+const SCENE_SHADER_URL = new URL("./shaders/scene4_wrgpu.wgsl", import.meta.url).href;
 
 run().catch((error) => {
 	console.error("[WR3ExtTest] fatal", error);
@@ -75,7 +75,7 @@ function createCubeData() {
 	}
 
 	return {
-		vertices: ExtWGPU.Mesh.packVertices({ positions, normals, uvs, boneIDs, boneWeights }),
+		vertices: WrGPU.Mesh.packVertices({ positions, normals, uvs, boneIDs, boneWeights }),
 		indices: new Uint16Array([
 			 0,  1,  2,  0,  2,  3,
 			 4,  5,  6,  4,  6,  7,
@@ -136,7 +136,7 @@ async function run() {
 
 	// ---------- Source modules
 	const sceneCode = await loadShaderCode();
-	const sceneShader = ExtWGPU.ShaderBuilder.create({
+	const sceneShader = WrGPU.ShaderBuilder.create({
 		backend,
 		label: "WR3SceneShader",
 		source: sceneCode,
@@ -164,7 +164,7 @@ async function run() {
 
 	// ---------- Cube mesh
 	const cubeData = createCubeData();
-	const cubeMesh = new ExtWGPU.Mesh({
+	const cubeMesh = new WrGPU.Mesh({
 		backend,
 		label: "WR3CubeMesh",
 		vertices: cubeData.vertices,
@@ -178,7 +178,7 @@ async function run() {
 		submeshes: cubeData.submeshes,
 	});
 	cubeMesh.vertexLayout = [
-		ExtWGPU.Mesh.STD_VERTEX_BUFFER,
+		WrGPU.Mesh.STD_VERTEX_BUFFER,
 		{
 			arrayStride: 64,
 			stepMode: "instance",

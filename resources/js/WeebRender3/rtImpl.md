@@ -11,7 +11,7 @@ No WGL2, no presets, no mesh, no stores, no loader.
 Make this work:
 
 ```js
-const backend = await WrWGPU.Backend.create(canvas);
+const backend = await Awgpu.Backend.create(canvas);
 const ctx = new WrCtx();
 
 const shader = backend.device.createShaderModule({ code });
@@ -27,23 +27,23 @@ const pipeline = backend.device.createRenderPipeline({
 });
 
 const root = ctx.addNode();
-root.addComp(new WrWGPU.BeginFrame());
+root.addComp(new Awgpu.BeginFrame());
 
 const pass = root.addChild();
-pass.addComp(new WrWGPU.RenderPass({
+pass.addComp(new Awgpu.RenderPass({
 	clearColor: [0.08, 0.09, 0.12, 1],
 	useDepth: false,
 }));
 
 const tri = pass.addChild();
-tri.addComp(new WrWGPU.UsePipeline(pipeline));
-tri.addComp(new WrWGPU.Draw({ vertexCount: 3 }));
+tri.addComp(new Awgpu.UsePipeline(pipeline));
+tri.addComp(new Awgpu.Draw({ vertexCount: 3 }));
 
 const endPass = root.addChild();
-endPass.addComp(new WrWGPU.EndPass());
+endPass.addComp(new Awgpu.EndPass());
 
 const endFrame = root.addChild();
-endFrame.addComp(new WrWGPU.EndFrame());
+endFrame.addComp(new Awgpu.EndFrame());
 
 ctx.exec(root, backend.newState());
 ```
@@ -62,7 +62,7 @@ WeebRender3/
   WrCtx.js
     component.js
     ctx.js
-  WrWGPU/
+  Awgpu/
     backend.js
     comps/
       frame.js
@@ -132,7 +132,7 @@ Do not add roots logic. ADAG already exposes roots from parent links.
 
 ## Step 2: WGPU Backend
 
-`WrWGPU.Backend` is standalone.
+`Awgpu.Backend` is standalone.
 
 It has nothing to do with `AzWBackend`.
 
@@ -275,7 +275,7 @@ class UsePipeline extends WrComponent {
 ### SetBuffers
 
 ```js
-node.addComp(new WrWGPU.SetBuffers({
+node.addComp(new Awgpu.SetBuffers({
 	vertex: [
 		{ slot: 0, buffer: vertexBuffer },
 		{ slot: 1, buffer: instanceBuffer },
@@ -294,7 +294,7 @@ node.addComp(new WrWGPU.SetBuffers({
 ### SetBindGroups
 
 ```js
-node.addComp(new WrWGPU.SetBindGroups([
+node.addComp(new Awgpu.SetBindGroups([
 	{ index: 0, bindGroup: sceneBG },
 	{ index: 1, bindGroup: objectBG },
 ]));
@@ -384,5 +384,4 @@ Do not immediately add:
 - shader/pipeline wrapper assets
 
 The first goal is proving the graph executes WGPU render flow correctly.
-
 

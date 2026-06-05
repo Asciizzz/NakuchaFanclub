@@ -45,10 +45,10 @@ export class ShaderBuilder {
 	create(options = {}) {
 		const backend = options.backend ?? this.backend;
 		const device = deviceOf(backend);
-		if (!device) throw new Error("[ExtWGPU.ShaderBuilder] backend or device is required");
+		if (!device) throw new Error("[WrGPU.ShaderBuilder] backend or device is required");
 
 		const source = String(options.source ?? "");
-		if (!source) throw new Error("[ExtWGPU.ShaderBuilder] source is required");
+		if (!source) throw new Error("[WrGPU.ShaderBuilder] source is required");
 
 		const cfg = {
 			...this.cfg,
@@ -72,7 +72,7 @@ export class ShaderBuilder {
 		};
 		const resolvedSource = this.resolve(source, keys, ctx);
 		const module = device.createShaderModule({
-			label: options.label ?? "ExtWGPUShaderModule",
+			label: options.label ?? "WrGPUShaderModule",
 			code: resolvedSource,
 		});
 
@@ -95,14 +95,14 @@ export class ShaderBuilder {
 			const raw = keys.get(key);
 			const value = typeof raw === "function" ? raw(ctx) : raw;
 			if (typeof value !== "string") {
-				throw new Error(`[ExtWGPU.ShaderBuilder] key ${key} must resolve to a string`);
+				throw new Error(`[WrGPU.ShaderBuilder] key ${key} must resolve to a string`);
 			}
 			out = out.split(key).join(value);
 		}
 
 		const unresolved = findKeys(out);
 		if (unresolved.length > 0) {
-			throw new Error(`[ExtWGPU.ShaderBuilder] unresolved keys: ${unresolved.join(", ")}`);
+			throw new Error(`[WrGPU.ShaderBuilder] unresolved keys: ${unresolved.join(", ")}`);
 		}
 		return out;
 	}

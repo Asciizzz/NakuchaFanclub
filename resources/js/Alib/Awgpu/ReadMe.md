@@ -80,7 +80,7 @@ Awgpu does not understand:
 * scene
 * world
 
-Those belong in higher layers like `ExtWGPU`
+Those belong in higher layers like `WrGPU`
 
 ## Backend
 
@@ -371,6 +371,12 @@ The useful part is putting command execution into a node graph, so render flow c
 The components are intentionally thin
 
 If something requires domain knowledge, it does not belong here
+
+## Note
+
+To control the render flow, you have two choices: via hierarchy, or via array of components on the same node
+
+For frame or renderpass cycle, a good habit is to create an empty node that has 2 children: one for starting and one for ending. You can use the starting node to set up pipelines, bind groups, buffers, etc
 
 ## File Layout
 

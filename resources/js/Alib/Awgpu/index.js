@@ -5,6 +5,7 @@ import { SetBuffers } from "./comps/buffers.js";
 import { SetBindGroups } from "./comps/bind.js";
 import { Draw, DrawIndexed, DrawIndirect, DrawIndexedIndirect } from "./comps/draw.js";
 import { Dispatch, DispatchIndirect } from "./comps/dispatch.js";
+import { CopyBufferToBuffer, CopyBufferToTexture, CopyTextureToBuffer, CopyTextureToTexture } from "./comps/copy.js";
 import { Backend } from "./backend.js";
 
 export {
@@ -23,6 +24,10 @@ export {
 	DrawIndexedIndirect,
 	Dispatch,
 	DispatchIndirect,
+	CopyBufferToBuffer,
+	CopyBufferToTexture,
+	CopyTextureToBuffer,
+	CopyTextureToTexture,
 	// Other
 	Backend,
 };
@@ -42,6 +47,10 @@ export const Awgpu = Object.freeze({
 	DrawIndexedIndirect,
 	Dispatch,
 	DispatchIndirect,
+	CopyBufferToBuffer,
+	CopyBufferToTexture,
+	CopyTextureToBuffer,
+	CopyTextureToTexture,
 	
 	Backend,
 });
