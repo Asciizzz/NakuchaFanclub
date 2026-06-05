@@ -22,9 +22,11 @@ struct GradientTime {
 }
 
 $STD_TEST_BINDINGS$
-$STD_SKIN$
-$STD_MORPH$
-$STD_SKIN_MATRIX_FN$
+$MODEL_BIND$
+$MATERIAL_BIND$
+$SKIN_BIND$
+$MORPH_BIND$
+$SKIN_FN$
 
 struct GradientOut {
 	@builtin(position) position: vec4f,
@@ -148,7 +150,7 @@ fn fs_gradient(input: GradientOut) -> @location(0) vec4f {
 }
 
 struct CubeIn {
-$STD_VERTEX_FIELDS$
+$VERTEX_FIELDS$
 	@location(7) model0: vec4f,
 	@location(8) model1: vec4f,
 	@location(9) model2: vec4f,
@@ -162,34 +164,34 @@ struct CubeOut {
 
 @vertex
 fn vs_main(input: CubeIn) -> CubeOut {
-	let model = mat4x4f(input.model0, input.model1, input.model2, input.model3);
-	let skinMat = $SKIN_MATRIX$(input.boneID, input.boneWeight);
+	let instanceModel = mat4x4f(input.model0, input.model1, input.model2, input.model3);
+	let skinMat = skinMatrix(input.boneID, input.boneWeight);
 	let morphDir = normalize(input.position);
-	let morphedPos = input.position + morphDir * $MORPH_WEIGHTS$[0];
+	let morphedPos = input.position + morphDir * morph.weights[0];
 	let skinnedPos = skinMat * vec4f(morphedPos, 1.0);
 	var out: CubeOut;
-	out.position = $VIEW_PROJ$ * model * skinnedPos;
+	out.position = scene.viewProj * model.modelMat * instanceModel * skinnedPos;
 	out.uv = input.uv;
 	return out;
 }
 
 @vertex
 fn vs_outline(input: CubeIn) -> CubeOut {
-	let model = mat4x4f(input.model0, input.model1, input.model2, input.model3);
-	let skinMat = $SKIN_MATRIX$(input.boneID, input.boneWeight);
+	let instanceModel = mat4x4f(input.model0, input.model1, input.model2, input.model3);
+	let skinMat = skinMatrix(input.boneID, input.boneWeight);
 	let morphDir = normalize(input.position);
-	let morphedPos = input.position + morphDir * $MORPH_WEIGHTS$[0];
+	let morphedPos = input.position + morphDir * morph.weights[0];
 	let skinnedPos = (skinMat * vec4f(morphedPos, 1.0)).xyz;
 	let skinnedNormal = normalize((skinMat * vec4f(morphDir, 0.0)).xyz);
 	var out: CubeOut;
-	out.position = $VIEW_PROJ$ * model * vec4f(skinnedPos + skinnedNormal * 0.075, 1.0);
+	out.position = scene.viewProj * model.modelMat * instanceModel * vec4f(skinnedPos + skinnedNormal * model.outlineThickness.x, 1.0);
 	out.uv = input.uv;
 	return out;
 }
 
 @fragment
 fn fs_main(input: CubeOut) -> @location(0) vec4f {
-	return textureSample($ALBEDO_TEXTURE$, $ALBEDO_SAMPLER$, input.uv);
+	return textureSample(albedoTexture, albedoSampler, input.uv) * material.albedoColor;
 }
 
 @fragment

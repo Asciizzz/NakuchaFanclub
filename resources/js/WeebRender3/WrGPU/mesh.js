@@ -16,6 +16,16 @@ export const STD_VERTEX_BUFFER = Object.freeze({
 	]),
 });
 
+const STD_VERTEX_FIELD_NAMES = Object.freeze([
+	"position",
+	"normal",
+	"uv",
+	"tangent",
+	"color",
+	"boneID",
+	"boneWeight",
+]);
+
 function asList(value) {
 	if (Array.isArray(value)) return value;
 	if (value == null) return [];
@@ -55,6 +65,27 @@ function resolveNode(ctx, ref) {
 	return ctx.getNode(ref);
 }
 
+function wgslTypeOf(format) {
+	if (format === "float32") return "f32";
+	if (format === "float32x2") return "vec2f";
+	if (format === "float32x3") return "vec3f";
+	if (format === "float32x4") return "vec4f";
+	if (format === "uint32") return "u32";
+	if (format === "uint32x2") return "vec2u";
+	if (format === "uint32x3") return "vec3u";
+	if (format === "uint32x4") return "vec4u";
+	if (format === "sint32") return "i32";
+	if (format === "sint32x2") return "vec2i";
+	if (format === "sint32x3") return "vec3i";
+	if (format === "sint32x4") return "vec4i";
+	return "vec4f";
+}
+
+function metaObj(root, key) {
+	if (!root[key] || typeof root[key] !== "object") root[key] = {};
+	return root[key];
+}
+
 export class Texture {
 	constructor(options = {}) {
 		this.label = String(options.label ?? options.name ?? "");
@@ -84,6 +115,43 @@ export class Material {
 		this.emissiveTexture = options.emissiveTexture ?? null;
 		this.bindGroup = options.bindGroup ?? null;
 		this.extras = options.extras ?? null;
+	}
+
+	static createStandardBind(shader, slot, options = {}) {
+		const group = Math.max(0, Number(options.group ?? 1) | 0);
+		const materialBinding = Math.max(0, Number(options.materialBinding ?? 0) | 0);
+		const textureBinding = Math.max(0, Number(options.albedoTextureBinding ?? 1) | 0);
+		const samplerBinding = Math.max(0, Number(options.albedoSamplerBinding ?? 2) | 0);
+		const structName = String(options.structName ?? "Material");
+		const name = String(options.name ?? "material");
+		const albedoColor = String(options.albedoColor ?? "albedoColor");
+		const albedoTexture = String(options.albedoTexture ?? "albedoTexture");
+		const albedoSampler = String(options.albedoSampler ?? "albedoSampler");
+
+		shader.replace(slot, `struct ${structName} {
+\t${albedoColor}: vec4f,
+}
+
+@group(${group}) @binding(${materialBinding}) var<uniform> ${name}: ${structName};
+@group(${group}) @binding(${textureBinding}) var ${albedoTexture}: texture_2d<f32>;
+@group(${group}) @binding(${samplerBinding}) var ${albedoSampler}: sampler;`);
+		const bindGroups = metaObj(shader.meta, "bindGroups");
+		const material = metaObj(shader.meta, "material");
+		bindGroups.material = {
+			group,
+			binding: materialBinding,
+			name,
+			albedoTexture: { group, binding: textureBinding, name: albedoTexture },
+			albedoSampler: { group, binding: samplerBinding, name: albedoSampler },
+		};
+		material.standard = {
+			structName,
+			name,
+			albedoColor,
+			albedoTexture,
+			albedoSampler,
+		};
+		return shader;
 	}
 }
 
@@ -130,6 +198,38 @@ export class Submesh {
 export class Mesh {
 	static STD_VERTEX_STRIDE = STD_VERTEX_STRIDE;
 	static STD_VERTEX_BUFFER = STD_VERTEX_BUFFER;
+
+	static createVertexLayout(shader, slot, options = {}) {
+		const structName = String(options.structName ?? "VertexIn");
+		const inputName = String(options.inputName ?? "input");
+		const fields = options.fields ?? {};
+		const lines = [];
+		const metaFields = {};
+		for (let i = 0; i < STD_VERTEX_BUFFER.attributes.length; i++) {
+			const attr = STD_VERTEX_BUFFER.attributes[i];
+			const fallback = STD_VERTEX_FIELD_NAMES[i] ?? `field${i}`;
+			const name = String(fields[fallback] ?? options[fallback] ?? fallback);
+			lines.push(`\t@location(${attr.shaderLocation}) ${name}: ${wgslTypeOf(attr.format)},`);
+			metaFields[fallback] = `${inputName}.${name}`;
+		}
+		shader.replace(slot, options.fieldsOnly
+			? lines.join("\n")
+			: `struct ${structName} {
+${lines.join("\n")}
+}`);
+		const vertex = metaObj(shader.meta, "vertex");
+		vertex.buffers = vertex.buffers ?? [];
+		if (!vertex.buffers.includes(STD_VERTEX_BUFFER)) {
+			vertex.buffers.push(STD_VERTEX_BUFFER);
+		}
+		vertex.structName = structName;
+		vertex.inputName = inputName;
+		vertex.fields = {
+			...(vertex.fields ?? {}),
+			...metaFields,
+		};
+		return shader;
+	}
 
 	constructor(options = {}) {
 		const usage = gpuUsage();
@@ -292,6 +392,63 @@ export class MeshDeform {
 		}
 	}
 
+	static createSkinBind(shader, slot, options = {}) {
+		const group = Math.max(0, Number(options.group ?? 2) | 0);
+		const binding = Math.max(0, Number(options.binding ?? 0) | 0);
+		const maxBones = Math.max(1, Number(options.maxBones ?? 128) | 0);
+		const structName = String(options.structName ?? "Skin");
+		const name = String(options.name ?? "skin");
+		const matrices = String(options.matrices ?? "matrices");
+		shader.replace(slot, `struct ${structName} {
+\t${matrices}: array<mat4x4f, ${maxBones}>,
+}
+
+@group(${group}) @binding(${binding}) var<storage, read> ${name}: ${structName};`);
+		const bindGroups = metaObj(shader.meta, "bindGroups");
+		const deform = metaObj(shader.meta, "deform");
+		bindGroups.skin = { group, binding, name };
+		deform.skin = { group, binding, name, structName, matrices, maxBones };
+		return shader;
+	}
+
+	static createMorphBind(shader, slot, options = {}) {
+		const group = Math.max(0, Number(options.group ?? 2) | 0);
+		const binding = Math.max(0, Number(options.binding ?? 1) | 0);
+		const maxMorphs = Math.max(1, Number(options.maxMorphs ?? 64) | 0);
+		const structName = String(options.structName ?? "Morph");
+		const name = String(options.name ?? "morph");
+		const weights = String(options.weights ?? "weights");
+		shader.replace(slot, `struct ${structName} {
+\t${weights}: array<f32, ${maxMorphs}>,
+}
+
+@group(${group}) @binding(${binding}) var<storage, read> ${name}: ${structName};`);
+		const bindGroups = metaObj(shader.meta, "bindGroups");
+		const deform = metaObj(shader.meta, "deform");
+		bindGroups.morph = { group, binding, name };
+		deform.morph = { group, binding, name, structName, weights, maxMorphs };
+		return shader;
+	}
+
+	static createSkinFn(shader, slot, options = {}) {
+		const functionName = String(options.functionName ?? "skinMatrix");
+		const deform = metaObj(shader.meta, "deform");
+		const bindName = String(options.bindName ?? deform.skin?.name ?? "skin");
+		const matrices = String(options.matrices ?? deform.skin?.matrices ?? "matrices");
+		shader.replace(slot, `fn ${functionName}(boneID: vec4f, boneWeight: vec4f) -> mat4x4f {
+\tlet i0 = u32(boneID.x);
+\tlet i1 = u32(boneID.y);
+\tlet i2 = u32(boneID.z);
+\tlet i3 = u32(boneID.w);
+\treturn ${bindName}.${matrices}[i0] * boneWeight.x
+\t\t+ ${bindName}.${matrices}[i1] * boneWeight.y
+\t\t+ ${bindName}.${matrices}[i2] * boneWeight.z
+\t\t+ ${bindName}.${matrices}[i3] * boneWeight.w;
+}`);
+		deform.skinFn = { functionName, bindName, matrices };
+		return shader;
+	}
+
 	findBone(name) {
 		return this.skeleton?.find(name) ?? null;
 	}
@@ -345,6 +502,22 @@ export class MeshDeform {
 	write() {
 		this.device?.queue?.writeBuffer?.(this.boneBuffer, 0, this.skinMatrices);
 		this.device?.queue?.writeBuffer?.(this.morphBuffer, 0, this.morphWeights);
+		return this;
+	}
+
+	ensureGpu(backend = null) {
+		const usage = gpuUsage();
+		const device = deviceOf(backend) ?? this.device;
+		if (!device || !usage) return this;
+		this.device = device;
+		const bufferUsage = usage.UNIFORM | usage.STORAGE | usage.COPY_DST;
+		if (!this.boneBuffer) {
+			this.boneBuffer = makeGPUBuffer(device, `${this.mesh?.label || "Mesh"}BoneBuffer`, this.skinMatrices, bufferUsage);
+		}
+		if (!this.morphBuffer) {
+			this.morphBuffer = makeGPUBuffer(device, `${this.mesh?.label || "Mesh"}MorphBuffer`, this.morphWeights, bufferUsage);
+		}
+		this.write();
 		return this;
 	}
 

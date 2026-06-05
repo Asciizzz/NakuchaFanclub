@@ -1,13 +1,13 @@
-import { builtInKeys, assertKeyName, findKeys } from "./keys.js";
-
 function deviceOf(backend) {
 	return backend?.device ?? backend ?? null;
 }
 
-function normalizeEntries(raw) {
-	if (!raw || typeof raw !== "object") return [];
-	if (raw instanceof Map) return Array.from(raw.entries());
-	return Object.entries(raw);
+function validSlot(slot) {
+	return typeof slot === "string" && slot.length >= 2 && slot.startsWith("$") && slot.endsWith("$");
+}
+
+function findSlots(source) {
+	return Array.from(new Set(String(source ?? "").match(/\$[^\s$]+\$/g) ?? []));
 }
 
 export class ShaderModule {
@@ -15,97 +15,89 @@ export class ShaderModule {
 		this.label = String(options.label ?? "");
 		this.backend = options.backend ?? null;
 		this.module = options.module ?? null;
-		this.source = String(options.source ?? "");
-		this.resolvedSource = String(options.resolvedSource ?? "");
-		this.vertex = options.vertex ?? {};
-		this.bindings = options.bindings ?? {};
-		this.keys = options.keys ?? {};
+		this.raw = String(options.raw ?? "");
+		this.compiled = String(options.compiled ?? "");
+		this.meta = options.meta ?? {};
 	}
 }
 
-export class ShaderBuilder {
-	constructor(options = {}) {
+export class ShaderDoc {
+	constructor(raw = "", options = {}) {
+		this.raw = String(raw ?? "");
 		this.backend = options.backend ?? null;
-		this.cfg = options.cfg ?? {};
-		this.keys = new Map(builtInKeys());
-		for (const [key, value] of normalizeEntries(options.keys)) this.key(key, value);
+		this.replacements = [];
+		this.meta = options.meta ?? {};
+		this.compiled = "";
+		this.module = null;
 	}
 
-	static create(options = {}) {
-		const builder = new ShaderBuilder(options);
-		return builder.create(options);
-	}
-
-	key(name, value) {
-		assertKeyName(name);
-		this.keys.set(String(name), value);
+	setRaw(raw) {
+		this.raw = String(raw ?? "");
 		return this;
 	}
 
-	create(options = {}) {
+	replace(slot, value) {
+		if (!validSlot(slot)) throw new Error(`[WrGPU.ShaderDoc] invalid slot "${slot}"`);
+		const current = this.#replacement(slot);
+		if (current) {
+			current.values = [String(value ?? "")];
+		} else {
+			this.replacements.push({ slot, values: [String(value ?? "")] });
+		}
+		return this;
+	}
+
+	append(slot, value) {
+		if (!validSlot(slot)) throw new Error(`[WrGPU.ShaderDoc] invalid slot "${slot}"`);
+		const current = this.#replacement(slot);
+		if (current) {
+			current.values.push(String(value ?? ""));
+		} else {
+			this.replacements.push({ slot, values: [String(value ?? "")] });
+		}
+		return this;
+	}
+
+	has(slot) {
+		return !!this.#replacement(slot);
+	}
+
+	compile(raw = this.raw) {
+		let out = String(raw ?? "");
+		for (const item of this.replacements) {
+			out = out.split(item.slot).join(item.values.join("\n"));
+		}
+		const unresolved = findSlots(out);
+		if (unresolved.length > 0) {
+			throw new Error(`[WrGPU.ShaderDoc] unresolved slots: ${unresolved.join(", ")}`);
+		}
+		this.compiled = out;
+		return out;
+	}
+
+	createModule(options = {}) {
 		const backend = options.backend ?? this.backend;
 		const device = deviceOf(backend);
-		if (!device) throw new Error("[WrGPU.ShaderBuilder] backend or device is required");
-
-		const source = String(options.source ?? "");
-		if (!source) throw new Error("[WrGPU.ShaderBuilder] source is required");
-
-		const cfg = {
-			...this.cfg,
-			...(options.cfg ?? {}),
-		};
-		const keys = new Map(this.keys);
-		for (const [key, value] of normalizeEntries(options.keys)) {
-			assertKeyName(key);
-			keys.set(String(key), value);
-		}
-
-		const meta = {
-			bindings: {},
-		};
-		const ctx = {
-			backend,
-			device,
-			cfg,
-			meta,
-			builder: this,
-		};
-		const resolvedSource = this.resolve(source, keys, ctx);
+		if (!device) throw new Error("[WrGPU.ShaderDoc] backend or device is required");
+		const compiled = this.compile();
 		const module = device.createShaderModule({
 			label: options.label ?? "WrGPUShaderModule",
-			code: resolvedSource,
+			code: compiled,
 		});
-
+		this.module = module;
 		return new ShaderModule({
 			label: options.label,
 			backend,
 			module,
-			source,
-			resolvedSource,
-			vertex: options.vertex ?? {},
-			bindings: meta.bindings,
-			keys: Object.fromEntries(keys),
+			raw: this.raw,
+			compiled,
+			meta: this.meta,
 		});
 	}
 
-	resolve(source, keys, ctx) {
-		let out = String(source ?? "");
-		for (const key of findKeys(out)) {
-			if (!keys.has(key)) continue;
-			const raw = keys.get(key);
-			const value = typeof raw === "function" ? raw(ctx) : raw;
-			if (typeof value !== "string") {
-				throw new Error(`[WrGPU.ShaderBuilder] key ${key} must resolve to a string`);
-			}
-			out = out.split(key).join(value);
-		}
-
-		const unresolved = findKeys(out);
-		if (unresolved.length > 0) {
-			throw new Error(`[WrGPU.ShaderBuilder] unresolved keys: ${unresolved.join(", ")}`);
-		}
-		return out;
+	#replacement(slot) {
+		return this.replacements.find((item) => item.slot === slot) ?? null;
 	}
 }
 
-export default ShaderBuilder;
+export default ShaderDoc;
