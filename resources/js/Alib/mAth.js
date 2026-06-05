@@ -1,4 +1,4 @@
-/* Azm (Math)
+/* mAth (Math)
 By Asciiz
 
 Lightweight mathlib for Float32Array vectors/matrices/quater-onions(yummers)
@@ -888,7 +888,7 @@ Mat4.transformV4 = function(m, v, out = null) {
     return out;
 };
 
-export const Azm = {
+export const mAth = {
     // Constants
     EPSILON,
     DEG2RAD,
@@ -902,7 +902,7 @@ export const Azm = {
 };
 
 if (typeof window !== "undefined") {
-    window.Azm = Azm;
+    window.mAth = mAth;
 }
 
-export default Azm;
+export default mAth;

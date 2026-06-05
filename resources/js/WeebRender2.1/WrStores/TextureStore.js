@@ -1,6 +1,6 @@
 import WrStore from "../WrStore.js";
 import { WrTexture } from "../WrAssets/Texture.js";
-import AzWGPU from "../../AzLib/AzWGPU.js";
+import Awgpu from "../WrGPU.js";
 
 function asId(value) {
 	if (value && typeof value === "object") return asId(value.ref?.id ?? value.id ?? value.hash);
@@ -144,7 +144,7 @@ export class WrTextureStore extends WrStore {
 				);
 			}
 		} else if (source && backend.device?.queue?.copyExternalImageToTexture) {
-			AzWGPU.Texture.writeExternal(backend.device, gpuTexture, source, {
+			Awgpu.Texture.writeExternal(backend.device, gpuTexture, source, {
 				width,
 				height,
 				flipY: false,

@@ -1,7 +1,7 @@
-/* AzWGL2
+/* Awgl2
 By Asciiz
 
-webgl2 sidekick for AzWGPU
+webgl2 sidekick for Awgpu
 No compute wizardry here, just practical render helpers
 
 #Context:
@@ -137,7 +137,7 @@ No compute wizardry here, just practical render helpers
 */
 
 function typeErrorWGL2(message) {
-	return new TypeError("[AzWGL2] " + String(message ?? "Type error"));
+	return new TypeError("[Awgl2] " + String(message ?? "Type error"));
 }
 
 // ------ Context ------
@@ -2387,7 +2387,7 @@ export class Timer {
 }
 
 
-export const AzWGL2 = {
+export const Awgl2 = {
 	Context,
 	Shader,
 	Buffer,
@@ -2408,10 +2408,10 @@ export const AzWGL2 = {
 };
 
 if (typeof window !== "undefined") {
-	window.AzWGL2 = AzWGL2;
+	window.Awgl2 = Awgl2;
 }
 
-export default AzWGL2;
+export default Awgl2;
 
 
 

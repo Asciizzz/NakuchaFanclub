@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx.js";
+import { Component } from "../../AwDAG.js";
 
 function hasOwn(obj, key) {
 	return Object.prototype.hasOwnProperty.call(obj, key);
@@ -32,7 +32,7 @@ function normalizeColorAttachments(value) {
 	});
 }
 
-export class RenderPass extends WrComponent {
+export class RenderPass extends Component {
 	options = null;
 
 	constructor(options = {}) {
@@ -63,7 +63,7 @@ export class RenderPass extends WrComponent {
 	}
 }
 
-export class ComputePass extends WrComponent {
+export class ComputePass extends Component {
 	options = null;
 
 	constructor(options = {}) {
@@ -83,7 +83,7 @@ export class ComputePass extends WrComponent {
 	}
 }
 
-export class EndPass extends WrComponent {
+export class EndPass extends Component {
 	exec(state) {
 		if (!state.pass) return;
 		state.pass.end();
@@ -92,4 +92,5 @@ export class EndPass extends WrComponent {
 		state.pipeline = null;
 	}
 }
+
 

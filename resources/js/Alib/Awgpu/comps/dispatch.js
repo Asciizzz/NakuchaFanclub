@@ -1,10 +1,10 @@
-import { WrComponent } from "../../WrCtx.js";
+import { Component } from "../../AwDAG.js";
 
 function uint(value, fallback = 1) {
 	return Math.max(1, Number(value ?? fallback) | 0);
 }
 
-export class Dispatch extends WrComponent {
+export class Dispatch extends Component {
 	x = 1;
 	y = 1;
 	z = 1;
@@ -23,7 +23,7 @@ export class Dispatch extends WrComponent {
 	}
 }
 
-export class DispatchIndirect extends WrComponent {
+export class DispatchIndirect extends Component {
 	buffer = null;
 	offset = 0;
 
@@ -39,4 +39,5 @@ export class DispatchIndirect extends WrComponent {
 		state.pass.dispatchWorkgroupsIndirect(this.buffer, this.offset);
 	}
 }
+
 

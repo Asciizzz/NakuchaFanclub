@@ -1,7 +1,9 @@
-import { AzCamera } from "../AzLib/AzCamera.js";
-import * as Azm from "../AzLib/Azm.js";
+import { Acamera } from "../Alib/Acamera.js";
+import * as mAth from "../Alib/mAth.js";
+import { Awgpu } from "../Alib/Awgpu/index.js";
+import { Ctx } from "../Alib/AwDAG.js";
 import { FCamera } from "./FCamera.js";
-import { ExtWGPU, Other, WrCtx, WrWGPU } from "../WeebRender3/index.js";
+import { ExtWGPU, Other } from "../WeebRender3/index.js";
 
 const container = document.getElementById("main-canvas");
 const INSTANCE_COUNT = 3;
@@ -108,11 +110,11 @@ async function loadShaderCode() {
 async function run() {
 	// ---------- Runtime
 	const canvas = createCanvas();
-	const backend = await WrWGPU.Backend.create(canvas);
+	const backend = await Awgpu.Backend.create(canvas);
 	const device = backend.device;
 	const usage = GPUBufferUsage;
 
-	const camera = new AzCamera({
+	const camera = new Acamera({
 		position: [0, 1.25, 5],
 		near: 0.1,
 		far: 100,
@@ -420,55 +422,55 @@ async function run() {
 	new ResizeObserver(resize).observe(container);
 
 	// ---------- Render graph
-	const ctx = new WrCtx();
+	const ctx = new Ctx();
 	const root = ctx.addNode();
-	root.addComp(new WrWGPU.BeginFrame());
+	root.addComp(new Awgpu.BeginFrame());
 
 	const gradientCycle = root.addChild();
 	const gradientPass = gradientCycle.addChild();
-	gradientPass.addComp(new WrWGPU.RenderPass(gradient.passOptions));
+	gradientPass.addComp(new Awgpu.RenderPass(gradient.passOptions));
 
 	const gradientDraw = gradientPass.addChild();
-	gradientDraw.addComp(new WrWGPU.UsePipeline(gradient.pipeline));
-	gradientDraw.addComp(new WrWGPU.SetBindGroups([
+	gradientDraw.addComp(new Awgpu.UsePipeline(gradient.pipeline));
+	gradientDraw.addComp(new Awgpu.SetBindGroups([
 		{ index: 0, bindGroup: gradient.bindGroup },
 	]));
-	gradientDraw.addComp(new WrWGPU.Draw({ vertexCount: 3 }));
+	gradientDraw.addComp(new Awgpu.Draw({ vertexCount: 3 }));
 
 	const gradientEnd = gradientCycle.addChild();
-	gradientEnd.addComp(new WrWGPU.EndPass());
+	gradientEnd.addComp(new Awgpu.EndPass());
 
 	const computeCycle = root.addChild();
 	const compute = computeCycle.addChild();
-	compute.addComp(new WrWGPU.ComputePass({ label: "compute-instances" }));
-	compute.addComp(new WrWGPU.UsePipeline(instanceCompute.pipeline));
-	compute.addComp(new WrWGPU.SetBindGroups([
+	compute.addComp(new Awgpu.ComputePass({ label: "compute-instances" }));
+	compute.addComp(new Awgpu.UsePipeline(instanceCompute.pipeline));
+	compute.addComp(new Awgpu.SetBindGroups([
 		{ index: 0, bindGroup: instanceCompute.bindGroup },
 	]));
-	compute.addComp(new WrWGPU.Dispatch({ x: 1 }));
+	compute.addComp(new Awgpu.Dispatch({ x: 1 }));
 
 	const computeEnd = computeCycle.addChild();
-	computeEnd.addComp(new WrWGPU.EndPass());
+	computeEnd.addComp(new Awgpu.EndPass());
 
 	const mainCycle = root.addChild();
 	const pass = mainCycle.addChild();
-	pass.addComp(new WrWGPU.RenderPass({
+	pass.addComp(new Awgpu.RenderPass({
 		clearColor: [0, 0, 0, 1],
 		clearDepth: 1,
 		useDepth: true,
 	}));
 
 	const outlineShader = pass.addChild();
-	outlineShader.addComp(new WrWGPU.UsePipeline(outlineRender.pipeline));
+	outlineShader.addComp(new Awgpu.UsePipeline(outlineRender.pipeline));
 
 	const mainShader = pass.addChild();
-	mainShader.addComp(new WrWGPU.UsePipeline(mainRender.pipeline));
+	mainShader.addComp(new Awgpu.UsePipeline(mainRender.pipeline));
 
 	const cubeState = ctx.addNode();
 	outlineShader.linkChild(cubeState);
 	mainShader.linkChild(cubeState);
-	cubeState.addComp(new WrWGPU.SetBindGroups([cubeRender.bindEntry]));
-	cubeState.addComp(new WrWGPU.SetBuffers({
+	cubeState.addComp(new Awgpu.SetBindGroups([cubeRender.bindEntry]));
+	cubeState.addComp(new Awgpu.SetBuffers({
 		vertex: [
 			{ slot: 1, buffer: instanceCompute.instanceBuffer },
 		],
@@ -479,10 +481,10 @@ async function run() {
 	});
 
 	const mainEnd = mainCycle.addChild();
-	mainEnd.addComp(new WrWGPU.EndPass());
+	mainEnd.addComp(new Awgpu.EndPass());
 
 	const frameEnd = root.addChild();
-	frameEnd.addComp(new WrWGPU.EndFrame());
+	frameEnd.addComp(new Awgpu.EndFrame());
 
 	// ---------- Frame loop
 	const topBoneMatrix = new Float32Array(16);
@@ -492,7 +494,7 @@ async function run() {
 		last = now;
 		fcam.update(dt);
 
-		const viewProj = Azm.Mat4.mul(camera.projection, camera.view);
+		const viewProj = mAth.Mat4.mul(camera.projection, camera.view);
 		device.queue.writeBuffer(cubeRender.sceneBuffer, 0, viewProj);
 
 		gradient.time[0] = now * 0.001;
@@ -507,8 +509,8 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
-		cubeDeform.setWorldBone(0, Azm.Mat4.IDENTITY);
-		Azm.Mat4.fromTranslation([
+		cubeDeform.setWorldBone(0, mAth.Mat4.IDENTITY);
+		mAth.Mat4.fromTranslation([
 			Math.sin(now * 0.0021) * 0.32,
 			Math.sin(now * 0.0013) * 0.08,
 			Math.cos(now * 0.0017) * 0.12,

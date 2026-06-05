@@ -44,7 +44,7 @@
 	<div id="hud">init</div>
 	<script type="module">
 		import { WrBackend } from "../WeebRender2.1/WrBackend.js";
-		import { AzCamera } from "../AzLib/AzCamera.js";
+		import { Acamera } from "../Alib/Acamera.js";
 		import { GrassField, SkyObject } from "./GrassField.js";
 
 		const root = document.getElementById("root");
@@ -57,7 +57,7 @@
 		const { backend, report } = await WrBackend.Base.choose(canvas, { prefer: "webgpu" });
 		if (backend.kind !== "webgpu") throw new Error("This test requires WebGPU");
 
-		const camera = new AzCamera({ position: [0, 1.2, 2.6], near: 0.1, far: 200, fov: 50 });
+		const camera = new Acamera({ position: [0, 1.2, 2.6], near: 0.1, far: 200, fov: 50 });
 		let yaw = 0;
 		let pitch = 0;
 		camera.setYawPitch(yaw, pitch, 0);

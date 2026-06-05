@@ -1,4 +1,4 @@
-import { Ctx, Node } from "../../AzLib/AzHie.js";
+import { Ctx, Node } from "../../Alib/Atree.js";
 import { Component } from "./component.js";
 
 const WR_NODE_STATIC_KEYS = new Set(["ctx", "id", "parentId", "childIds", "components"]);

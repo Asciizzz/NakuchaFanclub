@@ -1,4 +1,4 @@
-import { AzCamera } from "../AzLib/AzCamera.js";
+import { Acamera } from "../Alib/Acamera.js";
 
 function toNumber(value, fallback) {
 	const n = Number(value);
@@ -57,7 +57,7 @@ function mergeCfg(base, next) {
 export class FCamera {
 	constructor(options = {}) {
 		this.canvas = options.canvas ?? null;
-		this.camera = options.camera ?? new AzCamera(options.cameraOptions ?? {});
+		this.camera = options.camera ?? new Acamera(options.cameraOptions ?? {});
 		this.cfg = mergeCfg(defaultCfg(this.camera), options.cfg ?? {});
 		this.enabled = !!this.cfg.enabled;
 		this.cfg.camera.ref = this.camera;

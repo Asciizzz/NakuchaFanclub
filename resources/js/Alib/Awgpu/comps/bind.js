@@ -1,6 +1,6 @@
-import { WrComponent } from "../../WrCtx.js";
+import { Component } from "../../AwDAG.js";
 
-export class SetBindGroups extends WrComponent {
+export class SetBindGroups extends Component {
 	groups = [];
 
 	constructor(groups = [], options = {}) {
@@ -21,4 +21,5 @@ export class SetBindGroups extends WrComponent {
 		}
 	}
 }
+
 

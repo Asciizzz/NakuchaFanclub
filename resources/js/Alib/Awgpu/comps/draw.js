@@ -1,6 +1,6 @@
-import { WrComponent } from "../../WrCtx.js";
+import { Component } from "../../AwDAG.js";
 
-export class Draw extends WrComponent {
+export class Draw extends Component {
 	vertexCount = 0;
 	instanceCount = 1;
 	firstVertex = 0;
@@ -21,7 +21,7 @@ export class Draw extends WrComponent {
 	}
 }
 
-export class DrawIndexed extends WrComponent {
+export class DrawIndexed extends Component {
 	indexCount = 0;
 	instanceCount = 1;
 	firstIndex = 0;
@@ -44,7 +44,7 @@ export class DrawIndexed extends WrComponent {
 	}
 }
 
-export class DrawIndirect extends WrComponent {
+export class DrawIndirect extends Component {
 	buffer = null;
 	offset = 0;
 
@@ -63,7 +63,7 @@ export class DrawIndirect extends WrComponent {
 	}
 }
 
-export class DrawIndexedIndirect extends WrComponent {
+export class DrawIndexedIndirect extends Component {
 	buffer = null;
 	offset = 0;
 
@@ -81,4 +81,5 @@ export class DrawIndexedIndirect extends WrComponent {
 		state.pass.drawIndexedIndirect(indirect.buffer, indirect.offset ?? 0);
 	}
 }
+
 

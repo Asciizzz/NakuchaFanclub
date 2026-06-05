@@ -1,5 +1,5 @@
 /*
-AzDAG
+ADAG
 By Asciiz
 
 Lightweight directed acyclic graph context
@@ -33,7 +33,7 @@ function uniquePush(list, value, index = -1) {
 	return true;
 }
 
-const AZDAG_CHECK = Object.freeze({
+const Adag_CHECK = Object.freeze({
 	SKIP_CALL: 1 << 0,
 	SKIP_YIELD: 1 << 1,
 	TERMINATE: 1 << 2,
@@ -122,7 +122,7 @@ export class Node {
 }
 
 export class Ctx {
-	static CHECK = AZDAG_CHECK;
+	static CHECK = Adag_CHECK;
 
 	#nodes = new Map();
 	#version = 0;
@@ -446,13 +446,13 @@ export class Ctx {
 	}
 }
 
-export const AzDAG = {
+export const ADAG = {
 	Node,
 	Ctx,
 };
 
 if (typeof window !== "undefined") {
-	window.AzDAG = AzDAG;
+	window.ADAG = ADAG;
 }
 
-export default AzDAG;
+export default ADAG;

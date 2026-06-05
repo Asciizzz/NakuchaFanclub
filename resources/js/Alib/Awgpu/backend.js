@@ -1,5 +1,3 @@
-import AzWGPU from "../../AzLib/AzWGPU.js";
-
 function resolveCanvas(canvasRef) {
 	if (!canvasRef) return null;
 	if (typeof HTMLCanvasElement !== "undefined" && canvasRef instanceof HTMLCanvasElement) return canvasRef;
@@ -54,14 +52,19 @@ export class Backend {
 	}
 
 	async init() {
-		if (!this.canvas) throw new Error("[WrWGPU.Backend] canvas is required");
-		const pick = await AzWGPU.Adapter.pickBest(this.options.pickBest ?? {});
-		const adapter = pick.adapter ?? pick;
-		const device = await AzWGPU.Device.create(adapter, this.options.device ?? {});
-		const format = this.options.format ?? AzWGPU.Format.preferredCanvas();
-		const context = AzWGPU.Context.create(device, this.canvas, {
+		if (!this.canvas) throw new Error("[Awgpu.Backend] canvas is required");
+		if (!navigator?.gpu) throw new Error("[Awgpu.Backend] WebGPU is not available");
+		const adapter = await navigator.gpu.requestAdapter(this.options.pickBest ?? {});
+		if (!adapter) throw new Error("[Awgpu.Backend] adapter request failed");
+		const device = await adapter.requestDevice(this.options.device ?? {});
+		const format = this.options.format ?? navigator.gpu.getPreferredCanvasFormat();
+		const context = this.canvas.getContext("webgpu");
+		if (!context) throw new Error("[Awgpu.Backend] canvas webgpu context is required");
+		context.configure({
 			...(this.options.context ?? {}),
+			device,
 			format,
+			alphaMode: this.options.context?.alphaMode ?? "premultiplied",
 		});
 		this.adapter = adapter;
 		this.device = device;
@@ -83,7 +86,7 @@ export class Backend {
 		if (this.canvas.width === width && this.canvas.height === height) return false;
 		this.canvas.width = width;
 		this.canvas.height = height;
-		AzWGPU.Context.reconfigure(this.context, {
+		this.context.configure({
 			device: this.device,
 			format: this.format,
 			alphaMode: this.options.context?.alphaMode ?? "premultiplied",
@@ -92,7 +95,7 @@ export class Backend {
 		return true;
 	}
 
-	createEncoder(label = "Wr3Frame") {
+	createEncoder(label = "AwgpuFrame") {
 		if (!this.device) return null;
 		return this.device.createCommandEncoder({ label });
 	}
@@ -147,7 +150,7 @@ export class Backend {
 		}
 		this.releaseDepth();
 		this.depth.texture = this.device.createTexture({
-			label: "Wr3Depth",
+			label: "AwgpuDepth",
 			size: [width, height, 1],
 			format: this.depthFormat,
 			usage: globalThis.GPUTextureUsage.RENDER_ATTACHMENT,
@@ -170,7 +173,7 @@ export class Backend {
 	destroy() {
 		if (this.context) {
 			try {
-				AzWGPU.Context.unconfigure(this.context);
+				this.context.unconfigure?.();
 			} catch (_error) {}
 		}
 		this.ready = false;

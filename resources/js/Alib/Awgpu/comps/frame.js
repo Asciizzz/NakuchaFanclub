@@ -1,6 +1,6 @@
-import { WrComponent } from "../../WrCtx.js";
+import { Component } from "../../AwDAG.js";
 
-export class BeginFrame extends WrComponent {
+export class BeginFrame extends Component {
 	label = "Wr3Frame";
 
 	constructor(options = {}) {
@@ -15,7 +15,7 @@ export class BeginFrame extends WrComponent {
 	}
 }
 
-export class EndFrame extends WrComponent {
+export class EndFrame extends Component {
 	exec(state) {
 		if (state.encoder && !state.ended) {
 			state.backend.submit(state.encoder);
@@ -23,4 +23,5 @@ export class EndFrame extends WrComponent {
 		}
 	}
 }
+
 

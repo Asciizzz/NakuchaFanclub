@@ -56,8 +56,8 @@ It doesn't give a fck what a 3d even it
 	+ destroy()
 */
 
-import AzWGPU from "../AzLib/AzWGPU.js";
-import AzWGL2 from "../AzLib/AzWGL2.js";
+import Awgpu from "./WrGPU.js";
+import Awgl2 from "./WrGL2.js";
 
 const AZ_WGPU_DEPTH_FORMAT = "depth24plus";
 
@@ -362,11 +362,11 @@ export class WGPU extends Base {
 	async init() {
 		if (!this.canvas) throw new Error("[WrBackendWGPU] canvas is required");
 
-		const pick = await AzWGPU.Adapter.pickBest(this.options.pickBest ?? {});
+		const pick = await Awgpu.Adapter.pickBest(this.options.pickBest ?? {});
 		const adapter = pick.adapter ?? pick;
-		const device = await AzWGPU.Device.create(adapter, this.options.device ?? {});
-		const format = this.options.format ?? AzWGPU.Format.preferredCanvas();
-		const context = AzWGPU.Context.create(device, this.canvas, {
+		const device = await Awgpu.Device.create(adapter, this.options.device ?? {});
+		const format = this.options.format ?? Awgpu.Format.preferredCanvas();
+		const context = Awgpu.Context.create(device, this.canvas, {
 			...(this.options.context ?? {}),
 			format,
 		});
@@ -381,8 +381,8 @@ export class WGPU extends Base {
 			format,
 			pickScore: pick.score ?? null,
 			pickRequest: pick.request ?? null,
-			adapter: AzWGPU.Adapter.getCapabilities(adapter),
-			limits: AzWGPU.Limits.inspect(adapter),
+			adapter: Awgpu.Adapter.getCapabilities(adapter),
+			limits: Awgpu.Limits.inspect(adapter),
 			features: Array.from(adapter.features ?? []),
 		};
 		return this;
@@ -403,7 +403,7 @@ export class WGPU extends Base {
 		this.canvas.width = size.width;
 		this.canvas.height = size.height;
 
-		AzWGPU.Context.reconfigure(this.context, {
+		Awgpu.Context.reconfigure(this.context, {
 			device: this.device,
 			format: this.format,
 			alphaMode: this.options.context?.alphaMode ?? "premultiplied",
@@ -427,7 +427,7 @@ export class WGPU extends Base {
 			...Base.normalizeFrameOptions(source),
 			sampleCount: normalizeSampleCount(source.sampleCount ?? this.sampleCount, this.sampleCount),
 		};
-		this.#encoder = AzWGPU.Command.createEncoder(this.device, "AzFrame");
+		this.#encoder = Awgpu.Command.createEncoder(this.device, "AzFrame");
 		this.#targets.colorView = this.context.getCurrentTexture().createView();
 		return this.#frame;
 	}
@@ -446,7 +446,7 @@ export class WGPU extends Base {
 			clearColor: options.clearColor ? Base.normalizeClearColor(options.clearColor) : frame.clearColor,
 		};
 		merged.sampleCount = normalizeSampleCount(merged.sampleCount ?? this.sampleCount, this.sampleCount);
-		return AzWGPU.Pass.beginRender(this.#encoder, this.#passDescriptor(merged));
+		return Awgpu.Pass.beginRender(this.#encoder, this.#passDescriptor(merged));
 	}
 
 	/**
@@ -465,8 +465,8 @@ export class WGPU extends Base {
 	 */
 	endFrame() {
 		if (!this.ready || !this.device || !this.#encoder) return;
-		const command = AzWGPU.Command.finish(this.#encoder);
-		AzWGPU.Command.submit(this.device, [command]);
+		const command = Awgpu.Command.finish(this.#encoder);
+		Awgpu.Command.submit(this.device, [command]);
 		this.#encoder = null;
 		this.#frame = null;
 		this.#targets.colorView = null;
@@ -482,7 +482,7 @@ export class WGPU extends Base {
 		}
 		if (this.context) {
 			try {
-				AzWGPU.Context.unconfigure(this.context);
+				Awgpu.Context.unconfigure(this.context);
 			} catch (_error) {}
 		}
 		this.#releaseMsaaColorTarget();
@@ -549,7 +549,7 @@ export class WGPU extends Base {
 		if (state.view && sameSize && sameSamples) return state.view;
 
 		this.#releaseMsaaColorTarget();
-		state.texture = AzWGPU.Texture.create2D(this.device, {
+		state.texture = Awgpu.Texture.create2D(this.device, {
 			label: "AzMsaaColor",
 			width,
 			height,
@@ -557,7 +557,7 @@ export class WGPU extends Base {
 			sampleCount,
 			usage: globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10,
 		});
-		state.view = AzWGPU.Texture.createView(state.texture, { dimension: "2d" });
+		state.view = Awgpu.Texture.createView(state.texture, { dimension: "2d" });
 		state.width = width;
 		state.height = height;
 		state.sampleCount = sampleCount;
@@ -595,7 +595,7 @@ export class WGPU extends Base {
 		}
 
 		this.#releaseDepthTarget();
-		state.texture = AzWGPU.Texture.create2D(this.device, {
+		state.texture = Awgpu.Texture.create2D(this.device, {
 			label: "AzDepth",
 			width,
 			height,
@@ -603,7 +603,7 @@ export class WGPU extends Base {
 			sampleCount: normalizedSamples,
 			usage: globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10,
 		});
-		state.view = AzWGPU.Texture.createView(state.texture, { dimension: "2d" });
+		state.view = Awgpu.Texture.createView(state.texture, { dimension: "2d" });
 		state.width = width;
 		state.height = height;
 		state.sampleCount = normalizedSamples;
@@ -633,7 +633,7 @@ export class WGPU extends Base {
 	 */
 	createShaderModule(descriptor) {
 		if (!this.device || !descriptor) return null;
-		return AzWGPU.Shader.create(this.device, descriptor);
+		return Awgpu.Shader.create(this.device, descriptor);
 	}
 
 	/**
@@ -643,7 +643,7 @@ export class WGPU extends Base {
 	 */
 	createRenderPipeline(descriptor) {
 		if (!this.device || !descriptor) return null;
-		return AzWGPU.Pipeline.createRender(this.device, descriptor);
+		return Awgpu.Pipeline.createRender(this.device, descriptor);
 	}
 
 	/**
@@ -653,7 +653,7 @@ export class WGPU extends Base {
 	 */
 	createComputePipeline(descriptor) {
 		if (!this.device || !descriptor) return null;
-		return AzWGPU.Pipeline.createCompute(this.device, descriptor);
+		return Awgpu.Pipeline.createCompute(this.device, descriptor);
 	}
 
 	/**
@@ -663,7 +663,7 @@ export class WGPU extends Base {
 	 */
 	createBindGroupLayout(descriptor) {
 		if (!this.device || !descriptor) return null;
-		return AzWGPU.BindGroup.createLayout(this.device, descriptor);
+		return Awgpu.BindGroup.createLayout(this.device, descriptor);
 	}
 
 	/**
@@ -673,7 +673,7 @@ export class WGPU extends Base {
 	 */
 	createBindGroup(descriptor) {
 		if (!this.device || !descriptor) return null;
-		return AzWGPU.BindGroup.create(this.device, descriptor);
+		return Awgpu.BindGroup.create(this.device, descriptor);
 	}
 
 	/**
@@ -683,7 +683,7 @@ export class WGPU extends Base {
 	 */
 	createBuffer(descriptor) {
 		if (!this.device || !descriptor) return null;
-		return AzWGPU.Buffer.create(this.device, descriptor);
+		return Awgpu.Buffer.create(this.device, descriptor);
 	}
 
 	/**
@@ -695,7 +695,7 @@ export class WGPU extends Base {
 	 */
 	writeBuffer(buffer, data, offset = 0) {
 		if (!this.device || !buffer || !data) return false;
-		AzWGPU.Buffer.write(this.device, buffer, data, offset);
+		Awgpu.Buffer.write(this.device, buffer, data, offset);
 		return true;
 	}
 
@@ -706,7 +706,7 @@ export class WGPU extends Base {
 	 */
 	createTexture2D(options = {}) {
 		if (!this.device) return null;
-		return AzWGPU.Texture.create2D(this.device, options);
+		return Awgpu.Texture.create2D(this.device, options);
 	}
 
 	/**
@@ -719,7 +719,7 @@ export class WGPU extends Base {
 	 */
 	writeTexture(texture, source, layout, size) {
 		if (!this.device || !texture || !source || !layout || !size) return false;
-		AzWGPU.Texture.write(this.device, texture, source, layout, size);
+		Awgpu.Texture.write(this.device, texture, source, layout, size);
 		return true;
 	}
 
@@ -730,7 +730,7 @@ export class WGPU extends Base {
 	 */
 	createSampler(descriptor = {}) {
 		if (!this.device) return null;
-		return AzWGPU.Sampler.create(this.device, descriptor);
+		return Awgpu.Sampler.create(this.device, descriptor);
 	}
 
 }
@@ -770,7 +770,7 @@ export class WGL2 extends Base {
 		const alpha = contextSource.alpha ?? this.options.alpha ?? true;
 		const depth = contextSource.depth ?? this.options.depth ?? true;
 
-		const gl = AzWGL2.Context.create(this.canvas, {
+		const gl = Awgl2.Context.create(this.canvas, {
 			...(this.options ?? {}),
 			...contextSource,
 			alpha,
@@ -783,7 +783,7 @@ export class WGL2 extends Base {
 		const attrs = gl.getContextAttributes?.() ?? {};
 		this.report = {
 			kind: this.kind,
-			info: AzWGL2.Context.info(gl),
+			info: Awgl2.Context.info(gl),
 			context: {
 				alpha: !!attrs.alpha,
 				depth: !!attrs.depth,
@@ -791,8 +791,8 @@ export class WGL2 extends Base {
 				antialias: !!attrs.antialias,
 				preserveDrawingBuffer: !!attrs.preserveDrawingBuffer,
 			},
-			limits: AzWGL2.Limits.inspect(gl),
-			timer: AzWGL2.Timer.supportInfo(gl),
+			limits: Awgl2.Limits.inspect(gl),
+			timer: Awgl2.Timer.supportInfo(gl),
 		};
 		return this;
 	}
@@ -893,7 +893,7 @@ export class WGL2 extends Base {
 	 */
 	createShaderProgram(descriptor) {
 		if (!this.gl || !descriptor) return null;
-		return AzWGL2.Shader.create(this.gl, descriptor);
+		return Awgl2.Shader.create(this.gl, descriptor);
 	}
 
 	/**
@@ -903,7 +903,7 @@ export class WGL2 extends Base {
 	 */
 	createPipeline(options = {}) {
 		if (!this.gl) return null;
-		return AzWGL2.Pipeline.create(this.gl, options);
+		return Awgl2.Pipeline.create(this.gl, options);
 	}
 
 	/**
@@ -913,7 +913,7 @@ export class WGL2 extends Base {
 	 */
 	createTexture2D(options = {}) {
 		if (!this.gl) return null;
-		return AzWGL2.Texture.create2D(this.gl, options);
+		return Awgl2.Texture.create2D(this.gl, options);
 	}
 
 	/**
@@ -925,7 +925,7 @@ export class WGL2 extends Base {
 	 */
 	writeTexture2D(texture, source, options = {}) {
 		if (!this.gl || !texture || !source) return false;
-		AzWGL2.Texture.write2D(this.gl, texture, source, options);
+		Awgl2.Texture.write2D(this.gl, texture, source, options);
 		return true;
 	}
 

@@ -1,4 +1,4 @@
-import * as Azm from "../AzLib/Azm.js";
+import * as mAth from "../Alib/mAth.js";
 
 class GrassTexture {
 	constructor(owner) {
@@ -478,8 +478,8 @@ fn fs_main(input: VSOut) -> @location(0) vec4f {
 		const backend = this.backend;
 		if (!backend || backend.kind !== "webgpu" || !backend.ready || !this.camera) return false;
 		if (!this.createEngine(cfg)) return false;
-		const vp = Azm.Mat4.mul(this.camera.projection, this.camera.view);
-		const invVp = Azm.Mat4.invert(vp);
+		const vp = mAth.Mat4.mul(this.camera.projection, this.camera.view);
+		const invVp = mAth.Mat4.invert(vp);
 		if (!invVp) return false;
 		this.uniformData.set(invVp, 0);
 		this.uniformData[16] = this.camera.position[0];
@@ -831,7 +831,7 @@ export class GrassField {
 			bindGroup: null,
 			uniformBuffer: null,
 			uniformData: new Float32Array(56),
-			modelMatrix: Azm.Mat4.makeIdentity(),
+			modelMatrix: mAth.Mat4.makeIdentity(),
 			gridCountX: 640,
 			gridCountZ: 640,
 			gridSpacing: 0.2,
@@ -991,7 +991,7 @@ export class GrassField {
 	}
 
 	#writeSceneUniform(simCfg) {
-		const viewProj = Azm.Mat4.mul(this.camera.projection, this.camera.view);
+		const viewProj = mAth.Mat4.mul(this.camera.projection, this.camera.view);
 		this.scene.uniformData.set(viewProj, 0);
 		this.scene.uniformData.set(this.scene.modelMatrix, 16);
 		const halfExtentX = this.scene.gridCountX * this.scene.gridSpacing * 0.5;

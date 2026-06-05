@@ -1,6 +1,6 @@
-import { WrComponent } from "../../WrCtx.js";
+import { Component } from "../../AwDAG.js";
 
-export class UsePipeline extends WrComponent {
+export class UsePipeline extends Component {
 	pipeline = null;
 
 	constructor(pipeline, options = {}) {
@@ -14,4 +14,5 @@ export class UsePipeline extends WrComponent {
 		state.pipeline = this.pipeline;
 	}
 }
+
 

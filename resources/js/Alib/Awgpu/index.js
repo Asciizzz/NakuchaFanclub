@@ -27,7 +27,7 @@ export {
 	Backend,
 };
 
-export const WrWGPU = Object.freeze({
+export const Awgpu = Object.freeze({
 	BeginFrame,
 	EndFrame,
 	RenderPass,
@@ -46,4 +46,4 @@ export const WrWGPU = Object.freeze({
 	Backend,
 });
 
-export default WrWGPU;
+export default Awgpu;

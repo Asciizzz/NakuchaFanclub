@@ -1,10 +1,10 @@
-import { Ctx, Node } from "../AzLib/AzDAG.js";
+import { Ctx as BaseCtx, Node as BaseNode } from "./ADAG.js";
 
 function isComp(value) {
 	return value && typeof value === "object";
 }
 
-export class WrComponent {
+export class Component {
 	node = null;
 	enabled = true;
 
@@ -17,7 +17,7 @@ export class WrComponent {
 	destroy() {}
 }
 
-export class WrNode extends Node {
+export class Node extends BaseNode {
 	components = [];
 
 	addComp(comp) {
@@ -43,9 +43,9 @@ export class WrNode extends Node {
 	}
 }
 
-export class WrCtx extends Ctx {
+export class Ctx extends BaseCtx {
 	createNode(id) {
-		return new WrNode(this, id);
+		return new Node(this, id);
 	}
 
 	exec(from, state, options = {}) {
@@ -128,10 +128,14 @@ export class WrCtx extends Ctx {
 	}
 }
 
+export const AwDAG = {
+	Component,
+	Node,
+	Ctx,
+};
+
 if (typeof window !== "undefined") {
-	window.WrCtx3 = WrCtx;
-	window.WrNode3 = WrNode;
-	window.WrComponent3 = WrComponent;
+	window.AwDAG = AwDAG;
 }
 
-export default WrCtx;
+export default AwDAG;

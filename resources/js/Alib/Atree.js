@@ -1,5 +1,5 @@
 /*
-AzHie (Hierarchy, Tree, whatever you want to call it)
+Atree (Hierarchy, Tree, whatever you want to call it)
 By Asciiz
 
 Lightweight agnostic tree structure, you can do literally anything you want with it
@@ -28,7 +28,7 @@ function cut(list, value) {
 	return i;
 }
 
-const AZHIE_CHECK = Object.freeze({
+const AzTree_CHECK = Object.freeze({
 	SKIP_CALL: 1 << 0,
 	SKIP_YIELD: 1 << 1,
 	TERMINATE: 1 << 2,
@@ -90,7 +90,7 @@ export class Node {
 }
 
 export class Ctx {
-	static CHECK = AZHIE_CHECK;
+	static CHECK = AzTree_CHECK;
 
 	#nodes = new Map();
 	#version = 0;
@@ -438,13 +438,13 @@ export class Ctx {
 	}
 }
 
-export const AzHie = {
+export const Atree = {
 	Node,
 	Ctx,
 };
 
 if (typeof window !== "undefined") {
-	window.AzHie = AzHie;
+	window.Atree = Atree;
 }
 
-export default AzHie;
+export default Atree;

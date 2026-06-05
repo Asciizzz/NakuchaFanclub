@@ -155,7 +155,7 @@ that is categorized by resource type
 */
 
 function typeErrorWGPU(message) {
-	return new TypeError("[AzWGPU] " + String(message ?? "Type error"));
+	return new TypeError("[Awgpu] " + String(message ?? "Type error"));
 }
 
 // ------ Adapter ------
@@ -2412,7 +2412,7 @@ export class Timer {
 }
 
 
-export const AzWGPU = {
+export const Awgpu = {
 	Adapter,
 	Device,
 	Context,
@@ -2433,8 +2433,8 @@ export const AzWGPU = {
 };
 
 if (typeof window !== "undefined") {
-	window.AzWGPU = AzWGPU;
+	window.Awgpu = Awgpu;
 }
 
-export default AzWGPU;
+export default Awgpu;
 

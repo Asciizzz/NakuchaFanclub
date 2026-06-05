@@ -1,9 +1,9 @@
-import * as Azm from "../../AzLib/Azm.js";
+import * as mAth from "../../Alib/mAth.js";
 import { Component } from "./component.js";
 
 export class Transform extends Component {
-	local = Azm.Mat4.makeIdentity();
-	world = Azm.Mat4.makeIdentity();
+	local = mAth.Mat4.makeIdentity();
+	world = mAth.Mat4.makeIdentity();
 }
 
 if (typeof window !== "undefined") {

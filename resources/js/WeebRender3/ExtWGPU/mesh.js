@@ -1,5 +1,5 @@
-import { Mat4 } from "../../AzLib/Azm.js";
-import { WrWGPU } from "../WrWGPU/index.js";
+import { Mat4 } from "../../Alib/mAth.js";
+import { Awgpu } from "../../Alib/Awgpu/index.js";
 
 export const STD_VERTEX_STRIDE = 96;
 
@@ -214,8 +214,8 @@ export class Mesh {
 			if (materialGroupIndex != null && submesh.material?.bindGroup) {
 				groups.push({ index: materialGroupIndex, bindGroup: submesh.material.bindGroup });
 			}
-			if (groups.length > 0) node.addComp(new WrWGPU.SetBindGroups(groups));
-			node.addComp(new WrWGPU.SetBuffers({
+			if (groups.length > 0) node.addComp(new Awgpu.SetBindGroups(groups));
+			node.addComp(new Awgpu.SetBuffers({
 				vertex: [
 					{ slot: options.vertexSlot ?? 0, buffer: this.vertexBuffer },
 					...asList(options.vertex ?? options.vertices),
@@ -225,7 +225,7 @@ export class Mesh {
 					format: this.indexFormat,
 				},
 			}));
-			node.addComp(new WrWGPU.DrawIndexed({
+			node.addComp(new Awgpu.DrawIndexed({
 				indexCount: submesh.indexCount,
 				instanceCount: options.instanceCount ?? 1,
 				firstIndex: submesh.indexStart,
@@ -356,7 +356,7 @@ export class MeshDeform {
 		const bindGroup = options.bindGroup ?? this.bindGroup;
 		const groupIndex = options.groupIndex ?? this.groupIndex;
 		if (bindGroup) {
-			node.addComp(new WrWGPU.SetBindGroups([
+			node.addComp(new Awgpu.SetBindGroups([
 				{ index: groupIndex, bindGroup },
 			]));
 		}
@@ -385,4 +385,3 @@ export class MeshDeform {
 		return targets.findIndex((target) => target?.name === key);
 	}
 }
-

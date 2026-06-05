@@ -1,19 +1,19 @@
-/* AzCamera
+/* Acamera
 By Asciiz
 
-Simple camera core based on ZCanvas.js camera behavior, using Azm.
+Simple camera core based on ZCanvas.js camera behavior, using mAth.
 */
 
-import * as Azm from "./Azm.js";
+import * as mAth from "./mAth.js";
 
-const AXIS_X = Azm.Vec3(1, 0, 0);
-const AXIS_Y = Azm.Vec3(0, 1, 0);
-const AXIS_Z = Azm.Vec3(0, 0, 1);
+const AXIS_X = mAth.Vec3(1, 0, 0);
+const AXIS_Y = mAth.Vec3(0, 1, 0);
+const AXIS_Z = mAth.Vec3(0, 0, 1);
 
-export class AzCamera {
+export class Acamera {
 	constructor(options = {}) {
-		this.position = Azm.Vec3(options.position ?? [0, 0, 0]);
-		this.orientation = Azm.Quat(options.orientation ?? [0, 0, 0, 1]);
+		this.position = mAth.Vec3(options.position ?? [0, 0, 0]);
+		this.orientation = mAth.Quat(options.orientation ?? [0, 0, 0, 1]);
 
 		this.near = options.near ?? 0.1;
 		this.far = options.far ?? 1000;
@@ -25,51 +25,51 @@ export class AzCamera {
 	}
 
 	get forward() {
-		return Azm.Quat.transformV3(this.orientation, Azm.Vec3.FORWARD);
+		return mAth.Quat.transformV3(this.orientation, mAth.Vec3.FORWARD);
 	}
 
 	get right() {
-		return Azm.Quat.transformV3(this.orientation, Azm.Vec3.RIGHT);
+		return mAth.Quat.transformV3(this.orientation, mAth.Vec3.RIGHT);
 	}
 
 	get up() {
-		return Azm.Quat.transformV3(this.orientation, Azm.Vec3.UP);
+		return mAth.Quat.transformV3(this.orientation, mAth.Vec3.UP);
 	}
 
 	get view() {
-		const target = Azm.Vec3.add(this.position, this.forward);
-		return Azm.Mat4.lookAt(this.position, target, this.up);
+		const target = mAth.Vec3.add(this.position, this.forward);
+		return mAth.Mat4.lookAt(this.position, target, this.up);
 	}
 
 	get projection() {
 		if (this.orthographic) {
 			const h = this.orthoSize;
 			const w = h * this.aspect;
-			return Azm.Mat4.ortho(-w, w, -h, h, this.near, this.far);
+			return mAth.Mat4.ortho(-w, w, -h, h, this.near, this.far);
 		}
 
-		return Azm.Mat4.perspective(this.fov * Azm.DEG2RAD, this.aspect, this.near, this.far);
+		return mAth.Mat4.perspective(this.fov * mAth.DEG2RAD, this.aspect, this.near, this.far);
 	}
 
 	rotateQ(q) {
-		Azm.Quat.mul(this.orientation, q, this.orientation);
-		Azm.Quat.norm(this.orientation, this.orientation);
+		mAth.Quat.mul(this.orientation, q, this.orientation);
+		mAth.Quat.norm(this.orientation, this.orientation);
 		return this;
 	}
 
 	rotateAxis(axis, angle) {
-		const q = Azm.Quat.fromAxisAngle(axis, angle);
+		const q = mAth.Quat.fromAxisAngle(axis, angle);
 		return this.rotateQ(q);
 	}
 
 	rotateEuler(eulerRad) {
-		const q = AzCamera.eulerToQuat(eulerRad);
+		const q = Acamera.eulerToQuat(eulerRad);
 		return this.rotateQ(q);
 	}
 
 	setEuler(eulerRad) {
-		AzCamera.eulerToQuat(eulerRad, this.orientation);
-		Azm.Quat.norm(this.orientation, this.orientation);
+		Acamera.eulerToQuat(eulerRad, this.orientation);
+		mAth.Quat.norm(this.orientation, this.orientation);
 		return this;
 	}
 
@@ -78,26 +78,26 @@ export class AzCamera {
 	}
 
 	translate(offset) {
-		const worldOffset = Azm.Quat.transformV3(this.orientation, offset);
-		Azm.Vec3.add(this.position, worldOffset, this.position);
+		const worldOffset = mAth.Quat.transformV3(this.orientation, offset);
+		mAth.Vec3.add(this.position, worldOffset, this.position);
 		return this;
 	}
 
 	lookAt(target, up = null) {
-		up ??= Azm.Vec3.UP;
+		up ??= mAth.Vec3.UP;
 
-		const forward = Azm.Vec3.norm(Azm.Vec3.sub(target, this.position));
-		const right = Azm.Vec3.norm(Azm.Vec3.cross(up, forward));
-		const camUp = Azm.Vec3.cross(forward, right);
+		const forward = mAth.Vec3.norm(mAth.Vec3.sub(target, this.position));
+		const right = mAth.Vec3.norm(mAth.Vec3.cross(up, forward));
+		const camUp = mAth.Vec3.cross(forward, right);
 
-		const m = Azm.Mat4.makeIdentity();
+		const m = mAth.Mat4.makeIdentity();
 
 		m[0] = right[0]; m[4] = camUp[0]; m[8] = -forward[0];
 		m[1] = right[1]; m[5] = camUp[1]; m[9] = -forward[1];
 		m[2] = right[2]; m[6] = camUp[2]; m[10] = -forward[2];
 
-		Azm.Quat.fromM4(m, this.orientation);
-		Azm.Quat.norm(this.orientation, this.orientation);
+		mAth.Quat.fromM4(m, this.orientation);
+		mAth.Quat.norm(this.orientation, this.orientation);
 		return this;
 	}
 
@@ -105,23 +105,23 @@ export class AzCamera {
 		if (this.orthographic) {
 			const h = this.orthoSize;
 			const w = h * this.aspect;
-			const local = Azm.Vec3(ndc[0] * w, ndc[1] * h, 0);
-			const worldOffset = Azm.Quat.transformV3(this.orientation, local);
-			const origin = Azm.Vec3.add(this.position, worldOffset);
-			const direction = Azm.Vec3.norm(this.forward);
+			const local = mAth.Vec3(ndc[0] * w, ndc[1] * h, 0);
+			const worldOffset = mAth.Quat.transformV3(this.orientation, local);
+			const origin = mAth.Vec3.add(this.position, worldOffset);
+			const direction = mAth.Vec3.norm(this.forward);
 			return { origin, direction };
 		}
 
-		const tan = Math.tan(this.fov * Azm.DEG2RAD * 0.5);
+		const tan = Math.tan(this.fov * mAth.DEG2RAD * 0.5);
 		const x = ndc[0] * tan * this.aspect;
 		const y = ndc[1] * tan;
 
-		const dir = Azm.Vec3.norm(Azm.Vec3.set(x, y, -1));
-		Azm.Quat.transformV3(this.orientation, dir, dir);
-		Azm.Vec3.norm(dir, dir);
+		const dir = mAth.Vec3.norm(mAth.Vec3.set(x, y, -1));
+		mAth.Quat.transformV3(this.orientation, dir, dir);
+		mAth.Vec3.norm(dir, dir);
 
 		return {
-			origin: Azm.Vec3.copy(this.position),
+			origin: mAth.Vec3.copy(this.position),
 			direction: dir,
 		};
 	}
@@ -133,10 +133,10 @@ export class AzCamera {
 		const z = Number(pos[2]);
 		if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
 
-		const vp = Azm.Mat4.mul(this.projection, this.view);
-		const clip = Azm.Mat4.transformV4(vp, [x, y, z, 1]);
+		const vp = mAth.Mat4.mul(this.projection, this.view);
+		const clip = mAth.Mat4.transformV4(vp, [x, y, z, 1]);
 		const w = Number(clip[3] ?? 0);
-		if (!Number.isFinite(w) || w <= Azm.EPSILON) return null;
+		if (!Number.isFinite(w) || w <= mAth.EPSILON) return null;
 
 		const invW = 1 / w;
 		const ndcX = clip[0] * invW;
@@ -144,7 +144,7 @@ export class AzCamera {
 		const ndcZ = clip[2] * invW;
 		if (!Number.isFinite(ndcX) || !Number.isFinite(ndcY) || !Number.isFinite(ndcZ)) return null;
 
-		return Azm.Vec3.set(ndcX, ndcY, ndcZ);
+		return mAth.Vec3.set(ndcX, ndcY, ndcZ);
 	}
 
 	static hitAABB(ray, min, max, modelMatrix = null) {
@@ -157,13 +157,13 @@ export class AzCamera {
 		let localOrigin = origin;
 		let localDirection = direction;
 		if (modelMatrix && (ArrayBuffer.isView(modelMatrix) || Array.isArray(modelMatrix)) && modelMatrix.length >= 16) {
-			const invModel = Azm.Mat4.invert(modelMatrix);
+			const invModel = mAth.Mat4.invert(modelMatrix);
 			if (!invModel) return { hit: false, distance: Infinity, near: Infinity, far: -Infinity, point: null };
 
-			const localOrigin4 = Azm.Mat4.transformV4(invModel, [origin[0], origin[1], origin[2], 1]);
-			const localDir4 = Azm.Mat4.transformV4(invModel, [direction[0], direction[1], direction[2], 0]);
-			localOrigin = Azm.Vec3.set(localOrigin4[0], localOrigin4[1], localOrigin4[2]);
-			localDirection = Azm.Vec3.set(localDir4[0], localDir4[1], localDir4[2]);
+			const localOrigin4 = mAth.Mat4.transformV4(invModel, [origin[0], origin[1], origin[2], 1]);
+			const localDir4 = mAth.Mat4.transformV4(invModel, [direction[0], direction[1], direction[2], 0]);
+			localOrigin = mAth.Vec3.set(localOrigin4[0], localOrigin4[1], localOrigin4[2]);
+			localDirection = mAth.Vec3.set(localDir4[0], localDir4[1], localDir4[2]);
 		}
 
 		let tMin = -Infinity;
@@ -174,7 +174,7 @@ export class AzCamera {
 			const aMin = Number(min[axis] ?? 0) || 0;
 			const aMax = Number(max[axis] ?? 0) || 0;
 
-			if (Math.abs(d) <= Azm.EPSILON) {
+			if (Math.abs(d) <= mAth.EPSILON) {
 				if (o < aMin || o > aMax) {
 					return { hit: false, distance: Infinity, near: Infinity, far: -Infinity, point: null };
 				}
@@ -202,7 +202,7 @@ export class AzCamera {
 			distance,
 			near: tMin,
 			far: tMax,
-			point: Azm.Vec3.set(
+			point: mAth.Vec3.set(
 				origin[0] + direction[0] * distance,
 				origin[1] + direction[1] * distance,
 				origin[2] + direction[2] * distance,
@@ -217,19 +217,19 @@ export class AzCamera {
 		const y = eulerRad[1] ?? 0;
 		const z = eulerRad[2] ?? 0;
 
-		const qy = Azm.Quat.fromAxisAngle(AXIS_Y, y);
-		const qx = Azm.Quat.fromAxisAngle(AXIS_X, x);
-		const qz = Azm.Quat.fromAxisAngle(AXIS_Z, z);
+		const qy = mAth.Quat.fromAxisAngle(AXIS_Y, y);
+		const qx = mAth.Quat.fromAxisAngle(AXIS_X, x);
+		const qz = mAth.Quat.fromAxisAngle(AXIS_Z, z);
 
-		const q = out ?? Azm.Quat();
-		Azm.Quat.mul(qy, qx, q);
-		Azm.Quat.mul(q, qz, q);
-		return Azm.Quat.norm(q, q);
+		const q = out ?? mAth.Quat();
+		mAth.Quat.mul(qy, qx, q);
+		mAth.Quat.mul(q, qz, q);
+		return mAth.Quat.norm(q, q);
 	}
 }
 
 if (typeof window !== "undefined") {
-	window.AzCamera = AzCamera;
+	window.Acamera = Acamera;
 }
 
-export default AzCamera;
+export default Acamera;

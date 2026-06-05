@@ -101,7 +101,7 @@ class WrComponent {
 Node stores components in an array.
 
 ```js
-class WrNode extends AzDAG.Node {
+class WrNode extends ADAG.Node {
 	components = [];
 
 	addComp(comp) {}
@@ -121,14 +121,14 @@ Rules:
 ### Ctx
 
 ```js
-class WrCtx extends AzDAG.Ctx {
+class WrCtx extends ADAG.Ctx {
 	createNode(id) {
 		return new WrNode(this, id);
 	}
 }
 ```
 
-Do not add roots logic. AzDAG already exposes roots from parent links.
+Do not add roots logic. ADAG already exposes roots from parent links.
 
 ## Step 2: WGPU Backend
 
@@ -136,7 +136,7 @@ Do not add roots logic. AzDAG already exposes roots from parent links.
 
 It has nothing to do with `AzWBackend`.
 
-It may use `AzWGPU` internally.
+It may use `Awgpu` internally.
 
 ### Minimal API
 
@@ -212,7 +212,7 @@ Stats are ignored for now.
 
 WR3 does not wrap shader modules, pipelines, buffers, textures, or bind groups in this first pass.
 
-Create those with raw WebGPU or AzWGPU, then pass the GPU handles into components.
+Create those with raw WebGPU or Awgpu, then pass the GPU handles into components.
 
 `SetBuffers` handles render-pass buffers:
 
@@ -326,7 +326,7 @@ class Draw extends WrComponent {
 ## Step 5: Ctx Exec
 
 ```js
-class WrCtx extends AzDAG.Ctx {
+class WrCtx extends ADAG.Ctx {
 	exec(from, state, options = {}) {
 		const node = this.getNode(from);
 		if (!node || !state) return state;

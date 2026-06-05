@@ -1,6 +1,6 @@
 import { WrBackend } from "../WeebRender2.1/WrBackend.js";
-import { AzCamera } from "../AzLib/AzCamera.js";
-import * as Azm from "../AzLib/Azm.js";
+import { Acamera } from "../Alib/Acamera.js";
+import * as mAth from "../Alib/mAth.js";
 import { FCamera } from "./FCamera.js";
 import {
 	WrWorld,
@@ -42,7 +42,7 @@ async function run() {
 	const loader = new WrLoader({ backend, world, stores });
 	const renderer = new WrRenderer({ backend, world });
 
-	const camera = new AzCamera({
+	const camera = new Acamera({
 		position: [0, 1.1, 4.5],
 		near: 0.1,
 		far: 250,
@@ -466,7 +466,7 @@ async function run() {
 
 	// The room is too fcking big
 	const roomTx = roomRoot?.getComp(WrTransform) ?? null;
-	if (roomTx) Azm.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
+	if (roomTx) mAth.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
 
 	mainPassNode.attachCopy(roomRoot);
 	mainPassNode.attachCopy(nakuRoot);

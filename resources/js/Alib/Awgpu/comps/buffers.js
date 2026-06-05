@@ -1,4 +1,4 @@
-import { WrComponent } from "../../WrCtx.js";
+import { Component } from "../../AwDAG.js";
 
 function list(value) {
 	if (Array.isArray(value)) return value;
@@ -10,7 +10,7 @@ function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
 }
 
-export class SetBuffers extends WrComponent {
+export class SetBuffers extends Component {
 	vertex = [];
 	index = null;
 	indirect = null;
@@ -65,4 +65,5 @@ export class SetBuffers extends WrComponent {
 		}
 	}
 }
+
 

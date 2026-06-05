@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
-	<title>AzWGPU Simple Room Test</title>
+	<title>Awgpu Simple Room Test</title>
 	<style>
 		html, body {
 			margin: 0;
@@ -35,8 +35,8 @@
 	<div id="root"></div>
 	<div id="hud">init</div>
 	<script type="module">
-		import { AzWGPU } from "../AzLib/AzWGPU.js";
-		import { AzCamera } from "../AzLib/AzCamera.js";
+		import { Awgpu } from "../Alib/Awgpu.js";
+		import { Acamera } from "../Alib/Acamera.js";
 		import { FCamera } from "../welcome/FCamera.js";
 
 		const root = document.getElementById("root");
@@ -46,10 +46,10 @@
 		canvas.style.height = "100%";
 		root.replaceChildren(canvas);
 
-		const adapter = await AzWGPU.Adapter.request();
-		const device = await AzWGPU.Device.create(adapter);
-		const format = AzWGPU.Format.preferredCanvas();
-		const context = AzWGPU.Context.create(device, canvas, { format, alphaMode: "premultiplied" });
+		const adapter = await Awgpu.Adapter.request();
+		const device = await Awgpu.Device.create(adapter);
+		const format = Awgpu.Format.preferredCanvas();
+		const context = Awgpu.Context.create(device, canvas, { format, alphaMode: "premultiplied" });
 
 		const cubeVertices = new Float32Array([
 			-1, -1, -1,
@@ -70,12 +70,12 @@
 			4, 5, 1,  1, 0, 4,
 		]);
 
-		const vb = AzWGPU.Buffer.createMapped(device, {
+		const vb = Awgpu.Buffer.createMapped(device, {
 			label: "CubeVB",
 			size: cubeVertices.byteLength,
 			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 		}, cubeVertices);
-		const ibOut = AzWGPU.Buffer.createMapped(device, {
+		const ibOut = Awgpu.Buffer.createMapped(device, {
 			label: "CubeIBOut",
 			size: cubeIndicesOut.byteLength,
 			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
@@ -90,14 +90,14 @@
 			 6,0,0,0,  0,3.5,0,0,  0,0,6,0,  0,0,0,1,
 			 0.10,0.11,0.14,1.0,
 		]);
-		const instanceBuffer = AzWGPU.Buffer.createMapped(device, {
+		const instanceBuffer = Awgpu.Buffer.createMapped(device, {
 			label: "InstanceBuffer",
 			size: instanceData.byteLength,
 			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 		}, instanceData);
 
 		// scene: time vec4 + view mat4 + projection mat4
-		const sceneBuffer = AzWGPU.Buffer.create(device, {
+		const sceneBuffer = Awgpu.Buffer.create(device, {
 			label: "SceneUBO",
 			size: 144,
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -163,23 +163,23 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 }
 `;
 
-		const module = AzWGPU.Shader.create(device, { label: "SimpleRoomShader", code: wgsl });
-		const sceneBGL = AzWGPU.BindGroup.createLayout(device, {
+		const module = Awgpu.Shader.create(device, { label: "SimpleRoomShader", code: wgsl });
+		const sceneBGL = Awgpu.BindGroup.createLayout(device, {
 			entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
 		});
-		const sceneBG = AzWGPU.BindGroup.create(device, {
+		const sceneBG = Awgpu.BindGroup.create(device, {
 			label: "SceneBG",
 			layout: sceneBGL,
 			entries: [{ binding: 0, resource: { buffer: sceneBuffer } }],
 		});
-		const pipelineLayout = AzWGPU.LayoutCache.getPipelineLayout(
-			AzWGPU.LayoutCache.create(),
+		const pipelineLayout = Awgpu.LayoutCache.getPipelineLayout(
+			Awgpu.LayoutCache.create(),
 			device,
 			{ bindGroupLayouts: [sceneBGL] },
 			"simple-room-pl"
 		);
 
-		const gradientPipeline = AzWGPU.Pipeline.createRender(device, {
+		const gradientPipeline = Awgpu.Pipeline.createRender(device, {
 			label: "GradientPipeline",
 			layout: pipelineLayout,
 			vertex: { module, entryPoint: "vs_quad" },
@@ -206,7 +206,7 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 			},
 		];
 
-		const roomPipeline = AzWGPU.Pipeline.createRender(device, {
+		const roomPipeline = Awgpu.Pipeline.createRender(device, {
 			label: "RoomPipeline",
 			layout: pipelineLayout,
 			vertex: { module, entryPoint: "vs_obj", buffers: objVertexBuffers },
@@ -215,7 +215,7 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 			depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
 		});
 
-		const boxPipeline = AzWGPU.Pipeline.createRender(device, {
+		const boxPipeline = Awgpu.Pipeline.createRender(device, {
 			label: "BoxPipeline",
 			layout: pipelineLayout,
 			vertex: { module, entryPoint: "vs_obj", buffers: objVertexBuffers },
@@ -234,7 +234,7 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 			depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
 		});
 
-		const camera = new AzCamera({
+		const camera = new Acamera({
 			position: [0, 0, 0],
 			near: 0.1,
 			far: 100,
@@ -267,15 +267,15 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 			canvas.width = w;
 			canvas.height = h;
 			camera.aspect = w / h;
-			AzWGPU.Context.reconfigure(context, { device, format, alphaMode: "premultiplied" });
+			Awgpu.Context.reconfigure(context, { device, format, alphaMode: "premultiplied" });
 			if (depthTexture) depthTexture.destroy();
-			depthTexture = AzWGPU.Texture.createDepth2D(device, {
+			depthTexture = Awgpu.Texture.createDepth2D(device, {
 				label: "Depth",
 				width: w,
 				height: h,
 				format: "depth24plus",
 			});
-			depthView = AzWGPU.Texture.createView(depthTexture);
+			depthView = Awgpu.Texture.createView(depthTexture);
 		}
 		resize();
 		new ResizeObserver(resize).observe(root);
@@ -295,12 +295,12 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 			sceneData[3] = h;
 			sceneData.set(camera.view, 4);
 			sceneData.set(camera.projection, 20);
-			AzWGPU.Buffer.write(device, sceneBuffer, sceneData, 0);
+			Awgpu.Buffer.write(device, sceneBuffer, sceneData, 0);
 
-			const encoderFrame = AzWGPU.Frame.begin(device, { label: "SimpleRoomFrame" });
+			const encoderFrame = Awgpu.Frame.begin(device, { label: "SimpleRoomFrame" });
 			const colorView = context.getCurrentTexture().createView();
 
-			const gradientPass = AzWGPU.Pass.beginRender(encoderFrame.encoder, {
+			const gradientPass = Awgpu.Pass.beginRender(encoderFrame.encoder, {
 				colorAttachments: [{
 					view: colorView,
 					loadOp: "clear",
@@ -311,9 +311,9 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 			gradientPass.setPipeline(gradientPipeline);
 			gradientPass.setBindGroup(0, sceneBG);
 			gradientPass.draw(6, 1, 0, 0);
-			AzWGPU.Pass.end(gradientPass);
+			Awgpu.Pass.end(gradientPass);
 
-			const pass = AzWGPU.Pass.beginRender(encoderFrame.encoder, {
+			const pass = Awgpu.Pass.beginRender(encoderFrame.encoder, {
 				colorAttachments: [{ view: colorView, loadOp: "load", storeOp: "store" }],
 				depthStencilAttachment: {
 					view: depthView,
@@ -338,8 +338,8 @@ fn fs_obj(input: ObjOut) -> @location(0) vec4f {
 			pass.setIndexBuffer(ibOut, "uint16");
 			pass.drawIndexed(cubeIndicesOut.length, 1, 0, 0, 0);
 
-			AzWGPU.Pass.end(pass);
-			AzWGPU.Command.submit(device, [AzWGPU.Frame.finish(encoderFrame)]);
+			Awgpu.Pass.end(pass);
+			Awgpu.Command.submit(device, [Awgpu.Frame.finish(encoderFrame)]);
 
 			hud.textContent =
 				"Simple renderer: gradient + room + box\n" +
