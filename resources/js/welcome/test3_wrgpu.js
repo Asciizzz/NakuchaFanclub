@@ -3,10 +3,11 @@ import * as Alm from "../Alib/Alm.js";
 import { Awgpu } from "../Alib/Awgpu/index.js";
 import { Ctx } from "../Alib/Aflow.js";
 import { FCamera } from "./FCamera.js";
-import { WrGPU } from "../WeebRender3/index.js";
+import { Other, WrGPU } from "../WeebRender3/index.js";
 
 const container = document.getElementById("main-canvas");
 const SAMPLE_COUNT = 4;
+const WELCOME_SHADER_URL = new URL("./shaders/welcome.wgsl", import.meta.url).href;
 
 run().catch((error) => {
 	console.error("[WR3WorldTest] fatal", error);
@@ -19,119 +20,6 @@ function createCanvas() {
 	canvas.style.height = "100%";
 	container.replaceChildren(canvas);
 	return canvas;
-}
-
-function createBuffer(device, label, size, usage) {
-	return device.createBuffer({ label, size, usage });
-}
-
-function createWhiteTexture(device) {
-	const texture = device.createTexture({
-		label: "WR3WhiteTexture",
-		size: [1, 1, 1],
-		format: "rgba8unorm",
-		usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-	});
-	const canvas = document.createElement("canvas");
-	canvas.width = 1;
-	canvas.height = 1;
-	const ctx = canvas.getContext("2d");
-	ctx.fillStyle = "#fff";
-	ctx.fillRect(0, 0, 1, 1);
-	device.queue.copyExternalImageToTexture(
-		{ source: canvas, flipY: false },
-		{ texture },
-		{ width: 1, height: 1 },
-	);
-	const sampler = device.createSampler({
-		magFilter: "linear",
-		minFilter: "linear",
-		mipmapFilter: "linear",
-		addressModeU: "repeat",
-		addressModeV: "repeat",
-	});
-	return { texture, view: texture.createView(), sampler };
-}
-
-function objectShaderSource() {
-	return `
-struct Scene {
-	viewProj: mat4x4f,
-	lightDir: vec4f,
-	time: vec4f,
-}
-
-@group(0) @binding(0) var<uniform> scene: Scene;
-$SKIN_BIND$
-$MORPH_BIND$
-$MATERIAL_BIND$
-$MODEL_BIND$
-$SKIN_FN$
-
-struct VertexIn {
-$VERTEX_FIELDS$
-}
-
-struct VertexOut {
-	@builtin(position) position: vec4f,
-	@location(0) uv: vec2f,
-	@location(1) normal: vec3f,
-}
-
-fn identity4() -> mat4x4f {
-	return mat4x4f(
-		vec4f(1.0, 0.0, 0.0, 0.0),
-		vec4f(0.0, 1.0, 0.0, 0.0),
-		vec4f(0.0, 0.0, 1.0, 0.0),
-		vec4f(0.0, 0.0, 0.0, 1.0)
-	);
-}
-
-fn vertexSkin(input: VertexIn) -> mat4x4f {
-	let wsum = input.boneWeight.x + input.boneWeight.y + input.boneWeight.z + input.boneWeight.w;
-	if (wsum <= 0.00001) {
-		return identity4();
-	}
-	return skinMatrix(input.boneID, input.boneWeight);
-}
-
-@vertex
-fn vs_main(input: VertexIn) -> VertexOut {
-	let skinMat = vertexSkin(input);
-	let localPos = skinMat * vec4f(input.position, 1.0);
-	let localNrm = normalize((skinMat * vec4f(input.normal, 0.0)).xyz);
-	var out: VertexOut;
-	out.position = scene.viewProj * model.modelMat * localPos;
-	out.uv = input.uv;
-	out.normal = normalize((model.modelMat * vec4f(localNrm, 0.0)).xyz);
-	return out;
-}
-
-@fragment
-fn fs_main(input: VertexOut) -> @location(0) vec4f {
-	let tex = textureSample(albedoTexture, albedoSampler, input.uv);
-	return tex * material.albedoColor;
-}
-
-@vertex
-fn vs_outline(input: VertexIn) -> VertexOut {
-	let skinMat = vertexSkin(input);
-	let localPos = skinMat * vec4f(input.position, 1.0);
-	let localNrm = normalize((skinMat * vec4f(input.normal, 0.0)).xyz);
-	let worldNrm = normalize((model.modelMat * vec4f(localNrm, 0.0)).xyz);
-	let worldPos = (model.modelMat * localPos).xyz + worldNrm * model.outlineThickness.x;
-	var out: VertexOut;
-	out.position = scene.viewProj * vec4f(worldPos, 1.0);
-	out.uv = input.uv;
-	out.normal = worldNrm;
-	return out;
-}
-
-@fragment
-fn fs_outline(_input: VertexOut) -> @location(0) vec4f {
-	return vec4f(0.025, 0.018, 0.04, 1.0);
-}
-`;
 }
 
 function backgroundShaderSource() {
@@ -194,89 +82,14 @@ fn fs_main(input: BgOut) -> @location(0) vec4f {
 `;
 }
 
-function createObjectShader(backend, sceneBindGroupLayout, deformBindGroupLayout, materialBindGroupLayout, modelBindGroupLayout) {
-	const device = backend.device;
-	const doc = new WrGPU.Shader();
-	WrGPU.Mesh.createVertexLayout(doc, "$VERTEX_FIELDS$", { fieldsOnly: true });
-	WrGPU.MeshDeform.createSkinBind(doc, "$SKIN_BIND$", { group: 1, binding: 0, maxBones: 128 });
-	WrGPU.MeshDeform.createMorphBind(doc, "$MORPH_BIND$", { group: 1, binding: 1, maxMorphs: 64 });
-	WrGPU.MeshDeform.createSkinFn(doc, "$SKIN_FN$");
-	WrGPU.Material.createStandardBind(doc, "$MATERIAL_BIND$", { group: 2 });
-	WrGPU.World.createModelLayout(doc, "$MODEL_BIND$", {
-		group: 3,
-		binding: 0,
-		slot0: "outlineThickness",
-	});
-	doc.setSrc(objectShaderSource());
-
-	console.log(doc);
-
-	const module = doc.createModule({ backend, label: "WR3WorldObjectShader" }).module;
-	const layout = device.createPipelineLayout({
-		label: "WR3WorldObjectPipelineLayout",
-		bindGroupLayouts: [
-			sceneBindGroupLayout,
-			deformBindGroupLayout,
-			materialBindGroupLayout,
-			modelBindGroupLayout,
-		],
-	});
-	const depthStencil = {
-		format: backend.depthFormat,
-		depthWriteEnabled: true,
-		depthCompare: "less",
-	};
-	const mainPipeline = device.createRenderPipeline({
-		label: "WR3WorldMainPipeline",
-		layout,
-		vertex: {
-			module,
-			entryPoint: "vs_main",
-			buffers: [WrGPU.Mesh.STD_VERTEX_BUFFER],
-		},
-		fragment: {
-			module,
-			entryPoint: "fs_main",
-			targets: [{ format: backend.format }],
-		},
-		primitive: {
-			topology: "triangle-list",
-			cullMode: "back",
-		},
-		multisample: {
-			count: SAMPLE_COUNT,
-		},
-		depthStencil,
-	});
-	const outlinePipeline = device.createRenderPipeline({
-		label: "WR3WorldOutlinePipeline",
-		layout,
-		vertex: {
-			module,
-			entryPoint: "vs_outline",
-			buffers: [WrGPU.Mesh.STD_VERTEX_BUFFER],
-		},
-		fragment: {
-			module,
-			entryPoint: "fs_outline",
-			targets: [{ format: backend.format }],
-		},
-		primitive: {
-			topology: "triangle-list",
-			cullMode: "front",
-		},
-		multisample: {
-			count: SAMPLE_COUNT,
-		},
-		depthStencil,
-	});
-	return { doc, module, mainPipeline, outlinePipeline };
-}
-
 function createBackground(backend) {
 	const device = backend.device;
-	const buffer = createBuffer(device, "WR3BackgroundBuffer", 32, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
-	const bindGroupLayout = device.createBindGroupLayout({
+	const buffer = device.createBuffer({
+		label: "WR3BackgroundBuffer",
+		size: 32,
+		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+	});
+	const layout = device.createBindGroupLayout({
 		label: "WR3BackgroundBGL",
 		entries: [
 			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
@@ -284,7 +97,7 @@ function createBackground(backend) {
 	});
 	const bindGroup = device.createBindGroup({
 		label: "WR3BackgroundBG",
-		layout: bindGroupLayout,
+		layout,
 		entries: [
 			{ binding: 0, resource: { buffer } },
 		],
@@ -297,7 +110,7 @@ function createBackground(backend) {
 		label: "WR3BackgroundPipeline",
 		layout: device.createPipelineLayout({
 			label: "WR3BackgroundPipelineLayout",
-			bindGroupLayouts: [bindGroupLayout],
+			bindGroupLayouts: [layout],
 		}),
 		vertex: {
 			module,
@@ -323,103 +136,49 @@ function createBackground(backend) {
 	};
 }
 
-function createSceneBind(device) {
-	const buffer = createBuffer(device, "WR3WorldSceneBuffer", 96, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
-	const layout = device.createBindGroupLayout({
-		label: "WR3WorldSceneBGL",
-		entries: [
-			{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-		],
+function createObjectShaders(world, source) {
+	const doc = new WrGPU.Shader();
+	world.createShader(doc, {
+		label: "WR3WorldObjectShader",
+		src: source,
+		vertex: { slot: "$VERTEX_FIELDS$", fieldsOnly: true },
+		skin: { slot: "$SKIN_BIND$", group: 1, binding: 0, maxBones: 128 },
+		morph: { slot: "$MORPH_BIND$", group: 1, binding: 1, maxMorphs: 64 },
+		skinFn: { slot: "$SKIN_FN$" },
+		material: { slot: "$MATERIAL_BIND$", group: 2 },
+		instance: { slot: "$INSTANCE_BIND$", group: 3, binding: 0, slot0: "outlineThickness" },
 	});
-	const bindGroup = device.createBindGroup({
-		label: "WR3WorldSceneBG",
-		layout,
-		entries: [
-			{ binding: 0, resource: { buffer } },
-		],
-	});
-	return {
-		buffer,
-		layout,
-		bindGroup,
-		data: new Float32Array(24),
-	};
-}
 
-function createMaterialLayout(device) {
-	return device.createBindGroupLayout({
-		label: "WR3WorldMaterialBGL",
-		entries: [
-			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
-			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
-		],
+	const outline = world.createRenderPipeline(new WrGPU.Shader("", {
+		label: "outline",
+		module: doc.module,
+		meta: doc.meta,
+	}), {
+		label: "WR3WorldOutlinePipeline",
+		module: doc.module,
+		vertexEntry: "vs_outline",
+		fragmentEntry: "fs_outline",
+		cullMode: "front",
 	});
-}
-
-function createDeformLayout(device) {
-	return device.createBindGroupLayout({
-		label: "WR3WorldDeformBGL",
-		entries: [
-			{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
-			{ binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
-		],
+	const main = world.createRenderPipeline(new WrGPU.Shader("", {
+		label: "main",
+		module: doc.module,
+		meta: doc.meta,
+	}), {
+		label: "WR3WorldMainPipeline",
+		module: doc.module,
+		vertexEntry: "vs_main",
+		fragmentEntry: "fs_main",
+		cullMode: "back",
 	});
-}
 
-function createModelLayout(device) {
-	return device.createBindGroupLayout({
-		label: "WR3WorldModelBGL",
-		entries: [
-			{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
-		],
-	});
-}
-
-function createMaterialBindGroups(model, backend, layout, fallbackTexture) {
-	const device = backend.device;
-	const seen = new Set();
-	const makeBindGroup = (material) => {
-		const buffer = createBuffer(device, `WR3Material:${material.name}`, 16, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
-		device.queue.writeBuffer(buffer, 0, material.albedoColor);
-		const tex = material.albedoTexture ?? fallbackTexture;
-		const view = tex.view ?? fallbackTexture.view;
-		const sampler = tex.sampler ?? fallbackTexture.sampler;
-		material.bindGroup = device.createBindGroup({
-			label: `WR3MaterialBG:${material.name}`,
-			layout,
-			entries: [
-				{ binding: 0, resource: { buffer } },
-				{ binding: 1, resource: view },
-				{ binding: 2, resource: sampler },
-			],
-		});
-	};
-	const fallbackMaterial = new WrGPU.Material({
-		name: "default",
-		albedoColor: [1, 1, 1, 1],
-		albedoTexture: fallbackTexture,
-	});
-	makeBindGroup(fallbackMaterial);
-
-	for (const mesh of model.meshes) {
-		for (const material of mesh.materials) {
-			if (!material || seen.has(material)) continue;
-			seen.add(material);
-			makeBindGroup(material);
-		}
-		for (const submesh of mesh.submeshes) {
-			if (!submesh.material) submesh.material = fallbackMaterial;
-		}
-	}
+	return { doc, outline, main };
 }
 
 function setOutline(root, thickness) {
 	for (const [node] of root.traverse({ from: root.id })) {
 		for (const comp of node.components ?? []) {
-			if (!(comp instanceof WrGPU.MeshRenderer)) continue;
-			comp.modelData ??= new WrGPU.ModelData();
-			comp.modelData.setSlot(0, [thickness, 0, 0, 0]);
+			if (comp instanceof WrGPU.MeshRenderer) comp.setSlot(0, [thickness, 0, 0, 0]);
 		}
 	}
 }
@@ -427,7 +186,6 @@ function setOutline(root, thickness) {
 async function run() {
 	const canvas = createCanvas();
 	const backend = await Awgpu.Backend.create(canvas, { sampleCount: SAMPLE_COUNT });
-	const device = backend.device;
 
 	const camera = new Acamera({
 		position: [0, 1.1, 4.5],
@@ -448,43 +206,27 @@ async function run() {
 	});
 	fcam.attach();
 
-	const scene = createSceneBind(device);
-	const deformBindGroupLayout = createDeformLayout(device);
-	const materialBindGroupLayout = createMaterialLayout(device);
-	const modelBindGroupLayout = createModelLayout(device);
-	const objectShader = createObjectShader(backend, scene.layout, deformBindGroupLayout, materialBindGroupLayout, modelBindGroupLayout);
+	const world = new WrGPU.World({
+		backend,
+		camera,
+		sampleCount: SAMPLE_COUNT,
+	}).createDefaultGpu();
+	const objectShaders = createObjectShaders(world, await Other.readText(WELCOME_SHADER_URL));
 	const background = createBackground(backend);
-	const whiteTexture = createWhiteTexture(device);
-
-	const world = new WrGPU.World({ backend });
-	const loader = new WrGPU.Loader({ backend });
+	const loader = new WrGPU.Loader({ backend, world });
 	const worldRoot = world.addNode(null);
 	worldRoot.name = "world-root";
 
-	const shaderNode = world.addNode(worldRoot);
-	shaderNode.name = "object-shaders";
-	shaderNode.addComp(new WrGPU.ShaderComponent({
-		label: "outline",
-		pipeline: objectShader.outlinePipeline,
-		bindGroups: [
-			{ index: 0, bindGroup: scene.bindGroup },
-		],
-	}));
-	shaderNode.addComp(new WrGPU.ShaderComponent({
-		label: "main",
-		pipeline: objectShader.mainPipeline,
-		bindGroups: [
-			{ index: 0, bindGroup: scene.bindGroup },
-		],
-	}));
+	const shaders = [objectShaders.outline, objectShaders.main];
+	const roomRoot = await loader.loadModelFromURL("/Models/Room.glb", {
+		parent: worldRoot,
+		shaders,
+	});
+	const nakuRoot = await loader.loadModelFromURL("/Models/Nakurin.glb", {
+		parent: worldRoot,
+		shaders,
+	});
 
-	const roomModel = await loader.loadModelFromURL("/Models/Room.glb");
-	const nakuModel = await loader.loadModelFromURL("/Models/Nakurin.glb");
-	createMaterialBindGroups(roomModel, backend, materialBindGroupLayout, whiteTexture);
-	createMaterialBindGroups(nakuModel, backend, materialBindGroupLayout, whiteTexture);
-
-	const roomRoot = world.instantiate(roomModel, shaderNode);
-	const nakuRoot = world.instantiate(nakuModel, shaderNode);
 	const roomTx = roomRoot?.components.find((comp) => comp instanceof WrGPU.Transform) ?? null;
 	if (roomTx) Alm.Mat4.scale(roomTx.local, [0.5, 0.5, 0.5], roomTx.local);
 	if (roomRoot) setOutline(roomRoot, 0.012);
@@ -528,16 +270,7 @@ async function run() {
 		sampleCount: SAMPLE_COUNT,
 	}));
 	const worldSlot = mainPass.addChild();
-	const worldBinding = world.bind(worldSlot, {
-		from: worldRoot,
-		renderNow: false,
-		backend,
-		modelBindGroupLayout,
-		deformBindGroupLayout,
-		modelGroupIndex: 3,
-		deformGroupIndex: 1,
-		materialGroupIndex: 2,
-	});
+	world.setRenderEntry(worldSlot);
 	mainCycle.addChild().addComp(new Awgpu.EndPass());
 
 	root.addChild().addComp(new Awgpu.EndFrame());
@@ -548,17 +281,15 @@ async function run() {
 		last = now;
 		fcam.update(dt);
 
-		const viewProj = Alm.Mat4.mul(camera.projection, camera.view);
-		scene.data.set(viewProj, 0);
-		scene.data.set([0.5, 1.0, 0.5, 0.0], 16);
-		scene.data.set([now * 0.001, dt, 0, 0], 20);
-		device.queue.writeBuffer(scene.buffer, 0, scene.data);
+		world
+			.setCamera(camera)
+			.writeScene({ time: now * 0.001, deltaTime: dt })
+			.update(worldRoot);
 
 		background.data.set([now * 0.001, dt, 0, 0], 0);
 		background.data.set([canvas.width, canvas.height, 0, 0], 4);
-		device.queue.writeBuffer(background.buffer, 0, background.data);
+		backend.queue.writeBuffer(background.buffer, 0, background.data);
 
-		worldBinding.render(worldRoot);
 		renderCtx.exec(root, backend.newState());
 		requestAnimationFrame(frame);
 	}
@@ -573,11 +304,9 @@ async function run() {
 			loader,
 			renderCtx,
 			worldRoot,
-			shaderNode,
 			roomRoot,
 			nakuRoot,
-			worldBinding,
-			objectShader,
+			objectShaders,
 			background,
 		};
 	}

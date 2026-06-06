@@ -1,6 +1,6 @@
 import { Mat4 } from "../../Alib/Alm.js";
 import { Material, Mesh, Skeleton, Texture } from "./mesh.js";
-import { MeshRenderer, Model, ModelNode, Transform } from "./world.js";
+import { MeshRenderer, Transform } from "./world.js";
 
 const COMPONENT = {
 	INT8: 5120,
@@ -369,30 +369,45 @@ function buildMeshes(gltf, buffers, materials, skeletons, backend) {
 	return meshes;
 }
 
-function buildModelTree(gltf, meshes) {
+function attachWorldTree(gltf, world, meshes, parent = null, options = {}) {
+	const shaders = asList(options.shaders ?? options.shader);
 	const makeNode = (nodeIndex) => {
 		const src = gltf.nodes?.[nodeIndex] ?? {};
-		const node = new ModelNode({ name: String(src.name ?? `node_${nodeIndex}`) });
+		const node = world.addNode(parent);
+		node.name = String(src.name ?? `node_${nodeIndex}`);
 		node.addComp(new Transform({ local: nodeMatrix(src) }));
 		if (src.mesh != null && meshes[src.mesh]) {
-			node.addComp(new MeshRenderer({ mesh: meshes[src.mesh] }));
+			node.addComp(new MeshRenderer({ mesh: meshes[src.mesh], shaders }));
 		}
-		for (const childIndex of asList(src.children)) node.addChild(makeNode(childIndex));
+		for (const childIndex of asList(src.children)) makeChild(childIndex, node);
+		return node;
+	};
+	const makeChild = (nodeIndex, parentNode) => {
+		const src = gltf.nodes?.[nodeIndex] ?? {};
+		const node = world.addNode(parentNode);
+		node.name = String(src.name ?? `node_${nodeIndex}`);
+		node.addComp(new Transform({ local: nodeMatrix(src) }));
+		if (src.mesh != null && meshes[src.mesh]) {
+			node.addComp(new MeshRenderer({ mesh: meshes[src.mesh], shaders }));
+		}
+		for (const childIndex of asList(src.children)) makeChild(childIndex, node);
 		return node;
 	};
 
 	const scene = gltf.scenes?.[gltf.scene ?? 0] ?? gltf.scenes?.[0] ?? {};
 	const roots = asList(scene.nodes);
 	if (roots.length === 1) return makeNode(roots[0]);
-	const root = new ModelNode({ name: String(scene.name ?? "model") });
+	const root = world.addNode(parent);
+	root.name = String(scene.name ?? "model");
 	root.addComp(new Transform());
-	for (const nodeIndex of roots) root.addChild(makeNode(nodeIndex));
+	for (const nodeIndex of roots) makeChild(nodeIndex, root);
 	return root;
 }
 
 export class Loader {
 	constructor(options = {}) {
 		this.backend = options.backend ?? null;
+		this.world = options.world ?? null;
 	}
 
 	setBackend(backend) {
@@ -400,7 +415,12 @@ export class Loader {
 		return this;
 	}
 
-	async loadModelFromURL(url, options = {}) {
+	setWorld(world) {
+		this.world = world ?? null;
+		return this;
+	}
+
+	async loadAssetsFromURL(url, options = {}) {
 		const backend = options.backend ?? this.backend ?? null;
 		const target = String(url ?? "");
 		const raw = await fetchArrayBuffer(target);
@@ -412,18 +432,29 @@ export class Loader {
 		const materials = buildMaterials(gltf, textures);
 		const skeletons = asList(gltf.skins).map((_skin, index) => buildSkeleton(gltf, buffers, index));
 		const meshes = buildMeshes(gltf, buffers, materials, skeletons, backend);
-		return new Model({
+		return {
+			gltf,
 			name: String(gltf.asset?.generator ?? gltf.scenes?.[gltf.scene ?? 0]?.name ?? "model"),
-			root: buildModelTree(gltf, meshes),
 			meshes,
 			materials,
 			textures,
-		});
+			skeletons,
+		};
+	}
+
+	async loadModelFromURL(url, options = {}) {
+		const world = options.world ?? this.world ?? null;
+		if (!world) throw new Error("[WrGPU.Loader] world is required");
+		const assets = await this.loadAssetsFromURL(url, options);
+		for (const mesh of assets.meshes) world.addMesh(mesh);
+		for (const material of assets.materials) world.addMaterial(material);
+		for (const texture of assets.textures) world.addTexture(texture);
+		return attachWorldTree(assets.gltf, world, assets.meshes, options.parent ?? null, options);
 	}
 
 	async loadMeshFromURL(url, options = {}) {
-		const model = await this.loadModelFromURL(url, options);
-		return model.meshes[0] ?? null;
+		const assets = await this.loadAssetsFromURL(url, options);
+		return assets.meshes[0] ?? null;
 	}
 
 	static async loadModelFromURL(url, options = {}) {

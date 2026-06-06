@@ -1,4 +1,4 @@
-import { load as loadGLB } from "../../WeebRender2/WrLoader/GltfLoader.js";
+import { load as loadGLB } from "./GltfLoader.js";
 import { Transform } from "../WrWorld/transform.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
 import { LiveSkeleton } from "../WrWorld/liveSkeleton.js";

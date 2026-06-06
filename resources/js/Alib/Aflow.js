@@ -1,4 +1,4 @@
-/* Aflow - Adag extension
+/* Aflow
 By Asciiz
 
 An ECS-like extension of Adag that focuses on execution flow

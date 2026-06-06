@@ -9,6 +9,11 @@ export class Shader {
 		this.doc = options.doc instanceof Adoc ? options.doc : new Adoc(src ?? options.src ?? "");
 		this.backend = options.backend ?? null;
 		this.module = options.module ?? null;
+		this.pipeline = options.pipeline ?? null;
+		this.bindGroups = Array.isArray(options.bindGroups) ? options.bindGroups.slice() : [];
+		this.instanceBindGroupLayout = options.instanceBindGroupLayout ?? null;
+		this.instanceGroupIndex = options.instanceGroupIndex ?? null;
+		this.instanceBinding = options.instanceBinding ?? null;
 		this.label = String(options.label ?? "");
 		this.meta = options.meta ?? {};
 	}
@@ -38,6 +43,23 @@ export class Shader {
 
 	clearInstructions() {
 		this.doc.clearInstructions();
+		return this;
+	}
+
+	setPipeline(pipeline) {
+		this.pipeline = pipeline ?? null;
+		return this;
+	}
+
+	setBindGroups(bindGroups = []) {
+		this.bindGroups = Array.isArray(bindGroups) ? bindGroups.slice() : [];
+		return this;
+	}
+
+	setInstanceBindGroupLayout(layout, options = {}) {
+		this.instanceBindGroupLayout = layout ?? null;
+		this.instanceGroupIndex = options.groupIndex ?? options.group ?? this.instanceGroupIndex;
+		this.instanceBinding = options.binding ?? this.instanceBinding;
 		return this;
 	}
 
@@ -72,4 +94,3 @@ export class Shader {
 }
 
 export default Shader;
-

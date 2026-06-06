@@ -2,13 +2,9 @@ export { Shader } from "./Shader/index.js";
 export { Loader } from "./loader.js";
 export {
 	MeshRenderer,
-	Model,
-	ModelData,
-	ModelNode,
-	ShaderComponent,
+	InstanceData,
 	Transform,
 	World,
-	WorldBinding,
 	WorldComponent,
 	WorldNode,
 } from "./world.js";
