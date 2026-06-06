@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Adoc Example</title>
+	<style>
+		:root {
+			--bg: #11100c;
+			--panel: #1b1811;
+			--panel-2: #242016;
+			--fg: #f7edd6;
+			--muted: #b9a986;
+			--line: #3a3120;
+			--accent: #f2b84b;
+			--accent-2: #9fd18b;
+			--bad: #ff746e;
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			min-height: 100vh;
+			margin: 0;
+			background:
+				radial-gradient(circle at top left, rgba(242, 184, 75, 0.18), transparent 34rem),
+				linear-gradient(135deg, #11100c, #17130b 55%, #211706);
+			color: var(--fg);
+			font-family: "Trebuchet MS", Verdana, sans-serif;
+		}
+
+		main {
+			width: min(1180px, calc(100vw - 32px));
+			margin: 0 auto;
+			padding: 28px 0;
+		}
+
+		h1 {
+			margin: 0 0 6px;
+			font-size: clamp(28px, 5vw, 54px);
+			line-height: 0.95;
+			letter-spacing: -0.05em;
+		}
+
+		p {
+			margin: 0;
+			color: var(--muted);
+		}
+
+		.grid {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 390px;
+			gap: 16px;
+			margin-top: 24px;
+		}
+
+		.card {
+			border: 1px solid var(--line);
+			border-radius: 18px;
+			background: color-mix(in srgb, var(--panel) 88%, transparent);
+			box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+			overflow: hidden;
+		}
+
+		.card h2 {
+			margin: 0;
+			padding: 14px 16px;
+			border-bottom: 1px solid var(--line);
+			background: var(--panel-2);
+			font-size: 14px;
+			letter-spacing: 0.04em;
+			text-transform: uppercase;
+		}
+
+		.stack {
+			display: grid;
+			gap: 12px;
+			padding: 16px;
+		}
+
+		.row {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 10px;
+		}
+
+		label {
+			display: grid;
+			gap: 6px;
+			color: var(--muted);
+			font-size: 12px;
+		}
+
+		textarea,
+		input,
+		select {
+			width: 100%;
+			border: 1px solid var(--line);
+			border-radius: 12px;
+			background: #0c0b08;
+			color: var(--fg);
+			font: inherit;
+			font-size: 14px;
+			outline: none;
+		}
+
+		textarea {
+			min-height: 250px;
+			padding: 14px;
+			resize: vertical;
+			font-family: "Cascadia Code", Consolas, monospace;
+			line-height: 1.45;
+		}
+
+		input,
+		select {
+			height: 38px;
+			padding: 0 10px;
+		}
+
+		button {
+			height: 40px;
+			border: 0;
+			border-radius: 12px;
+			background: var(--accent);
+			color: #191000;
+			font-weight: 800;
+			cursor: pointer;
+		}
+
+		button.secondary {
+			background: var(--panel-2);
+			color: var(--fg);
+			border: 1px solid var(--line);
+		}
+
+		pre {
+			min-height: 160px;
+			margin: 0;
+			padding: 14px;
+			border-radius: 14px;
+			background: #0c0b08;
+			color: var(--accent-2);
+			overflow: auto;
+			font-family: "Cascadia Code", Consolas, monospace;
+			font-size: 13px;
+			line-height: 1.45;
+		}
+
+		.error {
+			color: var(--bad);
+			min-height: 18px;
+			font-size: 12px;
+		}
+
+		.hidden {
+			display: none;
+		}
+
+		.actions {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 10px;
+		}
+
+		@media (max-width: 900px) {
+			.grid {
+				grid-template-columns: 1fr;
+			}
+		}
+	</style>
+</head>
+<body>
+	<main>
+		<h1>Adoc</h1>
+		<p>String replacement instructions with key mode and raw regex mode</p>
+
+		<div class="grid">
+			<section class="card">
+				<h2>Document</h2>
+				<div class="stack">
+					<label>
+						Src
+						<textarea id="src">Hello $NAME$
+$Name$ can be replaced with case insensitive key mode
+vec3 color = vec3(1.0, 0.5, 0.2)
+foo_01 foo_02 foo_03</textarea>
+					</label>
+					<label>
+						Dst
+						<textarea id="dst" readonly></textarea>
+					</label>
+				</div>
+			</section>
+
+			<aside class="card">
+				<h2>Instruction</h2>
+				<div class="stack">
+					<label>
+						Mode
+						<select id="mode">
+							<option value="key">Key + rules</option>
+							<option value="regex">Raw regex</option>
+						</select>
+					</label>
+
+					<div id="keyMode" class="stack">
+						<label>
+							Key
+							<input id="key" value="$NAME$">
+						</label>
+						<div class="row">
+							<label>
+								Match
+								<select id="matchMode">
+									<option value="caseSensitive">Case sensitive</option>
+									<option value="caseInsensitive">Case insensitive</option>
+									<option value="regex">Regex key</option>
+								</select>
+							</label>
+							<label>
+								Replace
+								<select id="replaceMode">
+									<option value="all">All</option>
+									<option value="first">First</option>
+								</select>
+							</label>
+						</div>
+					</div>
+
+					<div id="regexMode" class="stack hidden">
+						<label>
+							Regex
+							<input id="regex" value="foo_(\d+)">
+						</label>
+						<label>
+							Flags
+							<input id="flags" value="g">
+						</label>
+					</div>
+
+					<label>
+						Value
+						<input id="value" value="Nakucha">
+					</label>
+
+					<div class="actions">
+						<button id="add">Add Instruction</button>
+						<button id="execute">Execute</button>
+						<button id="sampleKey" class="secondary">Sample Key</button>
+						<button id="sampleRegex" class="secondary">Sample Regex</button>
+					</div>
+
+					<div id="error" class="error"></div>
+					<pre id="instructions">[]</pre>
+				</div>
+			</aside>
+		</div>
+	</main>
+
+	<script type="module">
+		import { Adoc } from "../Alib/Adoc.js";
+
+		const el = {
+			src: document.querySelector("#src"),
+			dst: document.querySelector("#dst"),
+			mode: document.querySelector("#mode"),
+			keyMode: document.querySelector("#keyMode"),
+			regexMode: document.querySelector("#regexMode"),
+			key: document.querySelector("#key"),
+			matchMode: document.querySelector("#matchMode"),
+			replaceMode: document.querySelector("#replaceMode"),
+			regex: document.querySelector("#regex"),
+			flags: document.querySelector("#flags"),
+			value: document.querySelector("#value"),
+			add: document.querySelector("#add"),
+			execute: document.querySelector("#execute"),
+			sampleKey: document.querySelector("#sampleKey"),
+			sampleRegex: document.querySelector("#sampleRegex"),
+			error: document.querySelector("#error"),
+			instructions: document.querySelector("#instructions"),
+		};
+
+		const doc = new Adoc(el.src.value);
+
+		function showError(error = "") {
+			el.error.textContent = error;
+		}
+
+		function printableInstruction(instruction) {
+			if (!instruction.regex) return instruction;
+			return {
+				regex: instruction.regex.toString(),
+				value: instruction.value,
+			};
+		}
+
+		function renderInstructions() {
+			el.instructions.textContent = JSON.stringify(doc.instructions.map(printableInstruction), null, "\t");
+		}
+
+		function setMode() {
+			const regex = el.mode.value === "regex";
+			el.keyMode.classList.toggle("hidden", regex);
+			el.regexMode.classList.toggle("hidden", !regex);
+		}
+
+		function addInstruction() {
+			showError();
+			try {
+				if (el.mode.value === "regex") {
+					doc.addInstruction({
+						regex: new RegExp(el.regex.value, el.flags.value),
+						value: el.value.value,
+					});
+				} else {
+					doc.addInstruction({
+						key: el.key.value,
+						value: el.value.value,
+						rules: {
+							matchMode: el.matchMode.value,
+							replaceMode: el.replaceMode.value,
+						},
+					});
+				}
+				renderInstructions();
+			} catch (error) {
+				showError(error.message);
+			}
+		}
+
+		function execute() {
+			showError();
+			try {
+				el.dst.value = doc.execute(el.src.value);
+				renderInstructions();
+			} catch (error) {
+				showError(error.message);
+			}
+		}
+
+		function sampleKey() {
+			el.mode.value = "key";
+			el.key.value = "$NAME$";
+			el.value.value = "Nakucha";
+			el.matchMode.value = Adoc.CASE_INSENSITIVE;
+			el.replaceMode.value = Adoc.REPLACE_ALL;
+			setMode();
+		}
+
+		function sampleRegex() {
+			el.mode.value = "regex";
+			el.regex.value = "foo_(\\d+)";
+			el.flags.value = "g";
+			el.value.value = "bar_$1";
+			setMode();
+		}
+
+		el.mode.addEventListener("change", setMode);
+		el.add.addEventListener("click", addInstruction);
+		el.execute.addEventListener("click", execute);
+		el.sampleKey.addEventListener("click", sampleKey);
+		el.sampleRegex.addEventListener("click", sampleRegex);
+
+		sampleKey();
+		addInstruction();
+		execute();
+	</script>
+</body>
+</html>

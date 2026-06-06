@@ -1,1 +1,1 @@
-export { ShaderDoc, ShaderModule } from "./shader.js";
+export { Shader } from "./shader.js";

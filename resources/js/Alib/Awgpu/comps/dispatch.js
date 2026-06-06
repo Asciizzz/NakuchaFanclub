@@ -1,4 +1,4 @@
-import { Component } from "../../AwDAG.js";
+import { Component } from "../../Aflow.js";
 
 function uint(value, fallback = 1) {
 	return Math.max(1, Number(value ?? fallback) | 0);

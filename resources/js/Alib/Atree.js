@@ -1,5 +1,4 @@
-/*
-Atree (Hierarchy, Tree, whatever you want to call it)
+/* Atree
 By Asciiz
 
 Lightweight agnostic tree structure, you can do literally anything you want with it

@@ -145,7 +145,7 @@ export class Transform extends WorldComponent {
 	}
 }
 
-export class Shader extends WorldComponent {
+export class ShaderComponent extends WorldComponent {
 	constructor(options = {}) {
 		super();
 		this.pipeline = options.pipeline ?? null;
@@ -154,7 +154,7 @@ export class Shader extends WorldComponent {
 	}
 
 	copy(target = null) {
-		return Object.assign(new Shader({
+		return Object.assign(new ShaderComponent({
 			pipeline: this.pipeline,
 			bindGroups: this.bindGroups.slice(),
 			label: this.label,
@@ -481,7 +481,7 @@ export class World extends TreeCtx {
 		const worldMat = tx ? Mat4.mul(state.parentWorld, tx.local, tx.world) : state.parentWorld;
 		const shaders = state.shaders.slice();
 		for (const shader of worldNode.components) {
-			if (shader instanceof Shader && shader.enabled !== false) shaders.push(shader);
+			if (shader instanceof ShaderComponent && shader.enabled !== false) shaders.push(shader);
 		}
 
 		for (const renderer of worldNode.components) {

@@ -1,7 +1,7 @@
 /* Acamera
 By Asciiz
 
-Simple camera core based on ZCanvas.js camera behavior, using Alm.
+Simple camera core based on ZCanvas (ancient history) camera behavior, using Alm
 */
 
 import * as Alm from "./Alm.js";

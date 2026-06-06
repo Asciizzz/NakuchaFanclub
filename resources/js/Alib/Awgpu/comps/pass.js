@@ -1,4 +1,4 @@
-import { Component } from "../../AwDAG.js";
+import { Component } from "../../Aflow.js";
 
 function hasOwn(obj, key) {
 	return Object.prototype.hasOwnProperty.call(obj, key);

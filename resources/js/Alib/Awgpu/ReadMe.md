@@ -1,5 +1,6 @@
 # Awgpu
 
+```
 ##################%-----%%%%%%%##%%%%%%%%%%%%#####
 #######+####%%###-------%%%%%%%##%%%%%%%%%%%%#####
 #####---+########------:%%%%%%%#%%%%%%%%%%%%%#####
@@ -22,9 +23,9 @@
 :-=====:::::::::###########*##=+++%+-+==#*#######%
 :::=====--.:::::######*#######%##+#%#:=##%#%#*####
 :::::-==-:::::::########+###*######%%###%#%+%%%%#%
+```
 
-
-Tiny WebGPU execution layer for `AwDAG`
+Tiny WebGPU execution layer for `Aflow`
 
 Awgpu is not a game renderer, scene renderer, mesh system, shader builder, loader, or asset manager
 
@@ -40,7 +41,7 @@ Everything else stays outside of Awgpu
 
 Awgpu follows the render-flow model
 
-You create raw WebGPU resources yourself, then attach small command components to an `AwDAG.Ctx` node graph
+You create raw WebGPU resources yourself, then attach small command components to an `Aflow.Ctx` node graph
 
 The graph shape is the execution flow
 
@@ -147,7 +148,7 @@ const backend = await Awgpu.Backend.create(canvas, {
 
 ## State
 
-`backend.newState()` creates the mutable execution state used by `AwDAG.Ctx.exec`
+`backend.newState()` creates the mutable execution state used by `Aflow.Ctx.exec`
 
 ```js
 const state = backend.newState();

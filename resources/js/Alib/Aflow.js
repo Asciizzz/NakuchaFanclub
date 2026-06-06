@@ -1,17 +1,20 @@
-/*
+/* Aflow - Adag extension
+By Asciiz
 
-An ECS-like extension of ADAG
+An ECS-like extension of Adag that focuses on execution flow
+
+Utilizes Render-As-A-Component (RAAC, shi that I thought of lmao)
+where execution policies are defined by components
 
 */
 
-import { Ctx as BaseCtx, Node as BaseNode } from "./ADAG.js";
+import { Ctx as BaseCtx, Node as BaseNode } from "./Adag.js";
 
 function isComp(value) {
 	return value && typeof value === "object";
 }
 
 export class Component {
-
 	constructor(options = {}) {
 		this.options = options ?? {};
 	}
@@ -137,14 +140,14 @@ export class Ctx extends BaseCtx {
 	}
 }
 
-export const AwDAG = {
+export const Aflow = {
 	Component,
 	Node,
 	Ctx,
 };
 
 if (typeof window !== "undefined") {
-	window.AwDAG = AwDAG;
+	window.Aflow = Aflow;
 }
 
-export default AwDAG;
+export default Aflow;

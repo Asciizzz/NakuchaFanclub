@@ -1,4 +1,4 @@
-import { Component } from "../../AwDAG.js";
+import { Component } from "../../Aflow.js";
 
 export class SetBindGroups extends Component {
 	groups = [];

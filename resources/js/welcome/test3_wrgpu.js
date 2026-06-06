@@ -1,7 +1,7 @@
 import { Acamera } from "../Alib/Acamera.js";
 import * as Alm from "../Alib/Alm.js";
 import { Awgpu } from "../Alib/Awgpu/index.js";
-import { Ctx } from "../Alib/AwDAG.js";
+import { Ctx } from "../Alib/Aflow.js";
 import { FCamera } from "./FCamera.js";
 import { WrGPU } from "../WeebRender3/index.js";
 
@@ -196,7 +196,7 @@ fn fs_main(input: BgOut) -> @location(0) vec4f {
 
 function createObjectShader(backend, sceneBindGroupLayout, deformBindGroupLayout, materialBindGroupLayout, modelBindGroupLayout) {
 	const device = backend.device;
-	const doc = new WrGPU.ShaderDoc();
+	const doc = new WrGPU.Shader();
 	WrGPU.Mesh.createVertexLayout(doc, "$VERTEX_FIELDS$", { fieldsOnly: true });
 	WrGPU.MeshDeform.createSkinBind(doc, "$SKIN_BIND$", { group: 1, binding: 0, maxBones: 128 });
 	WrGPU.MeshDeform.createMorphBind(doc, "$MORPH_BIND$", { group: 1, binding: 1, maxMorphs: 64 });
@@ -207,7 +207,7 @@ function createObjectShader(backend, sceneBindGroupLayout, deformBindGroupLayout
 		binding: 0,
 		slot0: "outlineThickness",
 	});
-	doc.setRaw(objectShaderSource());
+	doc.setSrc(objectShaderSource());
 
 	console.log(doc);
 
@@ -463,14 +463,14 @@ async function run() {
 
 	const shaderNode = world.addNode(worldRoot);
 	shaderNode.name = "object-shaders";
-	shaderNode.addComp(new WrGPU.Shader({
+	shaderNode.addComp(new WrGPU.ShaderComponent({
 		label: "outline",
 		pipeline: objectShader.outlinePipeline,
 		bindGroups: [
 			{ index: 0, bindGroup: scene.bindGroup },
 		],
 	}));
-	shaderNode.addComp(new WrGPU.Shader({
+	shaderNode.addComp(new WrGPU.ShaderComponent({
 		label: "main",
 		pipeline: objectShader.mainPipeline,
 		bindGroups: [

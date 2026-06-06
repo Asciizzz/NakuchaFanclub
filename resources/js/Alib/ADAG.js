@@ -1,8 +1,8 @@
-/*
-ADAG
+/* Adag
 By Asciiz
 
 Lightweight directed acyclic graph context
+Best served as inherited base (yummers)
 */
 
 function asId(value) {
@@ -446,13 +446,13 @@ export class Ctx {
 	}
 }
 
-export const ADAG = {
+export const Adag = {
 	Node,
 	Ctx,
 };
 
 if (typeof window !== "undefined") {
-	window.ADAG = ADAG;
+	window.Adag = Adag;
 }
 
-export default ADAG;
+export default Adag;

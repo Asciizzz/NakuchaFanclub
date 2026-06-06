@@ -1,11 +1,11 @@
-export { ShaderDoc, ShaderModule } from "./Shader/index.js";
+export { Shader } from "./Shader/index.js";
 export { Loader } from "./loader.js";
 export {
 	MeshRenderer,
 	Model,
 	ModelData,
 	ModelNode,
-	Shader,
+	ShaderComponent,
 	Transform,
 	World,
 	WorldBinding,

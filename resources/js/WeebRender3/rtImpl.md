@@ -101,7 +101,7 @@ class WrComponent {
 Node stores components in an array.
 
 ```js
-class WrNode extends ADAG.Node {
+class WrNode extends Adag.Node {
 	components = [];
 
 	addComp(comp) {}
@@ -121,14 +121,14 @@ Rules:
 ### Ctx
 
 ```js
-class WrCtx extends ADAG.Ctx {
+class WrCtx extends Adag.Ctx {
 	createNode(id) {
 		return new WrNode(this, id);
 	}
 }
 ```
 
-Do not add roots logic. ADAG already exposes roots from parent links.
+Do not add roots logic. Adag already exposes roots from parent links.
 
 ## Step 2: WGPU Backend
 
@@ -324,7 +324,7 @@ class Draw extends WrComponent {
 ## Step 5: Ctx Exec
 
 ```js
-class WrCtx extends ADAG.Ctx {
+class WrCtx extends Adag.Ctx {
 	exec(from, state, options = {}) {
 		const node = this.getNode(from);
 		if (!node || !state) return state;

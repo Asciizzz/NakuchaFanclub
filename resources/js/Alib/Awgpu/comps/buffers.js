@@ -1,4 +1,4 @@
-import { Component } from "../../AwDAG.js";
+import { Component } from "../../Aflow.js";
 
 function list(value) {
 	if (Array.isArray(value)) return value;

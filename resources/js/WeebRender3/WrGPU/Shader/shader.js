@@ -1,103 +1,75 @@
+import { Adoc } from "../../../Alib/Adoc.js";
+
 function deviceOf(backend) {
 	return backend?.device ?? backend ?? null;
 }
 
-function validSlot(slot) {
-	return typeof slot === "string" && slot.length >= 2 && slot.startsWith("$") && slot.endsWith("$");
-}
-
-function findSlots(source) {
-	return Array.from(new Set(String(source ?? "").match(/\$[^\s$]+\$/g) ?? []));
-}
-
-export class ShaderModule {
-	constructor(options = {}) {
-		this.label = String(options.label ?? "");
+export class Shader {
+	constructor(src = "", options = {}) {
+		this.doc = options.doc instanceof Adoc ? options.doc : new Adoc(src ?? options.src ?? "");
 		this.backend = options.backend ?? null;
 		this.module = options.module ?? null;
-		this.raw = String(options.raw ?? "");
-		this.compiled = String(options.compiled ?? "");
+		this.label = String(options.label ?? "");
 		this.meta = options.meta ?? {};
 	}
-}
 
-export class ShaderDoc {
-	constructor(raw = "", options = {}) {
-		this.raw = String(raw ?? "");
-		this.backend = options.backend ?? null;
-		this.replacements = [];
-		this.meta = options.meta ?? {};
-		this.compiled = "";
-		this.module = null;
-	}
+	get src() { return this.doc.src; }
+	set src(value) { this.doc.setSrc(value); }
 
-	setRaw(raw) {
-		this.raw = String(raw ?? "");
+	get dst() { return this.doc.dst; }
+	set dst(value) { this.doc.dst = Adoc.str(value); }
+
+	get instructions() { return this.doc.instructions; }
+
+	setSrc(src) {
+		this.doc.setSrc(src);
 		return this;
 	}
 
-	replace(slot, value) {
-		if (!validSlot(slot)) throw new Error(`[WrGPU.ShaderDoc] invalid slot "${slot}"`);
-		const current = this.#replacement(slot);
-		if (current) {
-			current.values = [String(value ?? "")];
-		} else {
-			this.replacements.push({ slot, values: [String(value ?? "")] });
-		}
+	addInstruction(instruction) {
+		this.doc.addInstruction(instruction);
 		return this;
 	}
 
-	append(slot, value) {
-		if (!validSlot(slot)) throw new Error(`[WrGPU.ShaderDoc] invalid slot "${slot}"`);
-		const current = this.#replacement(slot);
-		if (current) {
-			current.values.push(String(value ?? ""));
-		} else {
-			this.replacements.push({ slot, values: [String(value ?? "")] });
-		}
+	addInstructions(instructions = []) {
+		this.doc.addInstructions(instructions);
 		return this;
 	}
 
-	has(slot) {
-		return !!this.#replacement(slot);
+	clearInstructions() {
+		this.doc.clearInstructions();
+		return this;
 	}
 
-	compile(raw = this.raw) {
-		let out = String(raw ?? "");
-		for (const item of this.replacements) {
-			out = out.split(item.slot).join(item.values.join("\n"));
-		}
-		const unresolved = findSlots(out);
-		if (unresolved.length > 0) {
-			throw new Error(`[WrGPU.ShaderDoc] unresolved slots: ${unresolved.join(", ")}`);
-		}
-		this.compiled = out;
-		return out;
+	replace(key, value, rules = null) {
+		this.addInstruction({
+			key,
+			value,
+			rules: rules ?? {
+				matchMode: Adoc.CASE_SENSITIVE,
+				replaceMode: Adoc.REPLACE_ALL,
+			},
+		});
+		return this;
+	}
+
+	execute(src = this.src, writeSrc = true) {
+		return this.doc.execute(src, writeSrc);
 	}
 
 	createModule(options = {}) {
 		const backend = options.backend ?? this.backend;
 		const device = deviceOf(backend);
-		if (!device) throw new Error("[WrGPU.ShaderDoc] backend or device is required");
-		const compiled = this.compile();
-		const module = device.createShaderModule({
-			label: options.label ?? "WrGPUShaderModule",
-			code: compiled,
+		if (!device) throw new Error("[WrGPU.Shader] backend or device is required");
+		this.label = String(options.label ?? this.label ?? "WrGPUShaderModule");
+		this.backend = backend;
+		this.module = device.createShaderModule({
+			label: this.label,
+			code: this.execute(options.src ?? this.src, options.writeSrc ?? true),
 		});
-		this.module = module;
-		return new ShaderModule({
-			label: options.label,
-			backend,
-			module,
-			raw: this.raw,
-			compiled,
-			meta: this.meta,
-		});
-	}
-
-	#replacement(slot) {
-		return this.replacements.find((item) => item.slot === slot) ?? null;
+		return this;
 	}
 }
 
-export default ShaderDoc;
+export default Shader;
+

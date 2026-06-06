@@ -1,4 +1,4 @@
-import { Component } from "../../AwDAG.js";
+import { Component } from "../../Aflow.js";
 
 export class BeginFrame extends Component {
 	label = "Wr3Frame";
