@@ -308,7 +308,7 @@ ${lines.join("\n")}
 		const nodes = [];
 		const materialGroupIndex = options.materialGroupIndex ?? null;
 		for (const submesh of this.submeshes) {
-			const node = parentNode.addChild();
+			const node = parentNode.newNode();
 			if (!node) continue;
 			const groups = [];
 			if (materialGroupIndex != null && submesh.material?.bindGroup) {
@@ -527,7 +527,7 @@ export class MeshDeform {
 	attach(ctx, parent, options = {}) {
 		const parentNode = resolveNode(ctx, parent);
 		if (!parentNode) return null;
-		const node = parentNode.addChild(options.index ?? -1);
+		const node = parentNode.newNode(options.index ?? -1);
 		if (!node) return null;
 		const bindGroup = options.bindGroup ?? this.bindGroup;
 		const groupIndex = options.groupIndex ?? this.groupIndex;

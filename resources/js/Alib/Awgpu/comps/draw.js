@@ -14,7 +14,7 @@ export class Draw extends Component {
 		this.firstInstance = Math.max(0, Number(options.firstInstance ?? 0) | 0);
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || state.passKind !== "render") return;
 		if (!state.pipeline) return;
 		state.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
@@ -37,7 +37,7 @@ export class DrawIndexed extends Component {
 		this.firstInstance = Math.max(0, Number(options.firstInstance ?? 0) | 0);
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || state.passKind !== "render") return;
 		if (!state.pipeline) return;
 		state.pass.drawIndexed(this.indexCount, this.instanceCount, this.firstIndex, this.baseVertex, this.firstInstance);
@@ -54,7 +54,7 @@ export class DrawIndirect extends Component {
 		this.offset = Math.max(0, Number(options.offset ?? 0) | 0);
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || state.passKind !== "render") return;
 		if (!state.pipeline) return;
 		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : state.buffers.indirect;
@@ -73,7 +73,7 @@ export class DrawIndexedIndirect extends Component {
 		this.offset = Math.max(0, Number(options.offset ?? 0) | 0);
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || state.passKind !== "render") return;
 		if (!state.pipeline) return;
 		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : state.buffers.indirect;
@@ -81,5 +81,4 @@ export class DrawIndexedIndirect extends Component {
 		state.pass.drawIndexedIndirect(indirect.buffer, indirect.offset ?? 0);
 	}
 }
-
 

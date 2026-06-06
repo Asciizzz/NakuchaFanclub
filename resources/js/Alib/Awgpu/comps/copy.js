@@ -28,7 +28,7 @@ export class CopyBufferToBuffer extends Component {
 		this.size = uint(options.size);
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (state.pass || !this.source || !this.destination || this.size <= 0) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;
@@ -54,7 +54,7 @@ export class CopyBufferToTexture extends Component {
 		this.size = options.size ?? null;
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (state.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;
@@ -74,7 +74,7 @@ export class CopyTextureToBuffer extends Component {
 		this.size = options.size ?? null;
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (state.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;
@@ -94,7 +94,7 @@ export class CopyTextureToTexture extends Component {
 		this.size = options.size ?? null;
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (state.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;

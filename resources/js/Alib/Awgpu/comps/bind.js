@@ -8,7 +8,7 @@ export class SetBindGroups extends Component {
 		this.groups = Array.isArray(groups) ? groups.slice() : [];
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass) return;
 		for (const entry of this.groups) {
 			const index = Math.max(0, Number(entry?.index ?? entry?.group ?? 0) | 0);
@@ -21,5 +21,4 @@ export class SetBindGroups extends Component {
 		}
 	}
 }
-
 

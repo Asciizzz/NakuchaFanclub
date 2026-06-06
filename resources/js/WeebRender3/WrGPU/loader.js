@@ -373,7 +373,7 @@ function attachWorldTree(gltf, world, meshes, parent = null, options = {}) {
 	const shaders = asList(options.shaders ?? options.shader);
 	const makeNode = (nodeIndex) => {
 		const src = gltf.nodes?.[nodeIndex] ?? {};
-		const node = world.addNode(parent);
+		const node = world.newNode(parent);
 		node.name = String(src.name ?? `node_${nodeIndex}`);
 		node.addComp(new Transform({ local: nodeMatrix(src) }));
 		if (src.mesh != null && meshes[src.mesh]) {
@@ -384,7 +384,7 @@ function attachWorldTree(gltf, world, meshes, parent = null, options = {}) {
 	};
 	const makeChild = (nodeIndex, parentNode) => {
 		const src = gltf.nodes?.[nodeIndex] ?? {};
-		const node = world.addNode(parentNode);
+		const node = world.newNode(parentNode);
 		node.name = String(src.name ?? `node_${nodeIndex}`);
 		node.addComp(new Transform({ local: nodeMatrix(src) }));
 		if (src.mesh != null && meshes[src.mesh]) {
@@ -397,7 +397,7 @@ function attachWorldTree(gltf, world, meshes, parent = null, options = {}) {
 	const scene = gltf.scenes?.[gltf.scene ?? 0] ?? gltf.scenes?.[0] ?? {};
 	const roots = asList(scene.nodes);
 	if (roots.length === 1) return makeNode(roots[0]);
-	const root = world.addNode(parent);
+	const root = world.newNode(parent);
 	root.name = String(scene.name ?? "model");
 	root.addComp(new Transform());
 	for (const nodeIndex of roots) makeChild(nodeIndex, root);

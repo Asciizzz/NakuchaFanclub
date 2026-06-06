@@ -8,11 +8,10 @@ export class UsePipeline extends Component {
 		this.pipeline = pipeline ?? null;
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || !this.pipeline) return;
 		state.pass.setPipeline(this.pipeline);
 		state.pipeline = this.pipeline;
 	}
 }
-
 

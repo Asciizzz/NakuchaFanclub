@@ -19,61 +19,128 @@ export class Component {
 		this.options = options ?? {};
 	}
 
-	exec(_state) {}
+	/**
+	 * Execute component logic during Ctx.exec
+	 * @param {object} _input execution input
+	 * @param {object} _input.state mutable execution state
+	 * @param {Node} _input.node node that owns this component
+	 * @param {Ctx} _input.ctx execution context
+	 */
+	exec({ state: _state, node: _node, ctx: _ctx } = {}) {}
 
-	destroy() {}
+	/**
+	 * Clean up external resources before removal
+	 * @param {object} _input destroy input
+	 * @param {Node} _input.node node that owned this component
+	 * @param {Ctx} _input.ctx owning context
+	 */
+	destroy({ node: _node, ctx: _ctx } = {}) {}
 }
 
 export class Node extends BaseNode {
-	components = [];
+	#components = [];
 
+	get components() { return this.#components.slice(); }
+
+	/**
+	 * Add a component object to this node
+	 * @param {object} comp component instance
+	 * @returns {object|null}
+	 */
 	addComp(comp) {
 		if (!isComp(comp)) return null;
-		if (comp.node && comp.node !== this) return null;
-		comp.node = this;
-		this.components.push(comp);
+		this.#components.push(comp);
 		return comp;
 	}
 
+	/**
+	 * Remove the exact component instance from this node
+	 * @param {object} comp component instance
+	 * @returns {boolean}
+	 */
 	removeComp(comp) {
-		const index = this.components.indexOf(comp);
+		const index = this.#components.indexOf(comp);
 		if (index < 0) return false;
-		this.components.splice(index, 1);
-		if (comp && typeof comp === "object") comp.node = null;
+		const [removed] = this.#components.splice(index, 1);
+		if (removed && typeof removed.destroy === "function") removed.destroy({ node: this, ctx: this.ctx });
 		return true;
 	}
 
+	/**
+	 * Remove all component instances from this node
+	 * @returns {object[]}
+	 */
 	clearComp() {
-		const out = this.components.splice(0);
-		for (const comp of out) comp.node = null;
+		const out = this.#components.splice(0);
+		for (const comp of out) {
+			if (comp && typeof comp.destroy === "function") comp.destroy({ node: this, ctx: this.ctx });
+		}
 		return out;
 	}
 }
 
 export class Ctx extends BaseCtx {
 	createNode(id) {
-		return new Node(this, id);
+		return new Node(id);
 	}
 
-	*execEach(from, state, options = {}) {
+	/**
+	 * Execute components while walking from a node
+	 * @param {object} input execution input
+	 * @param {string|Node|{id:string}} input.from start node reference
+	 * @param {object} input.state mutable execution state
+	 * @param {boolean} [input.fromInclude=true] include the start node
+	 * @param {"dfs"|"dfs_pre"|"dfs_post"|"bfs"} [input.mode="dfs_pre"] walk mode
+	 * @param {boolean} [input.dedupe=false] yield shared nodes once
+	 * @param {(node: Node, ctx: Ctx) => boolean} [input.prune] return true to skip a branch
+	 * @returns {Generator<{node: Node, comp: object, result: any}>}
+	 */
+	*execEach({
+		from = null,
+		state = null,
+		fromInclude = true,
+		mode = "dfs_pre",
+		dedupe = false,
+		prune = null,
+	} = {}) {
 		if (!state) return state;
+
 		const node = this.getNode(from);
 		if (!node) return state;
-		for (const [current] of node.walk(options)) {
+
+		for (const current of this.walk({ from: node, fromInclude, mode, dedupe, prune })) {
 			for (const comp of current.components ?? []) {
 				if (!comp || comp.enabled === false) continue;
 				if (typeof comp.exec !== "function") continue;
-				const result = comp.exec(state, current);
+				const result = comp.exec({ state, node: current, ctx: this });
 				yield { node: current, comp, result };
 			}
 		}
 	}
 
-	exec(from, state, options = {}) {
-		for (const _event of this.execEach(from, state, options)) {}
-		return state;
+	/**
+	 * Execute components and return the mutated state
+	 * @param {object} input execution input
+	 * @param {string|Node|{id:string}} input.from start node reference
+	 * @param {object} input.state mutable execution state
+	 * @param {boolean} [input.fromInclude=true] include the start node
+	 * @param {"dfs"|"dfs_pre"|"dfs_post"|"bfs"} [input.mode="dfs_pre"] walk mode
+	 * @param {boolean} [input.dedupe=false] yield shared nodes once
+	 * @param {(node: Node, ctx: Ctx) => boolean} [input.prune] return true to skip a branch
+	 * @returns {object}
+	 */
+	exec(input = {}) {
+		for (const _event of this.execEach(input)) {}
+		return input?.state ?? null;
 	}
 
+	/**
+	 * Copy a reachable DAG branch and attach the copy to one parent
+	 * @param {string|Node|{id:string}} from source node reference
+	 * @param {string|Node|{id:string}|null} [parent=null] parent for copied root
+	 * @param {number} [index=-1] insert index
+	 * @returns {Node|null}
+	 */
 	copyBranch(from, parent = null, index = -1) {
 		const source = this.getNode(from);
 		if (!source) return null;
@@ -84,7 +151,7 @@ export class Ctx extends BaseCtx {
 		const map = new Map();
 
 		for (const sourceId of sourceIds) {
-			const next = this.addNode();
+			const next = this.newNode();
 			if (!next) return null;
 			const src = this.getNode(sourceId);
 			map.set(sourceId, next);
@@ -107,17 +174,19 @@ export class Ctx extends BaseCtx {
 	}
 
 	#copyNodeData(source, target) {
-		target.components.length = 0;
+		target.clearComp();
 		for (const comp of source.components ?? []) {
 			let next = comp;
-			if (comp && typeof comp.copy === "function") next = comp.copy(target);
-			else if (comp && typeof comp.clone === "function") next = comp.clone(target);
+			if (comp && typeof comp.copy === "function") next = comp.copy();
+			else if (comp && typeof comp.clone === "function") next = comp.clone();
 			else if (comp && typeof comp === "object") {
 				next = Object.create(Object.getPrototypeOf(comp));
-				Object.assign(next, comp);
+				for (const key of Reflect.ownKeys(comp)) {
+					if (key === "node") continue;
+					next[key] = comp[key];
+				}
 			}
-			if (next && typeof next === "object") next.node = target;
-			target.components.push(next);
+			target.addComp(next);
 		}
 	}
 

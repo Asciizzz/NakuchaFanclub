@@ -8,7 +8,7 @@ export class BeginFrame extends Component {
 		this.label = options.label ?? "Wr3Frame";
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (state.encoder) return;
 		state.encoder = state.backend.createEncoder(this.label);
 		state.ended = false;
@@ -16,12 +16,11 @@ export class BeginFrame extends Component {
 }
 
 export class EndFrame extends Component {
-	exec(state) {
+	exec({ state } = {}) {
 		if (state.encoder && !state.ended) {
 			state.backend.submit(state.encoder);
 			state.ended = true;
 		}
 	}
 }
-
 

@@ -1,6 +1,5 @@
 import * as Alm from "../../Alib/Alm.js";
 import Awgpu from "../WrGPU.js";
-import { Ctx } from "../../Alib/Atree.js";
 import { MeshRenderer } from "../WrWorld/meshRenderer.js";
 import { ShaderOBJ as ShaderOBJComp } from "../WrWorld/shaderObj.js";
 import { ShaderFSC as ShaderFSCComp } from "../WrWorld/shaderFSC.js";
@@ -420,16 +419,9 @@ export class WrRenderer {
 
 	#collectPassRoots(fromNode) {
 		const roots = [];
-		for (const [node] of fromNode.traverse({
+		for (const node of fromNode.traverse({
 			mode: "bfs",
-			includeFrom: true,
-			ignore: {
-				checkNode: (node) => {
-					const passComp = node.getComp(RenderPassComp) ?? null;
-					if (node !== fromNode && passComp) return 0;
-					return 0;
-				},
-			},
+			fromInclude: true,
 		})) {
 			const passComp = node.getComp(RenderPassComp) ?? null;
 			if (passComp) {
@@ -454,19 +446,15 @@ export class WrRenderer {
 		let nextShaderRank = 0;
 		let queueOrder = 0;
 
-		for (const [node] of fromNode.traverse({
+		for (const node of fromNode.traverse({
 			mode: traverseMode,
-			includeFrom: true,
-			ignore: {
-				checkNode: (node) => {
-					if (node === fromNode) return 0;
-					const passComp = node.getComp(RenderPassComp) ?? null;
-					if (passComp) {
-						stats.prunedNestedRenderPass += 1;
-						return Ctx.CHECK.BREAK_BRANCH | Ctx.CHECK.SKIP_YIELD;
-					}
-					return 0;
-				},
+			fromInclude: true,
+			prune: (node) => {
+				if (node === fromNode) return false;
+				const passComp = node.getComp(RenderPassComp) ?? null;
+				if (!passComp) return false;
+				stats.prunedNestedRenderPass += 1;
+				return true;
 			},
 		})) {
 			stats.nodesVisited += 1;
@@ -550,7 +538,7 @@ export class WrRenderer {
 		const parentWorldByNode = new Map();
 		parentWorldByNode.set(fromNode.id, this.#resolveAncestorWorld(fromNode));
 
-		for (const [node] of fromNode.traverse({ mode: "bfs", includeFrom: true })) {
+		for (const node of fromNode.traverse({ mode: "bfs", fromInclude: true })) {
 			const parentWorld = parentWorldByNode.get(node.id) ?? Alm.Mat4.IDENTITY;
 			const tx = node.getComp(Transform);
 			let nodeWorld = null;

@@ -22,7 +22,7 @@ export class SetBuffers extends Component {
 		this.indirect = options.indirect ?? null;
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || state.passKind !== "render") return;
 		this.setVertexBuffers(state);
 		this.setIndexBuffer(state);
@@ -65,5 +65,4 @@ export class SetBuffers extends Component {
 		}
 	}
 }
-
 

@@ -16,7 +16,7 @@ export class Dispatch extends Component {
 		this.z = uint(options.z);
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || state.passKind !== "compute") return;
 		if (!state.pipeline) return;
 		state.pass.dispatchWorkgroups(this.x, this.y, this.z);
@@ -33,11 +33,10 @@ export class DispatchIndirect extends Component {
 		this.offset = Math.max(0, Number(options.offset ?? 0) | 0);
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass || state.passKind !== "compute") return;
 		if (!state.pipeline || !this.buffer) return;
 		state.pass.dispatchWorkgroupsIndirect(this.buffer, this.offset);
 	}
 }
-
 

@@ -405,25 +405,25 @@ async function run() {
 
 	// ---------- Render graph
 	const ctx = new Ctx();
-	const root = ctx.addNode();
+	const root = ctx.newNode();
 	root.addComp(new Awgpu.BeginFrame());
 
-	const gradientCycle = root.addChild();
-	const gradientPass = gradientCycle.addChild();
+	const gradientCycle = root.newNode();
+	const gradientPass = gradientCycle.newNode();
 	gradientPass.addComp(new Awgpu.RenderPass(gradient.passOptions));
 
-	const gradientDraw = gradientPass.addChild();
+	const gradientDraw = gradientPass.newNode();
 	gradientDraw.addComp(new Awgpu.UsePipeline(gradient.pipeline));
 	gradientDraw.addComp(new Awgpu.SetBindGroups([
 		{ index: 0, bindGroup: gradient.bindGroup },
 	]));
 	gradientDraw.addComp(new Awgpu.Draw({ vertexCount: 3 }));
 
-	const gradientEnd = gradientCycle.addChild();
+	const gradientEnd = gradientCycle.newNode();
 	gradientEnd.addComp(new Awgpu.EndPass());
 
-	const computeCycle = root.addChild();
-	const compute = computeCycle.addChild();
+	const computeCycle = root.newNode();
+	const compute = computeCycle.newNode();
 	compute.addComp(new Awgpu.ComputePass({ label: "compute-instances" }));
 	compute.addComp(new Awgpu.UsePipeline(instanceCompute.pipeline));
 	compute.addComp(new Awgpu.SetBindGroups([
@@ -431,24 +431,24 @@ async function run() {
 	]));
 	compute.addComp(new Awgpu.Dispatch({ x: 1 }));
 
-	const computeEnd = computeCycle.addChild();
+	const computeEnd = computeCycle.newNode();
 	computeEnd.addComp(new Awgpu.EndPass());
 
-	const mainCycle = root.addChild();
-	const pass = mainCycle.addChild();
+	const mainCycle = root.newNode();
+	const pass = mainCycle.newNode();
 	pass.addComp(new Awgpu.RenderPass({
 		clearColor: [0, 0, 0, 1],
 		clearDepth: 1,
 		useDepth: true,
 	}));
 
-	const outlineShader = pass.addChild();
+	const outlineShader = pass.newNode();
 	outlineShader.addComp(new Awgpu.UsePipeline(outlineRender.pipeline));
 
-	const mainShader = pass.addChild();
+	const mainShader = pass.newNode();
 	mainShader.addComp(new Awgpu.UsePipeline(mainRender.pipeline));
 
-	const cubeState = ctx.addNode();
+	const cubeState = ctx.newNode();
 	outlineShader.linkChild(cubeState);
 	mainShader.linkChild(cubeState);
 	cubeState.addComp(new Awgpu.SetBindGroups([cubeRender.bindEntry]));
@@ -464,7 +464,7 @@ async function run() {
 	}));
 	const cubeDraw = [];
 	for (const submesh of cubeMesh.submeshes) {
-		const node = cubeState.addChild();
+		const node = cubeState.newNode();
 		node.addComp(new Awgpu.DrawIndexed({
 			indexCount: submesh.indexCount,
 			instanceCount: INSTANCE_COUNT,
@@ -474,10 +474,10 @@ async function run() {
 		cubeDraw.push(node);
 	}
 
-	const mainEnd = mainCycle.addChild();
+	const mainEnd = mainCycle.newNode();
 	mainEnd.addComp(new Awgpu.EndPass());
 
-	const frameEnd = root.addChild();
+	const frameEnd = root.newNode();
 	frameEnd.addComp(new Awgpu.EndFrame());
 
 	// ---------- Frame loop
@@ -502,7 +502,7 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
-		ctx.exec(root, backend.newState());
+		ctx.exec({ from: root, state: backend.newState() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);

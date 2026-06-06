@@ -49,15 +49,15 @@ The graph shape is the execution flow
 const ctx = new Ctx();
 const backend = await Awgpu.Backend.create(canvas);
 
-const root = ctx.addNode();
+const root = ctx.newNode();
 root.addComp(new Awgpu.BeginFrame());
 
-const pass = root.addNode();
+const pass = root.newNode();
 pass.addComp(new Awgpu.RenderPass({
 	clearColor: [0.02, 0.02, 0.03, 1],
 }));
 
-const draw = pass.addNode();
+const draw = pass.newNode();
 draw.addComp(new Awgpu.UsePipeline(pipeline));
 draw.addComp(new Awgpu.SetBindGroups([
 	{ index: 0, bindGroup: cameraBG },
@@ -68,13 +68,13 @@ draw.addComp(new Awgpu.SetBuffers({
 }));
 draw.addComp(new Awgpu.DrawIndexed({ indexCount: 36 }));
 
-const endPass = root.addNode();
+const endPass = root.newNode();
 endPass.addComp(new Awgpu.EndPass());
 
-const endFrame = root.addNode();
+const endFrame = root.newNode();
 endFrame.addComp(new Awgpu.EndFrame());
 
-ctx.exec(root, backend.newState());
+ctx.exec({ from: root, state: backend.newState() });
 ```
 
 ## Important Rules
@@ -152,7 +152,7 @@ const backend = await Awgpu.Backend.create(canvas, {
 
 ```js
 const state = backend.newState();
-ctx.exec(root, state);
+ctx.exec({ from: root, state });
 ```
 
 Shape:
@@ -359,17 +359,17 @@ Compute and render can share one frame encoder
 End the compute pass before starting the render pass
 
 ```js
-const root = ctx.addNode();
+const root = ctx.newNode();
 root.addComp(new Awgpu.BeginFrame());
 
-const compute = root.addNode();
+const compute = root.newNode();
 compute.addComp(new Awgpu.ComputePass());
 compute.addComp(new Awgpu.UsePipeline(computePipeline));
 compute.addComp(new Awgpu.SetBindGroups([{ index: 0, bindGroup: computeBG }]));
 compute.addComp(new Awgpu.Dispatch({ x: 64 }));
 compute.addComp(new Awgpu.EndPass());
 
-const render = root.addNode();
+const render = root.newNode();
 render.addComp(new Awgpu.RenderPass({ clearColor: [0, 0, 0, 1] }));
 render.addComp(new Awgpu.UsePipeline(renderPipeline));
 render.addComp(new Awgpu.SetBindGroups([{ index: 0, bindGroup: renderBG }]));
@@ -380,9 +380,9 @@ render.addComp(new Awgpu.SetBuffers({
 render.addComp(new Awgpu.DrawIndexed({ indexCount: 36, instanceCount: 3 }));
 render.addComp(new Awgpu.EndPass());
 
-root.addNode().addComp(new Awgpu.EndFrame());
+root.newNode().addComp(new Awgpu.EndFrame());
 
-ctx.exec(root, backend.newState());
+ctx.exec({ from: root, state: backend.newState() });
 ```
 
 ## Why This Exists

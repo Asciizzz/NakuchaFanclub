@@ -176,7 +176,7 @@ function createObjectShaders(world, source) {
 }
 
 function setOutline(root, thickness) {
-	for (const [node] of root.traverse({ from: root.id })) {
+	for (const node of root.traverse({ from: root.id })) {
 		for (const comp of node.components ?? []) {
 			if (comp instanceof WrGPU.MeshRenderer) comp.setSlot(0, [thickness, 0, 0, 0]);
 		}
@@ -214,7 +214,7 @@ async function run() {
 	const objectShaders = createObjectShaders(world, await Other.readText(WELCOME_SHADER_URL));
 	const background = createBackground(backend);
 	const loader = new WrGPU.Loader({ backend, world });
-	const worldRoot = world.addNode(null);
+	const worldRoot = world.newNode(null);
 	worldRoot.name = "world-root";
 
 	const shaders = [objectShaders.outline, objectShaders.main];
@@ -242,25 +242,25 @@ async function run() {
 	new ResizeObserver(resize).observe(container);
 
 	const renderCtx = new Ctx();
-	const root = renderCtx.addNode();
+	const root = renderCtx.newNode();
 	root.addComp(new Awgpu.BeginFrame());
 
-	const bgCycle = root.addChild();
-	const bgPass = bgCycle.addChild();
+	const bgCycle = root.newNode();
+	const bgPass = bgCycle.newNode();
 	bgPass.addComp(new Awgpu.RenderPass({
 		label: "wr3-background-pass",
 		clearColor: [0, 0, 0, 1],
 		useDepth: false,
 		sampleCount: SAMPLE_COUNT,
 	}));
-	const bgDraw = bgPass.addChild();
+	const bgDraw = bgPass.newNode();
 	bgDraw.addComp(new Awgpu.UsePipeline(background.pipeline));
 	bgDraw.addComp(new Awgpu.SetBindGroups([{ index: 0, bindGroup: background.bindGroup }]));
 	bgDraw.addComp(new Awgpu.Draw({ vertexCount: 3 }));
-	bgCycle.addChild().addComp(new Awgpu.EndPass());
+	bgCycle.newNode().addComp(new Awgpu.EndPass());
 
-	const mainCycle = root.addChild();
-	const mainPass = mainCycle.addChild();
+	const mainCycle = root.newNode();
+	const mainPass = mainCycle.newNode();
 	mainPass.addComp(new Awgpu.RenderPass({
 		label: "wr3-world-pass",
 		clearColorEnabled: false,
@@ -269,11 +269,11 @@ async function run() {
 		useDepth: true,
 		sampleCount: SAMPLE_COUNT,
 	}));
-	const worldSlot = mainPass.addChild();
+	const worldSlot = mainPass.newNode();
 	world.setRenderEntry(worldSlot);
-	mainCycle.addChild().addComp(new Awgpu.EndPass());
+	mainCycle.newNode().addComp(new Awgpu.EndPass());
 
-	root.addChild().addComp(new Awgpu.EndFrame());
+	root.newNode().addComp(new Awgpu.EndFrame());
 
 	let last = performance.now();
 	function frame(now) {
@@ -290,7 +290,7 @@ async function run() {
 		background.data.set([canvas.width, canvas.height, 0, 0], 4);
 		backend.queue.writeBuffer(background.buffer, 0, background.data);
 
-		renderCtx.exec(root, backend.newState());
+		renderCtx.exec({ from: root, state: backend.newState() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);

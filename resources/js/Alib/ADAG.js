@@ -5,7 +5,14 @@ Lightweight directed acyclic graph context
 Best served as inherited base (yummers)
 */
 
+const NODE_OP = Symbol("AdagNodeOp");
+
 function asId(value) {
+	if (value && typeof value === "object") {
+		const raw = value.id ?? value.ref?.id ?? null;
+		const id = String(raw ?? "").trim();
+		return id ? id : null;
+	}
 	const id = String(value ?? "").trim();
 	return id ? id : null;
 }
@@ -27,103 +34,113 @@ function cut(list, value) {
 	return i;
 }
 
-function uniquePush(list, value, index = -1) {
+function uniquePut(list, value, index = -1) {
 	if (list.includes(value)) return false;
 	putAt(list, value, index);
 	return true;
 }
 
-const Adag_CHECK = Object.freeze({
-	SKIP_CALL: 1 << 0,
-	SKIP_YIELD: 1 << 1,
-	TERMINATE: 1 << 2,
-	BREAK_BRANCH: 1 << 3,
-});
-
 export class Node {
-	ctx = null;
+	#ctx = null;
+	#parentIds = [];
+	#childIds = [];
 	id = "";
-	parentIds = [];
-	childIds = [];
 
-	constructor(ctx = null, id = "") {
-		this.ctx = ctx;
+	constructor(id = "") {
 		this.id = asId(id) ?? "";
 	}
 
+	get ctx() { return this.#ctx; }
+	get parentIds() { return this.#parentIds.slice(); }
+	get childIds() { return this.#childIds.slice(); }
+
 	get parent() {
-		if (!this.ctx || this.parentIds.length <= 0) return null;
-		return this.ctx.getNode(this.parentIds[0]);
+		if (!this.#ctx || this.#parentIds.length <= 0) return null;
+		return this.#ctx.getNode(this.#parentIds[0]);
 	}
 
 	get parents() {
-		if (!this.ctx || this.parentIds.length <= 0) return [];
+		if (!this.#ctx || this.#parentIds.length <= 0) return [];
 		const out = [];
-		for (const id of this.parentIds) {
-			const node = this.ctx.getNode(id);
+		for (const id of this.#parentIds) {
+			const node = this.#ctx.getNode(id);
 			if (node) out.push(node);
 		}
 		return out;
 	}
 
 	get children() {
-		if (!this.ctx || this.childIds.length <= 0) return [];
+		if (!this.#ctx || this.#childIds.length <= 0) return [];
 		const out = [];
-		for (const id of this.childIds) {
-			const node = this.ctx.getNode(id);
+		for (const id of this.#childIds) {
+			const node = this.#ctx.getNode(id);
 			if (node) out.push(node);
 		}
 		return out;
 	}
 
-	addChild(index = -1) {
-		if (!this.ctx) return null;
-		return this.ctx.addNode(this.id, index);
+	newNode(index = -1) {
+		if (!this.#ctx) return null;
+		return this.#ctx.newNode(this, index);
 	}
 
 	linkChild(child, index = -1) {
-		if (!this.ctx) return null;
-		return this.ctx.link(this.id, child, index);
+		if (!this.#ctx) return false;
+		return this.#ctx.link(this, child, index);
 	}
 
 	unlinkChild(child) {
-		if (!this.ctx) return false;
-		return this.ctx.unlink(this.id, child);
+		if (!this.#ctx) return false;
+		return this.#ctx.unlink(this, child);
 	}
 
 	moveTo(parent = null, index = -1) {
-		if (!this.ctx) return null;
-		return this.ctx.moveNode(this.id, parent, index);
+		if (!this.#ctx) return null;
+		return this.#ctx.moveNode(this, parent, index);
 	}
 
 	deleteSelf(branch = false) {
-		if (!this.ctx) return null;
-		return this.ctx.deleteNode(this.id, branch);
+		if (!this.#ctx) return null;
+		return this.#ctx.deleteNode(this, branch);
 	}
 	kys(branch = false) { return this.deleteSelf(branch); }
 
-	*walk(options = {}) {
-		if (!this.ctx) return;
-		const src = options && typeof options === "object" ? options : {};
-		yield* this.ctx.walk({
-			...src,
-			from: this.id,
-		});
+	*walk({ fromInclude = true, mode = "dfs_pre", dedupe = false, prune = null } = {}) {
+		if (!this.#ctx) return;
+		yield* this.#ctx.walk({ from: this, fromInclude, mode, dedupe, prune });
 	}
 
-	*schedule(options = {}) {
-		if (!this.ctx) return;
-		const src = options && typeof options === "object" ? options : {};
-		yield* this.ctx.schedule({
-			...src,
-			from: this.id,
-		});
+	*schedule({ fromInclude = true, prune = null } = {}) {
+		if (!this.#ctx) return;
+		yield* this.#ctx.schedule({ from: this, fromInclude, prune });
+	}
+
+	[NODE_OP](op, a = null, b = null) {
+		if (op === "bind") {
+			if (this.#ctx) return false;
+			this.#ctx = a;
+			this.id = asId(b) ?? this.id;
+			this.#parentIds.length = 0;
+			this.#childIds.length = 0;
+			return true;
+		}
+		if (op === "detach") {
+			this.#ctx = null;
+			this.#parentIds.length = 0;
+			this.#childIds.length = 0;
+			return true;
+		}
+		if (op === "addParent") return uniquePut(this.#parentIds, asId(a), b);
+		if (op === "removeParent") return cut(this.#parentIds, asId(a));
+		if (op === "addChild") return uniquePut(this.#childIds, asId(a), b);
+		if (op === "removeChild") return cut(this.#childIds, asId(a));
+		if (op === "parents") return this.#parentIds;
+		if (op === "children") return this.#childIds;
+		return null;
 	}
 }
 
 export class Ctx {
-	static CHECK = Adag_CHECK;
-
 	#nodes = new Map();
 	#version = 0;
 	#seed = 1;
@@ -134,7 +151,8 @@ export class Ctx {
 	}
 
 	get version() { return this.#version; }
-	get nodes() { return this.#nodes; }
+	get nodes() { return new Map(this.#nodes); }
+	get nodeCount() { return this.#nodes.size; }
 	get roots() {
 		const out = [];
 		for (const node of this.#nodes.values()) {
@@ -143,27 +161,35 @@ export class Ctx {
 		return out;
 	}
 
-	createNode(id) {
-		return new Node(this, id);
+	createNode(id = "") {
+		return new Node(id);
 	}
 
-	addNode(parent = null, index = -1) {
-		const id = this.#nextId();
-		const node = this.createNode(id);
-		if (!node) return null;
+	newNode(parent = null, index = -1) {
+		return this.bindNode(this.createNode(), parent, index);
+	}
 
-		node.parentIds.length = 0;
-		node.childIds.length = 0;
+	bindNode(node, parent = null, index = -1) {
+		if (!node || typeof node[NODE_OP] !== "function") return null;
+		if (node.ctx) return null;
+		const parentNode = parent == null ? null : this.getNode(parent);
+		if (parent != null && !parentNode) return null;
+
+		const id = this.#nextId();
+		if (!node[NODE_OP]("bind", this, id)) return null;
 		this.#nodes.set(id, node);
 
-		if (parent != null && !this.link(parent, id, index)) {
-			this.#nodes.delete(id);
-			node.ctx = null;
-			return null;
-		}
-
+		if (parentNode) this.link(parentNode, node, index);
 		this.#version++;
 		return node;
+	}
+
+	hasNode(ref) {
+		return !!this.getNode(ref);
+	}
+
+	nodeIds() {
+		return Array.from(this.#nodes.keys());
 	}
 
 	getNode(ref) {
@@ -181,8 +207,8 @@ export class Ctx {
 		if (parent.childIds.includes(child.id)) return true;
 		if (this.#isReachable(child.id, parent.id)) return false;
 
-		uniquePush(parent.childIds, child.id, index);
-		uniquePush(child.parentIds, parent.id);
+		parent[NODE_OP]("addChild", child.id, index);
+		child[NODE_OP]("addParent", parent.id);
 		this.#version++;
 		return true;
 	}
@@ -191,11 +217,9 @@ export class Ctx {
 		const parent = this.getNode(parentRef);
 		const child = this.getNode(childRef);
 		if (!parent || !child) return false;
-
-		const a = cut(parent.childIds, child.id);
-		const b = cut(child.parentIds, parent.id);
+		const a = parent[NODE_OP]("removeChild", child.id);
+		const b = child[NODE_OP]("removeParent", parent.id);
 		if (a < 0 && b < 0) return false;
-
 		this.#version++;
 		return true;
 	}
@@ -203,14 +227,12 @@ export class Ctx {
 	moveNode(id, parent = null, index = -1) {
 		const node = this.getNode(id);
 		if (!node) return null;
-
-		const oldParents = node.parentIds.slice();
-		for (const parentId of oldParents) this.unlink(parentId, node.id);
-		if (parent != null && !this.link(parent, node.id, index)) {
-			for (const parentId of oldParents) this.link(parentId, node.id);
+		const oldParents = node.parentIds;
+		for (const parentId of oldParents) this.unlink(parentId, node);
+		if (parent != null && !this.link(parent, node, index)) {
+			for (const parentId of oldParents) this.link(parentId, node);
 			return null;
 		}
-
 		this.#version++;
 		return node;
 	}
@@ -221,104 +243,66 @@ export class Ctx {
 		return branch ? this.#deleteBranch(node) : this.#deleteSingle(node);
 	}
 
-	*walk(options = {}) {
-		const mode = String(options?.mode ?? "dfs_pre").toLowerCase();
-		const callNodeFn = typeof options?.callNode === "function" ? options.callNode : null;
-		const checkNodeFn = typeof options?.ignore?.checkNode === "function" ? options.ignore.checkNode : null;
-		const dedupe = options?.dedupe === true;
-		const CHECK = Ctx.CHECK;
+	*walk({ from = null, fromInclude = true, mode = "dfs_pre", dedupe = false, prune = null } = {}) {
+		mode = String(mode ?? "dfs_pre").toLowerCase();
+		dedupe = dedupe === true;
+		prune = typeof prune === "function" ? prune : null;
 
-		const fromNode = this.getNode(options?.from ?? null);
+		const fromNode = this.getNode(from);
 		if (!fromNode) return;
-
-		const includeFrom = options?.includeFrom !== false;
-		const start = includeFrom ? [fromNode.id] : fromNode.childIds.slice();
+		const start = fromInclude !== false ? [fromNode.id] : fromNode.childIds;
 		if (start.length <= 0) return;
 
 		const visited = new Set();
-		const inspectNode = (node) => {
-			const rawFlags = checkNodeFn ? Number(checkNodeFn(node, this)) : 0;
-			const flags = Number.isFinite(rawFlags) ? (rawFlags | 0) : 0;
-			let callResult;
-			if (!(flags & CHECK.SKIP_CALL) && callNodeFn) callResult = callNodeFn(node, this);
-			return { flags, callResult };
-		};
-
-		function* yieldNode(node, visit) {
-			if (!(visit.flags & CHECK.SKIP_YIELD)) yield [node, visit.callResult];
-		}
-
-		const shouldSkip = (id) => {
-			if (!dedupe) return false;
-			if (visited.has(id)) return true;
-			visited.add(id);
-			return false;
+		const shouldSkip = (node) => {
+			if (!node) return true;
+			if (dedupe && visited.has(node.id)) return true;
+			if (dedupe) visited.add(node.id);
+			return prune ? prune(node, this) === true : false;
 		};
 
 		if (mode === "bfs") {
 			const q = start.slice();
-			while (q.length > 0) {
-				const id = q.shift();
-				if (shouldSkip(id)) continue;
-				const node = this.#nodes.get(id);
-				if (!node) continue;
-				const visit = inspectNode(node);
-				yield* yieldNode(node, visit);
-				if (visit.flags & CHECK.TERMINATE) return;
-				if (visit.flags & CHECK.BREAK_BRANCH) continue;
+			for (let qi = 0; qi < q.length; qi++) {
+				const node = this.#nodes.get(q[qi]);
+				if (shouldSkip(node)) continue;
+				yield node;
 				for (const childId of node.childIds) q.push(childId);
 			}
 			return;
 		}
 
-		const stack = start.slice().reverse().map((id) => ({ id, phase: "enter" }));
-		while (stack.length > 0) {
-			const cur = stack.pop();
-			const node = this.#nodes.get(cur.id);
-			if (!node) continue;
-
-			if (mode === "dfs_post") {
-				if (cur.phase === "exit") {
-					const visit = { flags: cur.flags ?? 0, callResult: cur.callResult };
-					yield* yieldNode(node, visit);
-					if (visit.flags & CHECK.TERMINATE) return;
+		if (mode === "dfs_post") {
+			const stack = start.slice().reverse().map((id) => ({ id, exit: false }));
+			while (stack.length > 0) {
+				const cur = stack.pop();
+				const node = this.#nodes.get(cur.id);
+				if (!node) continue;
+				if (cur.exit) {
+					yield node;
 					continue;
 				}
-				if (shouldSkip(cur.id)) continue;
-				const visit = inspectNode(node);
-				if (visit.flags & CHECK.TERMINATE) {
-					yield* yieldNode(node, visit);
-					return;
-				}
-				stack.push({ ...cur, phase: "exit", ...visit });
-				if (visit.flags & CHECK.BREAK_BRANCH) continue;
-				for (let i = node.childIds.length - 1; i >= 0; i--) {
-					stack.push({ id: node.childIds[i], phase: "enter" });
-				}
-				continue;
+				if (shouldSkip(node)) continue;
+				stack.push({ id: node.id, exit: true });
+				for (let i = node.childIds.length - 1; i >= 0; i--) stack.push({ id: node.childIds[i], exit: false });
 			}
+			return;
+		}
 
-			if (shouldSkip(cur.id)) continue;
-			const visit = inspectNode(node);
-			yield* yieldNode(node, visit);
-			if (visit.flags & CHECK.TERMINATE) return;
-			if (visit.flags & CHECK.BREAK_BRANCH) continue;
-			for (let i = node.childIds.length - 1; i >= 0; i--) {
-				stack.push({ id: node.childIds[i], phase: "enter" });
-			}
+		const stack = start.slice().reverse();
+		while (stack.length > 0) {
+			const node = this.#nodes.get(stack.pop());
+			if (shouldSkip(node)) continue;
+			yield node;
+			for (let i = node.childIds.length - 1; i >= 0; i--) stack.push(node.childIds[i]);
 		}
 	}
 
-	*schedule(options = {}) {
-		const callNodeFn = typeof options?.callNode === "function" ? options.callNode : null;
-		const checkNodeFn = typeof options?.ignore?.checkNode === "function" ? options.ignore.checkNode : null;
-		const CHECK = Ctx.CHECK;
-
-		const fromNode = this.getNode(options?.from ?? null);
+	*schedule({ from = null, fromInclude = true, prune = null } = {}) {
+		prune = typeof prune === "function" ? prune : null;
+		const fromNode = this.getNode(from);
 		if (!fromNode) return;
-
-		const includeFrom = options?.includeFrom !== false;
-		const start = includeFrom ? [fromNode.id] : fromNode.childIds.slice();
+		const start = fromInclude !== false ? [fromNode.id] : fromNode.childIds;
 		if (start.length <= 0) return;
 
 		const reachable = new Set();
@@ -329,11 +313,10 @@ export class Ctx {
 			if (reachable.has(id)) continue;
 			const node = this.#nodes.get(id);
 			if (!node) continue;
+			if (prune && prune(node, this) === true) continue;
 			reachable.add(id);
 			discovery.push(id);
-			for (let i = node.childIds.length - 1; i >= 0; i--) {
-				stack.push(node.childIds[i]);
-			}
+			for (let i = node.childIds.length - 1; i >= 0; i--) stack.push(node.childIds[i]);
 		}
 
 		const pendingParents = new Map();
@@ -358,14 +341,7 @@ export class Ctx {
 			const node = this.#nodes.get(id);
 			if (!node) continue;
 			done.add(id);
-
-			const rawFlags = checkNodeFn ? Number(checkNodeFn(node, this)) : 0;
-			const flags = Number.isFinite(rawFlags) ? (rawFlags | 0) : 0;
-			let callResult;
-			if (!(flags & CHECK.SKIP_CALL) && callNodeFn) callResult = callNodeFn(node, this);
-			if (!(flags & CHECK.SKIP_YIELD)) yield [node, callResult];
-			if (flags & CHECK.TERMINATE) return;
-			if (flags & CHECK.BREAK_BRANCH) continue;
+			yield node;
 
 			for (const childId of node.childIds) {
 				if (!reachable.has(childId)) continue;
@@ -377,48 +353,70 @@ export class Ctx {
 	}
 
 	#deleteSingle(node) {
-		for (const parentId of node.parentIds.slice()) this.unlink(parentId, node.id);
-		for (const childId of node.childIds.slice()) this.unlink(node.id, childId);
+		for (const parentId of node.parentIds) this.unlink(parentId, node);
+		for (const childId of node.childIds) this.unlink(node, childId);
 		this.#nodes.delete(node.id);
-		node.ctx = null;
-		node.parentIds.length = 0;
-		node.childIds.length = 0;
+		node[NODE_OP]("detach");
 		this.#version++;
 		return node;
 	}
 
 	#deleteBranch(node) {
-		const marked = new Set();
-		const stack = [node.id];
-		while (stack.length > 0) {
-			const id = stack.pop();
-			if (marked.has(id)) continue;
-			const cur = this.#nodes.get(id);
-			if (!cur) continue;
-			marked.add(id);
-			for (const childId of cur.childIds) stack.push(childId);
-		}
-
-		for (const id of Array.from(marked)) {
+		const reachable = this.#collectReachable(node.id);
+		const protect = new Set();
+		for (const id of reachable) {
+			if (id === node.id) continue;
 			const cur = this.#nodes.get(id);
 			if (!cur) continue;
 			for (const parentId of cur.parentIds) {
-				if (!marked.has(parentId)) marked.delete(id);
+				if (!reachable.has(parentId)) {
+					protect.add(id);
+					break;
+				}
 			}
 		}
 
-		const out = node;
-		for (const id of Array.from(marked)) {
+		const protectStack = Array.from(protect);
+		while (protectStack.length > 0) {
+			const id = protectStack.pop();
 			const cur = this.#nodes.get(id);
 			if (!cur) continue;
-			for (const parentId of cur.parentIds.slice()) this.unlink(parentId, id);
-			for (const childId of cur.childIds.slice()) this.unlink(id, childId);
-			this.#nodes.delete(id);
-			cur.ctx = null;
-			cur.parentIds.length = 0;
-			cur.childIds.length = 0;
+			for (const childId of cur.childIds) {
+				if (!reachable.has(childId) || protect.has(childId)) continue;
+				protect.add(childId);
+				protectStack.push(childId);
+			}
 		}
+
+		const deleted = [];
+		for (const id of reachable) {
+			if (!protect.has(id)) deleted.push(id);
+		}
+
+		for (const id of deleted) {
+			const cur = this.#nodes.get(id);
+			if (!cur) continue;
+			for (const parentId of cur.parentIds) this.unlink(parentId, cur);
+			for (const childId of cur.childIds) this.unlink(cur, childId);
+			this.#nodes.delete(id);
+			cur[NODE_OP]("detach");
+		}
+
 		this.#version++;
+		return node;
+	}
+
+	#collectReachable(fromId) {
+		const out = new Set();
+		const stack = [fromId];
+		while (stack.length > 0) {
+			const id = stack.pop();
+			if (out.has(id)) continue;
+			const node = this.#nodes.get(id);
+			if (!node) continue;
+			out.add(id);
+			for (const childId of node.childIds) stack.push(childId);
+		}
 		return out;
 	}
 
@@ -451,8 +449,6 @@ export const Adag = {
 	Ctx,
 };
 
-if (typeof window !== "undefined") {
-	window.Adag = Adag;
-}
+if (typeof window !== "undefined") window.Adag = Adag;
 
 export default Adag;

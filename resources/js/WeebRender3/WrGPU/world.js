@@ -58,7 +58,6 @@ function copyComp(comp, target) {
 	if (typeof comp.copy === "function") return comp.copy(target);
 	const out = Object.create(Object.getPrototypeOf(comp));
 	Object.assign(out, comp);
-	out.node = target ?? null;
 	return out;
 }
 
@@ -118,13 +117,11 @@ export class InstanceData {
 }
 
 export class WorldComponent {
-	node = null;
 	enabled = true;
 
 	copy(target = null) {
 		const out = Object.create(Object.getPrototypeOf(this));
 		Object.assign(out, this);
-		out.node = target;
 		return out;
 	}
 }
@@ -141,7 +138,6 @@ export class Transform extends WorldComponent {
 			local: this.local,
 			world: this.world,
 		}), {
-			node: target,
 			enabled: this.enabled,
 		});
 	}
@@ -181,7 +177,6 @@ export class MeshRenderer extends WorldComponent {
 			instanceGroupIndex: this.cfg.instanceGroupIndex,
 			deformGroupIndex: this.cfg.deformGroupIndex,
 		}), {
-			node: target,
 			enabled: this.enabled,
 		});
 	}
@@ -243,8 +238,6 @@ export class WorldNode extends TreeNode {
 	addComp(comp, options = {}) {
 		const value = typeof comp === "function" ? new comp(options) : comp;
 		if (!value || typeof value !== "object") return null;
-		if (value.node && value.node !== this) return null;
-		value.node = this;
 		this.components.push(value);
 		return value;
 	}
@@ -253,14 +246,11 @@ export class WorldNode extends TreeNode {
 		const index = this.components.indexOf(comp);
 		if (index < 0) return false;
 		this.components.splice(index, 1);
-		if (comp && typeof comp === "object") comp.node = null;
 		return true;
 	}
 
 	clearComp() {
-		const out = this.components.splice(0);
-		for (const comp of out) comp.node = null;
-		return out;
+		return this.components.splice(0);
 	}
 }
 
@@ -269,7 +259,7 @@ class WorldRenderComp {
 		this.world = world;
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		this.world?.execRender?.(state);
 	}
 }
@@ -327,7 +317,7 @@ export class World extends TreeCtx {
 	#renderComp = null;
 
 	createNode(id) {
-		return new WorldNode(this, id);
+		return new WorldNode(id);
 	}
 
 	setBackend(backend) {
@@ -634,7 +624,7 @@ export class World extends TreeCtx {
 		if (parent != null && !parentNode) return null;
 
 		const copyNode = (src, parentId, insertIndex = -1) => {
-			const next = this.addNode(parentId, insertIndex);
+			const next = this.newNode(parentId, insertIndex);
 			if (!next) return null;
 			next.name = src.name;
 			for (const comp of src.components ?? []) {

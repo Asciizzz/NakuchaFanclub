@@ -442,17 +442,17 @@ async function run() {
 		batchMode: "shader",
 	}));
 
-	const renderRoot = world.addNode(null);
+	const renderRoot = world.newNode(null);
 	renderRoot.name = "render-root";
 
-	const backgroundPassNode = world.addNode(renderRoot);
+	const backgroundPassNode = world.newNode(renderRoot);
 	backgroundPassNode.name = "background-pass";
 	const backgroundPassComp = backgroundPassNode.addComp(WrRenderPass);
 	backgroundPassComp.usePass(backgroundPass);
 	const backgroundComp = backgroundPassNode.addComp(WrShaderFSCComp);
 	backgroundComp.useShader(backgroundShader);
 
-	const mainPassNode = world.addNode(renderRoot);
+	const mainPassNode = world.newNode(renderRoot);
 	mainPassNode.name = "main-pass";
 	const mainPassComp = mainPassNode.addComp(WrRenderPass);
 	mainPassComp.usePass(mainPass);

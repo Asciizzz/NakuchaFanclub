@@ -40,7 +40,7 @@ export class RenderPass extends Component {
 		this.options = options ?? {};
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
 		if (!state.encoder || state.pass) return;
 
@@ -71,7 +71,7 @@ export class ComputePass extends Component {
 		this.options = options ?? {};
 	}
 
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
 		if (!state.encoder || state.pass) return;
 		state.pass = state.encoder.beginComputePass({
@@ -84,7 +84,7 @@ export class ComputePass extends Component {
 }
 
 export class EndPass extends Component {
-	exec(state) {
+	exec({ state } = {}) {
 		if (!state.pass) return;
 		state.pass.end();
 		state.pass = null;
@@ -92,4 +92,3 @@ export class EndPass extends Component {
 		state.pipeline = null;
 	}
 }
-

@@ -86,16 +86,16 @@ export class WrWorld extends Ctx {
 	}
 
 	createNode(id) {
-		return new WrNode(this, id);
+		return new WrNode(id);
 	}
 
 	getNode(ref) {
 		return super.getNode(asNodeId(this, ref));
 	}
 
-	addNode(parent = null, index = -1) {
+	newNode(parent = null, index = -1) {
 		const parentId = parent == null ? null : asNodeId(this, parent);
-		const node = super.addNode(parentId, index);
+		const node = super.newNode(parentId, index);
 		if (!node) return null;
 		if (node.parentId == null) this.#roots.add(node.id);
 		return node;
@@ -119,7 +119,7 @@ export class WrWorld extends Ctx {
 		const parentBefore = source.parentId;
 		const childrenBefore = source.childIds.slice();
 		const branchIds = branch
-			? Array.from(source.traverse({ mode: "dfs_pre", includeFrom: true }), ([node]) => node.id)
+			? Array.from(source.traverse({ mode: "dfs_pre", fromInclude: true }), (node) => node.id)
 			: [source.id];
 
 		const out = super.deleteNode(key, branch);
@@ -164,12 +164,12 @@ export class WrWorld extends Ctx {
 		if (targetId != null && !this.getNode(targetId)) return null;
 
 		const remap = new Map();
-		for (const [current] of source.traverse({ mode: "dfs_pre", includeFrom: true })) {
+		for (const current of source.traverse({ mode: "dfs_pre", fromInclude: true })) {
 			const nextParentId = current.id === source.id
 				? targetId
 				: (remap.get(current.parentId)?.id ?? null);
 
-			const clone = this.addNode(nextParentId);
+			const clone = this.newNode(nextParentId);
 			if (!clone) return null;
 
 			for (const key of Object.keys(current)) {

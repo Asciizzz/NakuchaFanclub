@@ -776,10 +776,10 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 
 			function buildGraph() {
 				graph = new Ctx();
-				root = graph.addNode();
+				root = graph.newNode();
 				root.addComp(new Awgpu.BeginFrame({ label: "AwrayFrame" }));
 
-				const radiosityPass = graph.addNode(root);
+				const radiosityPass = graph.newNode(root);
 				radiosityPass.addComp(new Awgpu.ComputePass({ label: "radiosity" }));
 				radiosityPass.addComp(new Awgpu.SetBindGroups([
 					{ index: 0, bindGroup: commonBG },
@@ -795,7 +795,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 				}));
 				radiosityPass.addComp(new Awgpu.EndPass());
 
-				const rayPass = graph.addNode(root);
+				const rayPass = graph.newNode(root);
 				rayPass.addComp(new Awgpu.ComputePass({ label: "raytrace" }));
 				rayPass.addComp(new Awgpu.UsePipeline(rayPipeline));
 				rayPass.addComp(new Awgpu.SetBindGroups([
@@ -808,7 +808,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 				}));
 				rayPass.addComp(new Awgpu.EndPass());
 
-				const presentPass = graph.addNode(root);
+				const presentPass = graph.newNode(root);
 				presentPass.addComp(new Awgpu.RenderPass({
 					label: "present",
 					useDepth: false,
@@ -821,7 +821,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 				presentPass.addComp(new Awgpu.Draw({ vertexCount: 3 }));
 				presentPass.addComp(new Awgpu.EndPass());
 
-				graph.addNode(root).addComp(new Awgpu.EndFrame());
+				graph.newNode(root).addComp(new Awgpu.EndFrame());
 			}
 
 			function resize() {
@@ -882,7 +882,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 				fcam.update(dt);
 				updateCommon();
 				updateRadiosityUniforms();
-				graph.exec(root, backend.newState());
+				graph.exec({ from: root, state: backend.newState() });
 				frame++;
 
 				lastTime = now;

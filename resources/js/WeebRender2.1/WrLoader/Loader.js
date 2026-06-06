@@ -245,7 +245,7 @@ export class WrLoader {
 			const parentId = sourceId === sourceRootId
 				? attachId
 				: (sourceToWorld.get(sourceParent) ?? attachId ?? null);
-			const node = world.addNode(parentId);
+			const node = world.newNode(parentId);
 			if (!node) return null;
 			node.name = String(sourceNode?.name ?? sourceId);
 
