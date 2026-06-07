@@ -1,7 +1,8 @@
 import { Acamera } from "../Alib/Acamera.js";
 import * as Alm from "../Alib/Alm.js";
 import { Awgpu } from "../Alib/Awgpu/index.js";
-import { Ctx } from "../Alib/Aflow.js";
+import { Aflow, AfCmd } from "../Alib/Aflow.js";
+import { Agraph } from "../Alib/Agraph.js";
 import { FCamera } from "./FCamera.js";
 import { Other, WrGPU } from "../WeebRender3/index.js";
 
@@ -241,39 +242,46 @@ async function run() {
 	resize();
 	new ResizeObserver(resize).observe(container);
 
-	const renderCtx = new Ctx();
-	const root = renderCtx.newNode();
-	root.addComp(new Awgpu.BeginFrame());
+	const flow = new Aflow(new Agraph({ label: "WR3" }));
+	const rootNode = flow.addNode({ payload: [new Awgpu.BeginFrame()] });
+	const rootId = rootNode.id;
 
-	const bgCycle = root.newNode();
-	const bgPass = bgCycle.newNode();
-	bgPass.addComp(new Awgpu.RenderPass({
-		label: "wr3-background-pass",
-		clearColor: [0, 0, 0, 1],
-		useDepth: false,
-		sampleCount: SAMPLE_COUNT,
-	}));
-	const bgDraw = bgPass.newNode();
-	bgDraw.addComp(new Awgpu.UsePipeline(background.pipeline));
-	bgDraw.addComp(new Awgpu.SetBindGroups([{ index: 0, bindGroup: background.bindGroup }]));
-	bgDraw.addComp(new Awgpu.Draw({ vertexCount: 3 }));
-	bgCycle.newNode().addComp(new Awgpu.EndPass());
+	const bgNode = flow.addNode({ payload: [
+		new Awgpu.RenderPass({
+			label: "wr3-background-pass",
+			clearColor: [0, 0, 0, 1],
+			useDepth: false,
+			sampleCount: SAMPLE_COUNT,
+		}),
+		new Awgpu.UsePipeline(background.pipeline),
+		new Awgpu.SetBindGroups([{ index: 0, bindGroup: background.bindGroup }]),
+		new Awgpu.Draw({ vertexCount: 3 }),
+		new Awgpu.EndPass()
+	]});
 
-	const mainCycle = root.newNode();
-	const mainPass = mainCycle.newNode();
-	mainPass.addComp(new Awgpu.RenderPass({
-		label: "wr3-world-pass",
-		clearColorEnabled: false,
-		clearDepth: 1,
-		clearDepthEnabled: true,
-		useDepth: true,
-		sampleCount: SAMPLE_COUNT,
-	}));
-	const worldSlot = mainPass.newNode();
-	world.setRenderEntry(worldSlot);
-	mainCycle.newNode().addComp(new Awgpu.EndPass());
+	const mainNode = flow.addNode({ payload: [
+		new Awgpu.RenderPass({
+			label: "wr3-world-pass",
+			clearColorEnabled: false,
+			clearDepth: 1,
+			clearDepthEnabled: true,
+			useDepth: true,
+			sampleCount: SAMPLE_COUNT,
+		})
+	]});
 
-	root.newNode().addComp(new Awgpu.EndFrame());
+	const worldNode = flow.addNode({ payload: [] });
+	world.setRenderEntry(worldNode);
+
+	const mainEndNode = flow.addNode({ payload: [new Awgpu.EndPass()] });
+
+	const frameEndNode = flow.addNode({ payload: [new Awgpu.EndFrame()] });
+
+	flow.addLink({ srcId: rootId, dstId: bgNode.id });
+	flow.addLink({ srcId: bgNode.id, dstId: mainNode.id });
+	flow.addLink({ srcId: mainNode.id, dstId: worldNode.id });
+	flow.addLink({ srcId: worldNode.id, dstId: mainEndNode.id });
+	flow.addLink({ srcId: mainEndNode.id, dstId: frameEndNode.id });
 
 	let last = performance.now();
 	function frame(now) {
@@ -290,7 +298,7 @@ async function run() {
 		background.data.set([canvas.width, canvas.height, 0, 0], 4);
 		backend.queue.writeBuffer(background.buffer, 0, background.data);
 
-		renderCtx.exec({ from: root, state: backend.newState() });
+		flow.run({ from: rootId, state: backend.newState() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);

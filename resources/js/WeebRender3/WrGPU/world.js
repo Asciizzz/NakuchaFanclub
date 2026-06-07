@@ -1,5 +1,6 @@
 import { Mat4 } from "../../Alib/Alm.js";
 import { Ctx as TreeCtx, Node as TreeNode } from "../../Alib/Atree.js";
+import { AfCmd } from "../../Alib/Aflow.js";
 import { Material, Mesh, MeshDeform, Texture } from "./mesh.js";
 
 function uint(value, fallback = 0) {
@@ -254,12 +255,13 @@ export class WorldNode extends TreeNode {
 	}
 }
 
-class WorldRenderComp {
-	constructor(world) {
+export class WorldRenderCmd extends AfCmd {
+	constructor(world, data = {}) {
+		super(data);
 		this.world = world;
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		this.world?.execRender?.(state);
 	}
 }
@@ -314,7 +316,7 @@ export class World extends TreeCtx {
 
 	#instance = null;
 	#defaultMaterial = null;
-	#renderComp = null;
+	#renderCmd = null;
 
 	createNode(id) {
 		return new WorldNode(id);
@@ -331,15 +333,10 @@ export class World extends TreeCtx {
 	}
 
 	setRenderEntry(node) {
-		const next = node ?? null;
-		if (this.renderEntry === next && this.#renderComp) return this;
-		if (this.renderEntry && this.#renderComp) this.renderEntry.removeComp?.(this.#renderComp);
-		this.renderEntry = next;
-		if (next) {
-			this.#renderComp = new WorldRenderComp(this);
-			next.addComp?.(this.#renderComp);
-		} else {
-			this.#renderComp = null;
+		if (!node) return this;
+		this.#renderCmd = new WorldRenderCmd(this);
+		if (Array.isArray(node.data)) {
+			node.data.push(this.#renderCmd);
 		}
 		return this;
 	}

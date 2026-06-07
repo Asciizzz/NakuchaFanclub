@@ -1,7 +1,8 @@
 import { Acamera } from "../Alib/Acamera.js";
 import * as Alm from "../Alib/Alm.js";
 import { Awgpu } from "../Alib/Awgpu/index.js";
-import { Ctx } from "../Alib/Aflow.js";
+import { Aflow, AfCmd } from "../Alib/Aflow.js";
+import { Agraph } from "../Alib/Agraph.js";
 import { FCamera } from "./FCamera.js";
 import { Other } from "../WeebRender3/index.js";
 
@@ -404,81 +405,82 @@ async function run() {
 	new ResizeObserver(resize).observe(container);
 
 	// ---------- Render graph
-	const ctx = new Ctx();
-	const root = ctx.newNode();
-	root.addComp(new Awgpu.BeginFrame());
+	const flow = new Aflow(new Agraph({ label: "WR3" }));
+	const rootNode = flow.addNode({ payload: [new Awgpu.BeginFrame()] });
+	const rootId = rootNode.id;
 
-	const gradientCycle = root.newNode();
-	const gradientPass = gradientCycle.newNode();
-	gradientPass.addComp(new Awgpu.RenderPass(gradient.passOptions));
+	const gradientNode = flow.addNode({ payload: [
+		new Awgpu.RenderPass(gradient.passOptions),
+		new Awgpu.UsePipeline(gradient.pipeline),
+		new Awgpu.SetBindGroups([{ index: 0, bindGroup: gradient.bindGroup }]),
+		new Awgpu.Draw({ vertexCount: 3 }),
+		new Awgpu.EndPass()
+	]});
 
-	const gradientDraw = gradientPass.newNode();
-	gradientDraw.addComp(new Awgpu.UsePipeline(gradient.pipeline));
-	gradientDraw.addComp(new Awgpu.SetBindGroups([
-		{ index: 0, bindGroup: gradient.bindGroup },
-	]));
-	gradientDraw.addComp(new Awgpu.Draw({ vertexCount: 3 }));
+	const computeNode = flow.addNode({ payload: [
+		new Awgpu.ComputePass({ label: "compute-instances" }),
+		new Awgpu.UsePipeline(instanceCompute.pipeline),
+		new Awgpu.SetBindGroups([{ index: 0, bindGroup: instanceCompute.bindGroup }]),
+		new Awgpu.Dispatch({ x: 1 }),
+		new Awgpu.EndPass()
+	]});
 
-	const gradientEnd = gradientCycle.newNode();
-	gradientEnd.addComp(new Awgpu.EndPass());
+	const mainPassNode = flow.addNode({ payload: [
+		new Awgpu.RenderPass({
+			clearColor: [0, 0, 0, 1],
+			clearDepth: 1,
+			useDepth: true,
+		})
+	]});
 
-	const computeCycle = root.newNode();
-	const compute = computeCycle.newNode();
-	compute.addComp(new Awgpu.ComputePass({ label: "compute-instances" }));
-	compute.addComp(new Awgpu.UsePipeline(instanceCompute.pipeline));
-	compute.addComp(new Awgpu.SetBindGroups([
-		{ index: 0, bindGroup: instanceCompute.bindGroup },
-	]));
-	compute.addComp(new Awgpu.Dispatch({ x: 1 }));
+	const outlineShaderNode = flow.addNode({ payload: [new Awgpu.UsePipeline(outlineRender.pipeline)] });
+	const mainShaderNode = flow.addNode({ payload: [new Awgpu.UsePipeline(mainRender.pipeline)] });
 
-	const computeEnd = computeCycle.newNode();
-	computeEnd.addComp(new Awgpu.EndPass());
+	const cubeStateNode = flow.addNode({ payload: [
+		new Awgpu.SetBindGroups([cubeRender.bindEntry]),
+		new Awgpu.SetBuffers({
+			vertex: [
+				{ slot: 0, buffer: cubeMesh.vertexBuffer },
+				{ slot: 1, buffer: instanceCompute.instanceBuffer },
+			],
+			index: {
+				buffer: cubeMesh.indexBuffer,
+				format: cubeMesh.indexFormat,
+			},
+		})
+	]});
 
-	const mainCycle = root.newNode();
-	const pass = mainCycle.newNode();
-	pass.addComp(new Awgpu.RenderPass({
-		clearColor: [0, 0, 0, 1],
-		clearDepth: 1,
-		useDepth: true,
+	const drawNodes = cubeMesh.submeshes.map(submesh => flow.addNode({
+		payload: [
+			new Awgpu.DrawIndexed({
+				indexCount: submesh.indexCount,
+				instanceCount: INSTANCE_COUNT,
+				firstIndex: submesh.indexStart,
+				baseVertex: submesh.vertexStart ?? 0,
+			})
+		]
 	}));
 
-	const outlineShader = pass.newNode();
-	outlineShader.addComp(new Awgpu.UsePipeline(outlineRender.pipeline));
+	const mainEndNode = flow.addNode({ payload: [new Awgpu.EndPass()] });
+	const frameEndNode = flow.addNode({ payload: [new Awgpu.EndFrame()] });
 
-	const mainShader = pass.newNode();
-	mainShader.addComp(new Awgpu.UsePipeline(mainRender.pipeline));
+	// Topology
+	flow.addLink({ srcId: rootId, dstId: gradientNode.id });
+	flow.addLink({ srcId: gradientNode.id, dstId: computeNode.id });
+	flow.addLink({ srcId: computeNode.id, dstId: mainPassNode.id });
+	
+	flow.addLink({ srcId: mainPassNode.id, dstId: outlineShaderNode.id, data: { order: 0 } });
+	flow.addLink({ srcId: mainPassNode.id, dstId: mainShaderNode.id, data: { order: 1 } });
+	
+	flow.addLink({ srcId: outlineShaderNode.id, dstId: cubeStateNode.id });
+	flow.addLink({ srcId: mainShaderNode.id, dstId: cubeStateNode.id });
 
-	const cubeState = ctx.newNode();
-	outlineShader.linkChild(cubeState);
-	mainShader.linkChild(cubeState);
-	cubeState.addComp(new Awgpu.SetBindGroups([cubeRender.bindEntry]));
-	cubeState.addComp(new Awgpu.SetBuffers({
-		vertex: [
-			{ slot: 0, buffer: cubeMesh.vertexBuffer },
-			{ slot: 1, buffer: instanceCompute.instanceBuffer },
-		],
-		index: {
-			buffer: cubeMesh.indexBuffer,
-			format: cubeMesh.indexFormat,
-		},
-	}));
-	const cubeDraw = [];
-	for (const submesh of cubeMesh.submeshes) {
-		const node = cubeState.newNode();
-		node.addComp(new Awgpu.DrawIndexed({
-			indexCount: submesh.indexCount,
-			instanceCount: INSTANCE_COUNT,
-			firstIndex: submesh.indexStart,
-			baseVertex: submesh.vertexStart ?? 0,
-		}));
-		cubeDraw.push(node);
+	for (const drawNode of drawNodes) {
+		flow.addLink({ srcId: cubeStateNode.id, dstId: drawNode.id });
+		flow.addLink({ srcId: drawNode.id, dstId: mainEndNode.id });
 	}
 
-	const mainEnd = mainCycle.newNode();
-	mainEnd.addComp(new Awgpu.EndPass());
-
-	const frameEnd = root.newNode();
-	frameEnd.addComp(new Awgpu.EndFrame());
+	flow.addLink({ srcId: mainEndNode.id, dstId: frameEndNode.id });
 
 	// ---------- Frame loop
 	let last = performance.now();
@@ -502,12 +504,12 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
-		ctx.exec({ from: root, state: backend.newState() });
+		flow.run({ from: rootId, state: backend.newState() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);
 
 	if (typeof window !== "undefined") {
-		window.wr3 = { backend, ctx, root, gradient, instanceCompute, cubeMesh, cubeDraw, cubeRender, mainRender, outlineRender, camera, fcam };
+		window.wr3 = { backend, flow, rootId, gradient, instanceCompute, cubeMesh, drawNodes, cubeRender, mainRender, outlineRender, camera, fcam };
 	}
 }

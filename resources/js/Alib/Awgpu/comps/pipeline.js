@@ -1,14 +1,14 @@
-import { Component } from "../../Aflow.js";
+import { AfCmd } from "../../Aflow.js";
 
-export class UsePipeline extends Component {
+export class UsePipeline extends AfCmd {
 	pipeline = null;
 
-	constructor(pipeline, options = {}) {
-		super(options);
+	constructor(pipeline, data = {}) {
+		super(data);
 		this.pipeline = pipeline ?? null;
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (!state.pass || !this.pipeline) return;
 		state.pass.setPipeline(this.pipeline);
 		state.pipeline = this.pipeline;

@@ -1,14 +1,14 @@
-import { Component } from "../../Aflow.js";
+import { AfCmd } from "../../Aflow.js";
 
-export class SetBindGroups extends Component {
+export class SetBindGroups extends AfCmd {
 	groups = [];
 
-	constructor(groups = [], options = {}) {
-		super(options);
+	constructor(groups = [], data = {}) {
+		super(data);
 		this.groups = Array.isArray(groups) ? groups.slice() : [];
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (!state.pass) return;
 		for (const entry of this.groups) {
 			const index = Math.max(0, Number(entry?.index ?? entry?.group ?? 0) | 0);

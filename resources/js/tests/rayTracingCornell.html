@@ -78,7 +78,8 @@
 		import { Acamera } from "../Alib/Acamera.js";
 		import * as Alm from "../Alib/Alm.js";
 		import { Awgpu } from "../Alib/Awgpu/index.js";
-		import { Ctx } from "../Alib/Aflow.js";
+		import { Aflow, AfCmd } from "../Alib/Aflow.js";
+		import { Agraph } from "../Alib/Agraph.js";
 		import { FCamera } from "../welcome/FCamera.js";
 
 		const canvas = document.querySelector("#view");
@@ -731,8 +732,8 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 			let framebuffer = null;
 			let rayBG = null;
 			let presentBG = null;
-			let graph = null;
-			let root = null;
+			let flow = null;
+			let rootId = null;
 			let frame = 0;
 			let lastStats = 0;
 			let lastTime = performance.now();
@@ -775,59 +776,72 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 			}
 
 			function buildGraph() {
-				graph = new Ctx();
-				root = graph.newNode();
-				root.addComp(new Awgpu.BeginFrame({ label: "AwrayFrame" }));
+				flow = new Aflow(new Agraph({ label: "Awray" }));
+				
+				const root = flow.addNode({ payload: [
+					new Awgpu.BeginFrame({ label: "AwrayFrame" })
+				]});
+				rootId = root.id;
 
-				const radiosityPass = graph.newNode(root);
-				radiosityPass.addComp(new Awgpu.ComputePass({ label: "radiosity" }));
-				radiosityPass.addComp(new Awgpu.SetBindGroups([
-					{ index: 0, bindGroup: commonBG },
-					{ index: 1, bindGroup: radiosityBG },
-				]));
-				radiosityPass.addComp(new Awgpu.UsePipeline(radiosityPipeline));
-				radiosityPass.addComp(new Awgpu.Dispatch({ x: PHOTON_WORKGROUPS_PER_FRAME }));
-				radiosityPass.addComp(new Awgpu.UsePipeline(accumulationPipeline));
-				radiosityPass.addComp(new Awgpu.Dispatch({
-					x: Math.ceil(LIGHTMAP_SIZE / ACCUM_TO_LIGHT_WORKGROUP),
-					y: Math.ceil(LIGHTMAP_SIZE / ACCUM_TO_LIGHT_WORKGROUP),
-					z: scene.quads.length,
-				}));
-				radiosityPass.addComp(new Awgpu.EndPass());
+				const radiosityPass = flow.addNode({ payload: [
+					new Awgpu.ComputePass({ label: "radiosity" }),
+					new Awgpu.SetBindGroups([
+						{ index: 0, bindGroup: commonBG },
+						{ index: 1, bindGroup: radiosityBG },
+					]),
+					new Awgpu.UsePipeline(radiosityPipeline),
+					new Awgpu.Dispatch({ x: PHOTON_WORKGROUPS_PER_FRAME }),
+					new Awgpu.UsePipeline(accumulationPipeline),
+					new Awgpu.Dispatch({
+						x: Math.ceil(LIGHTMAP_SIZE / ACCUM_TO_LIGHT_WORKGROUP),
+						y: Math.ceil(LIGHTMAP_SIZE / ACCUM_TO_LIGHT_WORKGROUP),
+						z: scene.quads.length,
+					}),
+					new Awgpu.EndPass()
+				]});
 
-				const rayPass = graph.newNode(root);
-				rayPass.addComp(new Awgpu.ComputePass({ label: "raytrace" }));
-				rayPass.addComp(new Awgpu.UsePipeline(rayPipeline));
-				rayPass.addComp(new Awgpu.SetBindGroups([
-					{ index: 0, bindGroup: commonBG },
-					{ index: 2, bindGroup: rayBG },
-				]));
-				rayPass.addComp(new Awgpu.Dispatch({
-					x: Math.ceil(canvas.width / RAY_WORKGROUP),
-					y: Math.ceil(canvas.height / RAY_WORKGROUP),
-				}));
-				rayPass.addComp(new Awgpu.EndPass());
+				const rayPass = flow.addNode({ payload: [
+					new Awgpu.ComputePass({ label: "raytrace" }),
+					new Awgpu.UsePipeline(rayPipeline),
+					new Awgpu.SetBindGroups([
+						{ index: 0, bindGroup: commonBG },
+						{ index: 2, bindGroup: rayBG },
+					]),
+					new Awgpu.Dispatch({
+						x: Math.ceil(canvas.width / RAY_WORKGROUP),
+						y: Math.ceil(canvas.height / RAY_WORKGROUP),
+					}),
+					new Awgpu.EndPass()
+				]});
 
-				const presentPass = graph.newNode(root);
-				presentPass.addComp(new Awgpu.RenderPass({
-					label: "present",
-					useDepth: false,
-					clearColor: [0, 0, 0, 1],
-				}));
-				presentPass.addComp(new Awgpu.UsePipeline(presentPipeline));
-				presentPass.addComp(new Awgpu.SetBindGroups([
-					{ index: 3, bindGroup: presentBG },
-				]));
-				presentPass.addComp(new Awgpu.Draw({ vertexCount: 3 }));
-				presentPass.addComp(new Awgpu.EndPass());
+				const presentPass = flow.addNode({ payload: [
+					new Awgpu.RenderPass({
+						label: "present",
+						useDepth: false,
+						clearColor: [0, 0, 0, 1],
+					}),
+					new Awgpu.UsePipeline(presentPipeline),
+					new Awgpu.SetBindGroups([
+						{ index: 3, bindGroup: presentBG },
+					]),
+					new Awgpu.Draw({ vertexCount: 3 }),
+					new Awgpu.EndPass()
+				]});
 
-				graph.newNode(root).addComp(new Awgpu.EndFrame());
+				const endFrame = flow.addNode({ payload: [
+					new Awgpu.EndFrame()
+				]});
+
+				flow.addLink({ srcId: rootId, dstId: radiosityPass.id, data: { order: 0 } });
+				flow.addLink({ srcId: radiosityPass.id, dstId: rayPass.id, data: { order: 0 } });
+				flow.addLink({ srcId: rayPass.id, dstId: presentPass.id, data: { order: 0 } });
+				flow.addLink({ srcId: presentPass.id, dstId: endFrame.id, data: { order: 0 } });
 			}
 
 			function resize() {
 				const changed = backend.resize({ maxPixelRatio: 1 });
 				camera.aspect = Math.max(1, canvas.width) / Math.max(1, canvas.height);
-				if (!framebuffer || changed) {
+				if (!flow || changed) {
 					createFramebuffer();
 					buildGraph();
 				}
@@ -882,7 +896,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 				fcam.update(dt);
 				updateCommon();
 				updateRadiosityUniforms();
-				graph.exec({ from: root, state: backend.newState() });
+				flow.run({ from: rootId, state: backend.newState() });
 				frame++;
 
 				lastTime = now;

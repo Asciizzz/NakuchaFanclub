@@ -1,4 +1,4 @@
-import { Component } from "../../Aflow.js";
+import { AfCmd } from "../../Aflow.js";
 
 function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
@@ -12,23 +12,23 @@ function ensureEncoder(state, label = "AwgpuCopy") {
 	return state.encoder;
 }
 
-export class CopyBufferToBuffer extends Component {
+export class CopyBufferToBuffer extends AfCmd {
 	source = null;
 	destination = null;
 	sourceOffset = 0;
 	destinationOffset = 0;
 	size = 0;
 
-	constructor(options = {}) {
-		super(options);
-		this.source = options.source ?? options.sourceBuffer ?? null;
-		this.destination = options.destination ?? options.destinationBuffer ?? null;
-		this.sourceOffset = uint(options.sourceOffset);
-		this.destinationOffset = uint(options.destinationOffset);
-		this.size = uint(options.size);
+	constructor(data = {}) {
+		super(data);
+		this.source = data.source ?? data.sourceBuffer ?? null;
+		this.destination = data.destination ?? data.destinationBuffer ?? null;
+		this.sourceOffset = uint(data.sourceOffset);
+		this.destinationOffset = uint(data.destinationOffset);
+		this.size = uint(data.size);
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (state.pass || !this.source || !this.destination || this.size <= 0) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;
@@ -42,19 +42,19 @@ export class CopyBufferToBuffer extends Component {
 	}
 }
 
-export class CopyBufferToTexture extends Component {
+export class CopyBufferToTexture extends AfCmd {
 	source = null;
 	destination = null;
 	size = null;
 
-	constructor(options = {}) {
-		super(options);
-		this.source = options.source ?? null;
-		this.destination = options.destination ?? null;
-		this.size = options.size ?? null;
+	constructor(data = {}) {
+		super(data);
+		this.source = data.source ?? null;
+		this.destination = data.destination ?? null;
+		this.size = data.size ?? null;
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (state.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;
@@ -62,19 +62,19 @@ export class CopyBufferToTexture extends Component {
 	}
 }
 
-export class CopyTextureToBuffer extends Component {
+export class CopyTextureToBuffer extends AfCmd {
 	source = null;
 	destination = null;
 	size = null;
 
-	constructor(options = {}) {
-		super(options);
-		this.source = options.source ?? null;
-		this.destination = options.destination ?? null;
-		this.size = options.size ?? null;
+	constructor(data = {}) {
+		super(data);
+		this.source = data.source ?? null;
+		this.destination = data.destination ?? null;
+		this.size = data.size ?? null;
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (state.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;
@@ -82,19 +82,19 @@ export class CopyTextureToBuffer extends Component {
 	}
 }
 
-export class CopyTextureToTexture extends Component {
+export class CopyTextureToTexture extends AfCmd {
 	source = null;
 	destination = null;
 	size = null;
 
-	constructor(options = {}) {
-		super(options);
-		this.source = options.source ?? null;
-		this.destination = options.destination ?? null;
-		this.size = options.size ?? null;
+	constructor(data = {}) {
+		super(data);
+		this.source = data.source ?? null;
+		this.destination = data.destination ?? null;
+		this.size = data.size ?? null;
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (state.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(state);
 		if (!encoder) return;

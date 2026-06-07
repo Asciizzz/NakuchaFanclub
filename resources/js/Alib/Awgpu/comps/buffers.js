@@ -1,4 +1,4 @@
-import { Component } from "../../Aflow.js";
+import { AfCmd } from "../../Aflow.js";
 
 function list(value) {
 	if (Array.isArray(value)) return value;
@@ -10,19 +10,19 @@ function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
 }
 
-export class SetBuffers extends Component {
+export class SetBuffers extends AfCmd {
 	vertex = [];
 	index = null;
 	indirect = null;
 
-	constructor(options = {}) {
-		super(options);
-		this.vertex = list(options.vertex ?? options.vertices).slice();
-		this.index = options.index ?? null;
-		this.indirect = options.indirect ?? null;
+	constructor(data = {}) {
+		super(data);
+		this.vertex = list(data.vertex ?? data.vertices).slice();
+		this.index = data.index ?? null;
+		this.indirect = data.indirect ?? null;
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (!state.pass || state.passKind !== "render") return;
 		this.setVertexBuffers(state);
 		this.setIndexBuffer(state);

@@ -1,4 +1,4 @@
-import { Component } from "../../Aflow.js";
+import { AfCmd } from "../../Aflow.js";
 
 function hasOwn(obj, key) {
 	return Object.prototype.hasOwnProperty.call(obj, key);
@@ -32,29 +32,26 @@ function normalizeColorAttachments(value) {
 	});
 }
 
-export class RenderPass extends Component {
-	options = null;
-
-	constructor(options = {}) {
-		super(options);
-		this.options = options ?? {};
+export class RenderPass extends AfCmd {
+	constructor(data = {}) {
+		super(data);
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
 		if (!state.encoder || state.pass) return;
 
-		const colorAttachments = hasOwn(this.options, "colorAttachments")
-			? normalizeColorAttachments(this.options.colorAttachments)
-			: [state.backend.getScreenColorAttachment(this.options, state)].filter(Boolean);
-		const depthStencilAttachment = hasOwn(this.options, "depthStencilAttachment")
-			? (this.options.depthStencilAttachment ?? undefined)
-			: (state.backend.getDepthAttachment(this.options) ?? undefined);
+		const colorAttachments = hasOwn(this.data, "colorAttachments")
+			? normalizeColorAttachments(this.data.colorAttachments)
+			: [state.backend.getScreenColorAttachment(this.data, state)].filter(Boolean);
+		const depthStencilAttachment = hasOwn(this.data, "depthStencilAttachment")
+			? (this.data.depthStencilAttachment ?? undefined)
+			: (state.backend.getDepthAttachment(this.data) ?? undefined);
 
 		if (colorAttachments.length <= 0 && !depthStencilAttachment) return;
 
 		state.pass = state.encoder.beginRenderPass({
-			label: this.options.label,
+			label: this.data.label,
 			colorAttachments,
 			depthStencilAttachment,
 		});
@@ -63,28 +60,25 @@ export class RenderPass extends Component {
 	}
 }
 
-export class ComputePass extends Component {
-	options = null;
-
-	constructor(options = {}) {
-		super(options);
-		this.options = options ?? {};
+export class ComputePass extends AfCmd {
+	constructor(data = {}) {
+		super(data);
 	}
 
-	exec({ state } = {}) {
+	exec({ state, graph, link } = {}) {
 		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
 		if (!state.encoder || state.pass) return;
 		state.pass = state.encoder.beginComputePass({
-			label: this.options.label,
-			timestampWrites: this.options.timestampWrites,
+			label: this.data.label,
+			timestampWrites: this.data.timestampWrites,
 		});
 		state.passKind = "compute";
 		state.pipeline = null;
 	}
 }
 
-export class EndPass extends Component {
-	exec({ state } = {}) {
+export class EndPass extends AfCmd {
+	exec({ state, graph, link } = {}) {
 		if (!state.pass) return;
 		state.pass.end();
 		state.pass = null;
