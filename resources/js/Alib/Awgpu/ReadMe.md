@@ -1,111 +1,72 @@
 # Awgpu
 
-```
-##################%-----%%%%%%%##%%%%%%%%%%%%#####
-#######+####%%###-------%%%%%%%##%%%%%%%%%%%%#####
-#####---+########------:%%%%%%%#%%%%%%%%%%%%%#####
-####=----+%-----------=+++-%%%%#%%%%%%%%%%%%%#####
-+###---#*-------------++-----++#%%%%%%%%%%%%%####-
---%#---------------+--:---------=-%%%%%%%%%%%###+:
----:----------------:---:------:----%%%%%%%%%#*=::
---:::----------------:*--+:------:--#%%%%%%=###+:-
-#=-:----------:-------*#+-#-:--------%%%%%%%##:--:
-=-*---------------====-%--##:------:%%%%%%%%##:-:-
-::-:--=-----*#=-=:====++-:-#+#-----=%%%%%%%%#+*%#=
-:-**+=------:-++:====++++==+####=---%%%%%%%##%%-::
-=*###=-------+-#-+################-=%%%%%%##%#-::-
--***+-------+-=::::#########=####%%+%%%%%=:#=:::-:
-*=-*=---------*%:=*###=###=#####-%%%%%%%*#=**#-:=
--*==::-------::-#######===#######---==%%%%%##:::+*
-::::-::::-------:##############*----+%##%%%%%%****
-::::::::::::::::::::-%=**++++++-#+--##%#*###%###**
-::-::::::::::::::###*###*##-*#-%---=#%#+#####%###*
-:-=====:::::::::###########*##=+++%+-+==#*#######%
-:::=====--.:::::######*#######%##+#%#:=##%#%#*####
-:::::-==-:::::::########+###*######%%###%#%+%%%%#%
-```
-
 Tiny WebGPU execution layer for `Aflow`
 
-Awgpu is not a game renderer, scene renderer, mesh system, shader builder, loader, or asset manager
+Awgpu is not a game renderer, scene renderer, mesh system, shader builder, loader, or asset manager. It provides a bridge between raw WebGPU commands and the `Aflow` execution model
 
 It only provides:
+*   `Backend` for device, canvas context, frame encoder, screen attachments, and depth attachment management
+*   `AfCmd` components that call raw WebGPU commands during `Aflow` traversal
+*   A mutable state object created by `backend.newState()`
 
-* `Backend` for device, canvas context, frame encoder, screen attachments, and depth attachment
-* DAG components that call raw WebGPU commands in traversal order
-* A small state object created by `backend.newState()`
-
-Everything else stays outside of Awgpu
+Everything else (scene trees, model packing, asset management) stays outside of Awgpu
 
 ## Design
 
-Awgpu follows the render-flow model
-
-You create raw WebGPU resources yourself, then attach small command components to an `Aflow.Ctx` node graph
-
-The graph shape is the execution flow
+Awgpu follows the **render-flow model**. You create WebGPU resources yourself, then wrap execution logic into `AfCmd` instances and attach them to `Aflow` nodes. The graph topology defines the execution sequence
 
 ```js
-const ctx = new Ctx();
+import { Aflow, Agraph } from "./Alib/Aflow.js";
+import { Awgpu } from "./Alib/Awgpu/index.js";
+
+const flow = new Aflow(new Agraph());
 const backend = await Awgpu.Backend.create(canvas);
 
-const root = ctx.newNode();
-root.addComp(new Awgpu.BeginFrame());
+// Root Node: Start Frame
+const root = flow.addNode({ payload: [
+    new Awgpu.BeginFrame()
+]});
 
-const pass = root.newNode();
-pass.addComp(new Awgpu.RenderPass({
-	clearColor: [0.02, 0.02, 0.03, 1],
-}));
+// Render Pass Node
+const passNode = flow.addNode({ payload: [
+    new Awgpu.RenderPass({ clearColor: [0.02, 0.02, 0.03, 1] }),
+    new Awgpu.UsePipeline(pipeline),
+    new Awgpu.SetBindGroups([{ index: 0, bindGroup: cameraBG }]),
+    new Awgpu.SetBuffers({
+        vertex: [{ slot: 0, buffer: vertexBuffer }],
+        index: { buffer: indexBuffer, format: "uint32" },
+    }),
+    new Awgpu.DrawIndexed({ indexCount: 36 }),
+    new Awgpu.EndPass()
+]});
 
-const draw = pass.newNode();
-draw.addComp(new Awgpu.UsePipeline(pipeline));
-draw.addComp(new Awgpu.SetBindGroups([
-	{ index: 0, bindGroup: cameraBG },
-]));
-draw.addComp(new Awgpu.SetBuffers({
-	vertex: [{ slot: 0, buffer: vertexBuffer }],
-	index: { buffer: indexBuffer, format: "uint32" },
-}));
-draw.addComp(new Awgpu.DrawIndexed({ indexCount: 36 }));
+// End Node: Finish Frame
+const endNode = flow.addNode({ payload: [
+    new Awgpu.EndFrame()
+]});
 
-const endPass = root.newNode();
-endPass.addComp(new Awgpu.EndPass());
+// Build Topology
+flow.addLink({ srcId: root.id, dstId: passNode.id });
+flow.addLink({ srcId: passNode.id, dstId: endNode.id });
 
-const endFrame = root.newNode();
-endFrame.addComp(new Awgpu.EndFrame());
-
-ctx.exec({ from: root, state: backend.newState() });
+// Execute
+flow.run({ from: root.id, state: backend.newState() });
 ```
 
 ## Important Rules
 
-Awgpu components do not own GPU resources
+Awgpu components **do not own GPU resources**. They store references and call methods on the active pass in the `state` object. If you create a buffer, texture, or pipeline, you manage its lifecycle yourself
 
-They store references and call methods on the active pass
+Awgpu does not understand high-level concepts like `mesh`, `material`, `camera`, or `scene`. Those belong in higher layers like `WrGPU`
 
-If you create a buffer, texture, bind group, module, or pipeline, you manage it yourself
+## Execution Signature
 
-If a helper class exists somewhere else, pass its `.raw` resource into Awgpu components
+All components inherit from `AfCmd` and implement the following signature:
+`exec({ state, graph, link })`
 
-```js
-node.addComp(new Awgpu.SetBuffers({
-	vertex: [{ slot: 0, buffer: instanceBuffer.raw }],
-}));
-```
-
-Awgpu does not understand:
-
-* mesh
-* material
-* skeleton
-* morph
-* transform
-* camera
-* model
-* scene
-* world
-
-Those belong in higher layers like `WrGPU`
+*   **state**: The mutable object containing the encoder, current pass, and global backend references
+*   **graph**: The underlying `Agraph` instance
+*   **link**: The incoming connection context `{ data, src, dst }`. For root nodes, `link.src` is `null`
 
 ## Backend
 
@@ -113,308 +74,49 @@ Those belong in higher layers like `WrGPU`
 
 ```js
 const backend = await Awgpu.Backend.create(canvas, {
-	format: navigator.gpu.getPreferredCanvasFormat(),
-	depthFormat: "depth24plus",
-	context: {
-		alphaMode: "premultiplied",
-	},
+    format: navigator.gpu.getPreferredCanvasFormat(),
+    depthFormat: "depth24plus",
+    context: { alphaMode: "premultiplied" },
 });
 ```
 
-### Fields
-
-* `canvas`
-* `adapter`
-* `device`
-* `queue`
-* `context`
-* `format`
-* `depthFormat`
-* `ready`
-
-### Methods
-
-* `Backend.create(canvas, options)`
-* `init()`
-* `resize(options)`
-* `createEncoder(label)`
-* `newState()`
-* `getScreenColorAttachment(options)`
-* `getDepthAttachment(options)`
-* `getDepthView()`
-* `submit(encoderOrCommands)`
-* `destroy()`
-* `releaseDepth()`
-
-## State
-
-`backend.newState()` creates the mutable execution state used by `Aflow.Ctx.exec`
-
-```js
-const state = backend.newState();
-ctx.exec({ from: root, state });
-```
-
-Shape:
-
-```js
-{
-	backend,
-	device,
-	queue,
-	encoder,
-	pass,
-	passKind,
-	pipeline,
-	buffers,
-	bindGroups,
-	ended,
-}
-```
-
-Components mutate this object as they execute
-
-This is why `BeginFrame`, `RenderPass`, `UsePipeline`, `SetBuffers`, `DrawIndexed`, `EndPass`, and `EndFrame` can live on separate nodes
-
 ## Components
 
-### BeginFrame
+### Lifecycle
+*   **BeginFrame**: Creates a command encoder if one does not exist
+*   **EndFrame**: Submits the command encoder to the GPU
+*   **EndPass**: Ends the current render or compute pass
 
-Creates a command encoder if one does not already exist
+### Passes
+*   **RenderPass**: Begins a render pass. Supports `colorAttachments` and `depthStencilAttachment` overrides
+*   **ComputePass**: Begins a compute pass
 
-```js
-node.addComp(new Awgpu.BeginFrame({ label: "MainFrame" }));
-```
+### Pipeline & Binding
+*   **UsePipeline**: Binds a `GPURenderPipeline` or `GPUComputePipeline`
+*   **SetBindGroups**: Binds one or more `GPUBindGroup` instances
+*   **SetBuffers**: Binds vertex, index, and indirect buffers
 
-### EndFrame
-
-Submits the command encoder through `backend.submit`
-
-```js
-node.addComp(new Awgpu.EndFrame());
-```
-
-### RenderPass
-
-Begins a render pass
-
-If `colorAttachments` is not provided, it uses the screen texture from the backend
-
-If `depthStencilAttachment` is not provided, it uses the backend depth texture unless `useDepth` is false
-
-```js
-node.addComp(new Awgpu.RenderPass({
-	label: "main-pass",
-	clearColor: [0.1, 0.12, 0.15, 1],
-	clearColorEnabled: true,
-	clearDepth: 1,
-	clearDepthEnabled: true,
-	useDepth: true,
-}));
-```
-
-Render to a texture by providing explicit attachments:
-
-```js
-node.addComp(new Awgpu.RenderPass({
-	colorAttachments: [{
-		view: targetTexture.createView(),
-		loadOp: "clear",
-		storeOp: "store",
-		clearValue: { r: 0, g: 0, b: 0, a: 1 },
-	}],
-	depthStencilAttachment: undefined,
-}));
-```
-
-### ComputePass
-
-Begins a compute pass
-
-```js
-node.addComp(new Awgpu.ComputePass({ label: "compute-instances" }));
-```
-
-### EndPass
-
-Ends the current render or compute pass
-
-```js
-node.addComp(new Awgpu.EndPass());
-```
-
-### UsePipeline
-
-Binds a render or compute pipeline to the current pass
-
-```js
-node.addComp(new Awgpu.UsePipeline(pipeline));
-```
-
-### SetBindGroups
-
-Binds one or more bind groups
-
-```js
-node.addComp(new Awgpu.SetBindGroups([
-	{ index: 0, bindGroup: sceneBG },
-	{ index: 1, bindGroup: materialBG, offsets: [offset] },
-]));
-```
-
-### SetBuffers
-
-Binds vertex, index, and indirect buffers for render passes
-
-```js
-node.addComp(new Awgpu.SetBuffers({
-	vertex: [
-		{ slot: 0, buffer: vertexBuffer },
-		{ slot: 1, buffer: instanceBuffer, offset: 0 },
-	],
-	index: {
-		buffer: indexBuffer,
-		format: "uint32",
-	},
-	indirect: {
-		buffer: indirectBuffer,
-		offset: 0,
-	},
-}));
-```
-
-### Draw
-
-Calls `pass.draw`
-
-```js
-node.addComp(new Awgpu.Draw({
-	vertexCount: 3,
-	instanceCount: 1,
-}));
-```
-
-### DrawIndexed
-
-Calls `pass.drawIndexed`
-
-```js
-node.addComp(new Awgpu.DrawIndexed({
-	indexCount: 36,
-	instanceCount: 10,
-}));
-```
-
-### DrawIndirect
-
-Calls `pass.drawIndirect`
-
-Uses the component buffer if provided, otherwise uses the indirect buffer from `SetBuffers`
-
-```js
-node.addComp(new Awgpu.DrawIndirect({
-	buffer: indirectBuffer,
-	offset: 0,
-}));
-```
-
-### DrawIndexedIndirect
-
-Calls `pass.drawIndexedIndirect`
-
-```js
-node.addComp(new Awgpu.DrawIndexedIndirect({
-	buffer: indirectBuffer,
-	offset: 0,
-}));
-```
-
-### Dispatch
-
-Calls `pass.dispatchWorkgroups`
-
-```js
-node.addComp(new Awgpu.Dispatch({
-	x: 8,
-	y: 1,
-	z: 1,
-}));
-```
-
-### DispatchIndirect
-
-Calls `pass.dispatchWorkgroupsIndirect`
-
-```js
-node.addComp(new Awgpu.DispatchIndirect({
-	buffer: indirectBuffer,
-	offset: 0,
-}));
-```
-
-## Render And Compute In One Frame
-
-Compute and render can share one frame encoder
-
-End the compute pass before starting the render pass
-
-```js
-const root = ctx.newNode();
-root.addComp(new Awgpu.BeginFrame());
-
-const compute = root.newNode();
-compute.addComp(new Awgpu.ComputePass());
-compute.addComp(new Awgpu.UsePipeline(computePipeline));
-compute.addComp(new Awgpu.SetBindGroups([{ index: 0, bindGroup: computeBG }]));
-compute.addComp(new Awgpu.Dispatch({ x: 64 }));
-compute.addComp(new Awgpu.EndPass());
-
-const render = root.newNode();
-render.addComp(new Awgpu.RenderPass({ clearColor: [0, 0, 0, 1] }));
-render.addComp(new Awgpu.UsePipeline(renderPipeline));
-render.addComp(new Awgpu.SetBindGroups([{ index: 0, bindGroup: renderBG }]));
-render.addComp(new Awgpu.SetBuffers({
-	vertex: [{ slot: 0, buffer: vertexBuffer }],
-	index: { buffer: indexBuffer, format: "uint32" },
-}));
-render.addComp(new Awgpu.DrawIndexed({ indexCount: 36, instanceCount: 3 }));
-render.addComp(new Awgpu.EndPass());
-
-root.newNode().addComp(new Awgpu.EndFrame());
-
-ctx.exec({ from: root, state: backend.newState() });
-```
+### Drawing & Dispatching
+*   **Draw / DrawIndexed**: Standard vertex/index drawing
+*   **DrawIndirect / DrawIndexedIndirect**: Indirect drawing from a buffer
+*   **Dispatch / DispatchIndirect**: Compute workgroup dispatching
 
 ## Why This Exists
 
-Raw WebGPU is already explicit and good
+Awgpu puts command execution into a node graph, allowing render flows to be branched, shared, reordered, or generated dynamically. The components are intentionally thin to remain as close to the WebGPU specification as possible
 
-Awgpu does not try to hide it
-
-The useful part is putting command execution into a node graph, so render flow can be branched, shared, reordered, copied, or generated by higher-level tools
-
-The components are intentionally thin
-
-If something requires domain knowledge, it does not belong here
-
-## Note
-
-To control the render flow, you have two choices: via hierarchy, or via array of components on the same node
-
-For frame or renderpass cycle, a good habit is to create an empty node that has 2 children: one for starting and one for ending. You can use the starting node to set up pipelines, bind groups, buffers, etc
-
-## File Layout
+## Layout
 
 ```txt
 Awgpu/
-	index.js
-	backend.js
-	comps/
-		frame.js
-		pass.js
-		pipeline.js
-		bind.js
-		buffers.js
-		draw.js
-		dispatch.js
+    index.js
+    backend.js
+    comps/
+        frame.js    (BeginFrame, EndFrame)
+        pass.js     (RenderPass, ComputePass, EndPass)
+        pipeline.js (UsePipeline)
+        bind.js     (SetBindGroups)
+        buffers.js  (SetBuffers)
+        draw.js     (Draw, DrawIndexed, etc.)
+        dispatch.js (Dispatch, DispatchIndirect)
 ```
