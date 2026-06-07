@@ -44,9 +44,6 @@ export class Aflow {
     }
 
     addLink({ srcId, dstId, data = {} } = {}) {
-        const existing = this.graph.edgesBetween({ srcId, dstId });
-        if (existing.length > 0) throw new Error(`Aflow: Duplicate link between ${srcId} and ${dstId}`);
-
         return this.graph.addEdge({
             srcId,
             dstId,
@@ -62,6 +59,15 @@ export class Aflow {
         return this.graph.removeNode(id);
     }
 
+    connectivity(a, b) {
+        return this.graph.edgesConnecting({ a, b });
+    }
+
+    /**
+     * Create a static snapshot of a flow branch.
+     * Encounters with fstaticValid === false will throw.
+     * Generates a completely independent set of nodes and sequence.
+     */
     makeStatic(from) {
         const root = this.graph.getNode(from);
         if (!root) return new Afstatic();
@@ -71,7 +77,7 @@ export class Aflow {
         
         const getNewNode = (originalNode) => {
             if (uniqueNodes.has(originalNode.id)) return uniqueNodes.get(originalNode.id);
-
+            
             // Check static validity and copy components
             const payload = (originalNode.data ?? []).map(cmd => {
                 if (cmd.fstaticValid === false) {
@@ -168,15 +174,6 @@ export class Aflow {
             const outEdges = this.graph.outEdges(node.id)
                 .filter(e => e.data.enabled !== false)
                 .sort((a, b) => b.data.order - a.data.order); // Reverse sort for stack popping
-
-            // Validation: Unique src-dst pairs
-            const seenDst = new Set();
-            for (const edge of outEdges) {
-                if (seenDst.has(edge.dstId)) {
-                    throw new Error(`Aflow: Multiple edges found for pair ${node.id} -> ${edge.dstId}`);
-                }
-                seenDst.add(edge.dstId);
-            }
 
             // Push children to stack
             const nextPath = new Set(path);
