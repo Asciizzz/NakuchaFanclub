@@ -4,6 +4,7 @@ By Asciiz
 Small string document compiler with staged replacement instructions
 
 It exist because I don't have all fcking day writing regexes
+Also cuz I literally don't know how to write regexes without googling
 */
 
 export class Adoc {

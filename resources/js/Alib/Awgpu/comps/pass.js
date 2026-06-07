@@ -1,4 +1,4 @@
-import { AfCmd } from "../../Aflow.js";
+import { Afcmd } from "../../Aflow.js";
 
 function hasOwn(obj, key) {
 	return Object.prototype.hasOwnProperty.call(obj, key);
@@ -32,7 +32,7 @@ function normalizeColorAttachments(value) {
 	});
 }
 
-export class RenderPass extends AfCmd {
+export class RenderPass extends Afcmd {
 	constructor(data = {}) {
 		super(data);
 	}
@@ -60,7 +60,7 @@ export class RenderPass extends AfCmd {
 	}
 }
 
-export class ComputePass extends AfCmd {
+export class ComputePass extends Afcmd {
 	constructor(data = {}) {
 		super(data);
 	}
@@ -77,7 +77,7 @@ export class ComputePass extends AfCmd {
 	}
 }
 
-export class EndPass extends AfCmd {
+export class EndPass extends Afcmd {
 	exec({ state, graph, link } = {}) {
 		if (!state.pass) return;
 		state.pass.end();

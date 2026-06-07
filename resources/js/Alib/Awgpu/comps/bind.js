@@ -1,6 +1,6 @@
-import { AfCmd } from "../../Aflow.js";
+import { Afcmd } from "../../Aflow.js";
 
-export class SetBindGroups extends AfCmd {
+export class SetBindGroups extends Afcmd {
 	groups = [];
 
 	constructor(groups = [], data = {}) {

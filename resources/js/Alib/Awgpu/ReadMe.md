@@ -6,14 +6,14 @@ Awgpu is not a game renderer, scene renderer, mesh system, shader builder, loade
 
 It only provides:
 *   `Backend` for device, canvas context, frame encoder, screen attachments, and depth attachment management
-*   `AfCmd` components that call raw WebGPU commands during `Aflow` traversal
+*   `Afcmd` components that call raw WebGPU commands during `Aflow` traversal
 *   A mutable state object created by `backend.newState()`
 
 Everything else (scene trees, model packing, asset management) stays outside of Awgpu
 
 ## Design
 
-Awgpu follows the **render-flow model**. You create WebGPU resources yourself, then wrap execution logic into `AfCmd` instances and attach them to `Aflow` nodes. The graph topology defines the execution sequence
+Awgpu follows the **render-flow model**. You create WebGPU resources yourself, then wrap execution logic into `Afcmd` instances and attach them to `Aflow` nodes. The graph topology defines the execution sequence
 
 ```js
 import { Aflow, Agraph } from "./Alib/Aflow.js";
@@ -61,7 +61,7 @@ Awgpu does not understand high-level concepts like `mesh`, `material`, `camera`,
 
 ## Execution Signature
 
-All components inherit from `AfCmd` and implement the following signature:
+All components inherit from `Afcmd` and implement the following signature:
 `exec({ state, graph, link })`
 
 *   **state**: The mutable object containing the encoder, current pass, and global backend references

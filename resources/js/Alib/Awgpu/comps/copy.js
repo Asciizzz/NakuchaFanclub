@@ -1,4 +1,4 @@
-import { AfCmd } from "../../Aflow.js";
+import { Afcmd } from "../../Aflow.js";
 
 function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
@@ -12,7 +12,7 @@ function ensureEncoder(state, label = "AwgpuCopy") {
 	return state.encoder;
 }
 
-export class CopyBufferToBuffer extends AfCmd {
+export class CopyBufferToBuffer extends Afcmd {
 	source = null;
 	destination = null;
 	sourceOffset = 0;
@@ -42,7 +42,7 @@ export class CopyBufferToBuffer extends AfCmd {
 	}
 }
 
-export class CopyBufferToTexture extends AfCmd {
+export class CopyBufferToTexture extends Afcmd {
 	source = null;
 	destination = null;
 	size = null;
@@ -62,7 +62,7 @@ export class CopyBufferToTexture extends AfCmd {
 	}
 }
 
-export class CopyTextureToBuffer extends AfCmd {
+export class CopyTextureToBuffer extends Afcmd {
 	source = null;
 	destination = null;
 	size = null;
@@ -82,7 +82,7 @@ export class CopyTextureToBuffer extends AfCmd {
 	}
 }
 
-export class CopyTextureToTexture extends AfCmd {
+export class CopyTextureToTexture extends Afcmd {
 	source = null;
 	destination = null;
 	size = null;

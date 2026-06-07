@@ -1,6 +1,6 @@
-import { AfCmd } from "../../Aflow.js";
+import { Afcmd } from "../../Aflow.js";
 
-export class BeginFrame extends AfCmd {
+export class BeginFrame extends Afcmd {
 	label = "Wr3Frame";
 
 	constructor(data = {}) {
@@ -15,7 +15,7 @@ export class BeginFrame extends AfCmd {
 	}
 }
 
-export class EndFrame extends AfCmd {
+export class EndFrame extends Afcmd {
 	exec({ state, graph, link } = {}) {
 		if (state.encoder && !state.ended) {
 			state.backend.submit(state.encoder);

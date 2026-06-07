@@ -1,6 +1,14 @@
+/* Aflow
+By Asciiz
+
+A execution flow system built on top of Agraph
+
+*/
+
+
 import { Agraph } from "./Agraph.js";
 
-export class AfCmd {
+export class Afcmd {
     constructor(data = {}) {
         this.data = data;
     }
@@ -49,9 +57,9 @@ export class Aflow {
 
             if (path.has(node.id)) throw new Error(`Aflow: Cycle detected at ${node.id}`);
             
-            // Run Components (AfCmd instances)
+            // Run Components (Afcmd instances)
             for (const cmd of node.data ?? []) {
-                if (cmd instanceof AfCmd) {
+                if (cmd instanceof Afcmd) {
                     cmd.exec({ state, graph: this.graph, link });
                 }
             }

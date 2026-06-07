@@ -3,10 +3,10 @@ By Asciiz
 
 Generic directed graph structure (can be used without directness)
 
-- Stores topology
-- Does not own traversal policy
-- YOU decide how/when/where to traverse, whether to revisit nodes.
-- Traversal can be finite, random, weighted, filtered, cyclic, etc. sky's the limit
+Stores topology
+Does not own traversal policy
+YOU decide how/when/where to traverse, whether to revisit nodes.
+Traversal can be finite, random, weighted, filtered, cyclic, etc. sky's the limit
 */
 
 export class Agraph {
