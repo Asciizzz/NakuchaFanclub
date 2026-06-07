@@ -5,16 +5,33 @@ A execution flow system built on top of Agraph
 
 */
 
-
 import { Agraph } from "./Agraph.js";
 
 export class Afcmd {
+    fstaticValid = true;
+
     constructor(data = {}) {
         this.data = data;
     }
 
     exec({ state, graph, link }) {}
     destroy({ node, graph }) {}
+}
+
+export class Afstatic {
+    constructor(nodes = [], flow = []) {
+        this.nodes = nodes; // Layer 1: Unique mutable node objects
+        this.flow = flow;   // Layer 2: Execution sequence [{ payload, link }]
+    }
+
+    run({ state } = {}) {
+        for (const { payload, link } of this.flow) {
+            for (const cmd of payload) {
+                cmd.exec({ state, graph: null, link });
+            }
+        }
+        return state;
+    }
 }
 
 export class Aflow {
@@ -33,12 +50,95 @@ export class Aflow {
         return this.graph.addEdge({
             srcId,
             dstId,
-            data: { enabled: true, order: 0, ...data }
+            data: { 
+                enabled: true,
+                order: 0,
+                ...data
+            }
         });
     }
 
     removeNode(id) {
         return this.graph.removeNode(id);
+    }
+
+    makeStatic(from) {
+        const root = this.graph.getNode(from);
+        if (!root) return new Afstatic();
+
+        const uniqueNodes = new Map(); // originalId -> newNodeRef
+        const flowSequence = [];
+        
+        const getNewNode = (originalNode) => {
+            if (uniqueNodes.has(originalNode.id)) return uniqueNodes.get(originalNode.id);
+
+            // Check static validity and copy components
+            const payload = (originalNode.data ?? []).map(cmd => {
+                if (cmd.fstaticValid === false) {
+                    throw new Error(`Aflow.makeStatic: Component in node ${originalNode.id} is not static-valid`);
+                }
+                // Copy component instance
+                const copy = Object.create(Object.getPrototypeOf(cmd));
+                Object.assign(copy, cmd);
+                return copy;
+            });
+
+            const newNode = {
+                id: originalNode.id,
+                data: payload
+            };
+            
+            uniqueNodes.set(originalNode.id, newNode);
+            return newNode;
+        };
+
+        const stack = [{ 
+            path: new Set(), 
+            link: { data: {}, src: null, dst: root } 
+        }];
+
+        while (stack.length > 0) {
+            const { path, link } = stack.pop();
+            const originalNode = link.dst;
+
+            if (path.has(originalNode.id)) throw new Error(`Aflow: Cycle detected at ${originalNode.id}`);
+            
+            const newNode = getNewNode(originalNode);
+            const newSrc = link.src ? getNewNode(link.src) : null;
+            
+            // Record execution entry with path-specific link and shared mutable node
+            flowSequence.push({
+                payload: newNode.data,
+                link: {
+                    data: { ...(link.data ?? {}) },
+                    src: newSrc,
+                    dst: newNode
+                }
+            });
+
+            const outEdges = this.graph.outEdges(originalNode.id)
+                .filter(e => e.data.enabled !== false)
+                .sort((a, b) => b.data.order - a.data.order);
+
+            const nextPath = new Set(path);
+            nextPath.add(originalNode.id);
+
+            for (const edge of outEdges) {
+                const dstNode = this.graph.getNode(edge.dstId);
+                if (!dstNode) continue;
+                
+                stack.push({ 
+                    path: nextPath,
+                    link: {
+                        data: edge.data,
+                        src: originalNode,
+                        dst: dstNode
+                    }
+                });
+            }
+        }
+
+        return new Afstatic(Array.from(uniqueNodes.values()), flowSequence);
     }
 
     run({ from, state = {} } = {}) {
