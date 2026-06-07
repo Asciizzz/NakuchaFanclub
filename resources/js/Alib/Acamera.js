@@ -2,6 +2,10 @@
 By Asciiz
 
 Simple camera core based on ZCanvas (ancient history) camera behavior, using Alm
+
+I uuh, genuinely don't think it should belong in Alib
+It's like REALLY REALLY REALLY REALLY REALLY specific
+Idk, it is nice to have around so I think the Acamera can stay
 */
 
 import * as Alm from "./Alm.js";
