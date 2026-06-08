@@ -4,7 +4,7 @@ export class UsePipeline extends Afcmd {
 	pipeline = null;
 
 	constructor(pipeline, data = {}) {
-		super(data);
+		super();
 		this.pipeline = pipeline ?? null;
 	}
 

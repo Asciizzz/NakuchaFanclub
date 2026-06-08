@@ -257,7 +257,7 @@ export class WorldNode extends TreeNode {
 
 export class WorldRenderCmd extends Afcmd {
 	constructor(world, data = {}) {
-		super(data);
+		super();
 		this.world = world;
 	}
 

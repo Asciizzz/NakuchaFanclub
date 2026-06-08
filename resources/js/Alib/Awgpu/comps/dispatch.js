@@ -10,7 +10,7 @@ export class Dispatch extends Afcmd {
 	z = 1;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.x = uint(data.x);
 		this.y = uint(data.y);
 		this.z = uint(data.z);
@@ -28,7 +28,7 @@ export class DispatchIndirect extends Afcmd {
 	offset = 0;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.buffer = data.buffer ?? null;
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}

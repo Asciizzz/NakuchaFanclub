@@ -14,7 +14,7 @@ export class SetBuffers extends Afcmd {
 	index = null; // { buffer, type } type = gl.UNSIGNED_SHORT | gl.UNSIGNED_INT
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.vao = data.vao ?? null;
 		const verts = data.vertex ?? data.vertices;
 		this.vertex = Array.isArray(verts) ? verts.slice() : (verts ? [verts] : []);

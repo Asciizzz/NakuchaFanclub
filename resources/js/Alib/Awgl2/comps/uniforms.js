@@ -13,7 +13,7 @@ export class SetUniforms extends Afcmd {
 	entries = [];
 
 	constructor(entries = [], data = {}) {
-		super(data);
+		super();
 		this.entries = Array.isArray(entries) ? entries.slice() : [];
 	}
 

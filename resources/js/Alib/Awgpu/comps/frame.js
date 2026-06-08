@@ -4,7 +4,7 @@ export class BeginFrame extends Afcmd {
 	label = "Wr3Frame";
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.label = data.label ?? "Wr3Frame";
 	}
 

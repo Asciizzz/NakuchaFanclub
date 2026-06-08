@@ -8,14 +8,14 @@ A execution flow system built on top of Agraph
 import { Agraph } from "./Agraph.js";
 
 export class Afcmd {
-    fstaticValid = true;
+    requiresGraph = false; // If true, cannot be made into fstatic
 
-    constructor(data = {}) {
-        this.data = data;
+    exec({ state, graph, link }) {
+        throw new Error("Afcmd.exec not implemented");
     }
-
-    exec({ state, graph, link }) {}
-    destroy({ node, graph }) {}
+    destroy({ node, graph }) {
+        throw new Error("Afcmd.destroy not implemented");
+    }
 }
 
 export class Afstatic {
@@ -64,9 +64,9 @@ export class Aflow {
     }
 
     /**
-     * Create a static snapshot of a flow branch.
-     * Encounters with fstaticValid === false will throw.
-     * Generates a completely independent set of nodes and sequence.
+     * Create a static snapshot of a flow branch
+     * Encounters with fstaticValid === false will throw
+     * Generates a completely independent set of nodes and sequence
      */
     makeStatic(from) {
         const root = this.graph.getNode(from);
@@ -80,7 +80,7 @@ export class Aflow {
             
             // Check static validity and copy components
             const payload = (originalNode.data ?? []).map(cmd => {
-                if (cmd.fstaticValid === false) {
+                if (cmd.requiresGraph) {
                     throw new Error(`Aflow.makeStatic: Component in node ${originalNode.id} is not static-valid`);
                 }
                 // Copy component instance

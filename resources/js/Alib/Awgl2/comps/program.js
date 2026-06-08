@@ -5,7 +5,7 @@ export class UseProgram extends Afcmd {
 	program = null;
 
 	constructor(program, data = {}) {
-		super(data);
+		super();
 		this.program = program ?? null;
 	}
 

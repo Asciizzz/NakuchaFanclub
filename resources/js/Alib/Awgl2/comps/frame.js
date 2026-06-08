@@ -2,7 +2,7 @@ import { Afcmd } from "../../Aflow.js";
 
 export class BeginFrame extends Afcmd {
 	constructor(data = {}) {
-		super(data);
+		super();
 	}
 
 	exec({ state } = {}) {

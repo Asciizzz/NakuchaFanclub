@@ -20,7 +20,7 @@ export class CopyBufferToBuffer extends Afcmd {
 	size = 0;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.source = data.source ?? data.sourceBuffer ?? null;
 		this.destination = data.destination ?? data.destinationBuffer ?? null;
 		this.sourceOffset = uint(data.sourceOffset);
@@ -48,7 +48,7 @@ export class CopyBufferToTexture extends Afcmd {
 	size = null;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.source = data.source ?? null;
 		this.destination = data.destination ?? null;
 		this.size = data.size ?? null;
@@ -68,7 +68,7 @@ export class CopyTextureToBuffer extends Afcmd {
 	size = null;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.source = data.source ?? null;
 		this.destination = data.destination ?? null;
 		this.size = data.size ?? null;
@@ -88,7 +88,7 @@ export class CopyTextureToTexture extends Afcmd {
 	size = null;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.source = data.source ?? null;
 		this.destination = data.destination ?? null;
 		this.size = data.size ?? null;

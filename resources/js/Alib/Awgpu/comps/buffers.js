@@ -16,7 +16,7 @@ export class SetBuffers extends Afcmd {
 	indirect = null;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.vertex = list(data.vertex ?? data.vertices).slice();
 		this.index = data.index ?? null;
 		this.indirect = data.indirect ?? null;

@@ -12,7 +12,7 @@ export class Draw extends Afcmd {
 	instanceCount = 0; // 0 = non-instanced
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.mode = data.mode ?? null;
 		this.first = uint(data.first ?? data.firstVertex);
 		this.count = uint(data.count ?? data.vertexCount);
@@ -40,7 +40,7 @@ export class DrawIndexed extends Afcmd {
 	instanceCount = 0; // 0 = non-instanced
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.mode = data.mode ?? null;
 		this.count = uint(data.count ?? data.indexCount);
 		this.type = data.type ?? null;

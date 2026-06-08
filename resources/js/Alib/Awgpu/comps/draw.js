@@ -7,7 +7,7 @@ export class Draw extends Afcmd {
 	firstInstance = 0;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.vertexCount = Math.max(0, Number(data.vertexCount ?? 0) | 0);
 		this.instanceCount = Math.max(1, Number(data.instanceCount ?? 1) | 0);
 		this.firstVertex = Math.max(0, Number(data.firstVertex ?? 0) | 0);
@@ -29,7 +29,7 @@ export class DrawIndexed extends Afcmd {
 	firstInstance = 0;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.indexCount = Math.max(0, Number(data.indexCount ?? 0) | 0);
 		this.instanceCount = Math.max(1, Number(data.instanceCount ?? 1) | 0);
 		this.firstIndex = Math.max(0, Number(data.firstIndex ?? 0) | 0);
@@ -49,7 +49,7 @@ export class DrawIndirect extends Afcmd {
 	offset = 0;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.buffer = data.buffer ?? null;
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}
@@ -68,7 +68,7 @@ export class DrawIndexedIndirect extends Afcmd {
 	offset = 0;
 
 	constructor(data = {}) {
-		super(data);
+		super();
 		this.buffer = data.buffer ?? null;
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}

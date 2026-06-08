@@ -3,8 +3,8 @@ import { Afcmd } from "../../Aflow.js";
 export class SetBindGroups extends Afcmd {
 	groups = [];
 
-	constructor(groups = [], data = {}) {
-		super(data);
+	constructor(groups = []) {
+		super();
 		this.groups = Array.isArray(groups) ? groups.slice() : [];
 	}
 

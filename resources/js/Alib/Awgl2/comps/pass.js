@@ -11,7 +11,7 @@ function toNumber(value, fallback = 0) {
 // so downstream comps can guard themselves.
 export class RenderPass extends Afcmd {
 	constructor(data = {}) {
-		super(data);
+		super();
 	}
 
 	exec({ state } = {}) {
