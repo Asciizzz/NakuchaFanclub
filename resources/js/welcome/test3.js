@@ -4,7 +4,7 @@ import { Awgpu } from "../Alib/Awgpu/index.js";
 import { Aflow, Afcmd } from "../Alib/Aflow.js";
 import { Agraph } from "../Alib/Agraph.js";
 import { FCamera } from "./FCamera.js";
-import { Other } from "../WeebRender3/index.js";
+import { Other } from "../WeebRenderBeta/index.js";
 
 const container = document.getElementById("main-canvas");
 const INSTANCE_COUNT = 3;
