@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Awgl2 demo</title>
+	<style>
+		:root {
+			--bg: #05070b;
+			--fg: #e8edf7;
+			--muted: #9aa7bb;
+			--panel: rgba(9, 13, 21, 0.72);
+			--line: rgba(255, 255, 255, 0.12);
+			--green: #b8f2cf;
+		}
+
+		* { box-sizing: border-box; }
+
+		html, body {
+			width: 100%; height: 100%;
+			margin: 0; overflow: hidden;
+			background: var(--bg);
+			color: var(--fg);
+			font-family: ui-sans-serif, system-ui, sans-serif;
+		}
+
+		canvas {
+			display: block;
+			width: 100vw;
+			height: 100vh;
+		}
+
+		.panel {
+			position: fixed;
+			left: 16px; top: 16px;
+			width: min(340px, calc(100vw - 32px));
+			padding: 14px 16px;
+			border: 1px solid var(--line);
+			border-radius: 16px;
+			background: var(--panel);
+			backdrop-filter: blur(12px);
+		}
+
+		.panel h1 {
+			margin: 0 0 6px;
+			font-size: 15px;
+			font-weight: 700;
+			letter-spacing: 0.02em;
+		}
+
+		.panel p {
+			margin: 0;
+			color: var(--muted);
+			font-size: 12px;
+			line-height: 1.5;
+		}
+
+		.stats {
+			margin-top: 10px;
+			font-size: 12px;
+			color: var(--green);
+		}
+	</style>
+</head>
+<body>
+	<canvas id="view"></canvas>
+	<div class="panel">
+		<h1>Awgl2 demo</h1>
+		<p>
+			Spinning triangle driven by <strong>Aflow</strong> + <strong>Awgl2</strong>.<br>
+			One Aflow graph, two render passes per frame.
+		</p>
+		<div class="stats" id="stats">starting...</div>
+	</div>
+
+	<script type="module">
+		import { Aflow, Afcmd } from "../Alib/Aflow.js";
+		import { Agraph } from "../Alib/Agraph.js";
+		import { Awgl2 } from "../Alib/Awgl2/index.js";
+
+		const canvas = document.getElementById("view");
+		const stats  = document.getElementById("stats");
+
+		// -------------------------------------------------------------------
+		// Shaders
+		// -------------------------------------------------------------------
+		const VS = `#version 300 es
+precision highp float;
+
+in vec2 aPos;
+in vec3 aColor;
+
+out vec3 vColor;
+
+uniform float uAngle;
+
+void main() {
+	float c = cos(uAngle);
+	float s = sin(uAngle);
+	vec2 p = vec2(c * aPos.x - s * aPos.y,
+	              s * aPos.x + c * aPos.y);
+	gl_Position = vec4(p, 0.0, 1.0);
+	vColor = aColor;
+}`;
+
+		const FS = `#version 300 es
+precision highp float;
+
+in  vec3 vColor;
+out vec4 fragColor;
+
+uniform float uTime;
+
+void main() {
+	// subtle pulse on brightness
+	float pulse = 0.85 + 0.15 * sin(uTime * 2.0);
+	fragColor = vec4(vColor * pulse, 1.0);
+}`;
+
+		// Fullscreen quad vert - just shows a background gradient via fragment shader
+		const BG_VS = `#version 300 es
+precision highp float;
+
+in vec2 aPos;
+
+void main() {
+	gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+		const BG_FS = `#version 300 es
+precision highp float;
+
+out vec4 fragColor;
+uniform float uTime;
+uniform vec2  uRes;
+
+void main() {
+	vec2 uv = gl_FragCoord.xy / uRes;
+	vec3 a = vec3(0.04, 0.06, 0.18);
+	vec3 b = vec3(0.12, 0.04, 0.22);
+	vec3 col = mix(a, b, uv.y + 0.18 * sin(uv.x * 3.14 + uTime * 0.4));
+	fragColor = vec4(col, 1.0);
+}`;
+
+		// -------------------------------------------------------------------
+		// Helpers
+		// -------------------------------------------------------------------
+		function compileShader(gl, type, src) {
+			const sh = gl.createShader(type);
+			gl.shaderSource(sh, src);
+			gl.compileShader(sh);
+			if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
+				throw new Error(gl.getShaderInfoLog(sh));
+			return sh;
+		}
+
+		function linkProgram(gl, vs, fs) {
+			const prog = gl.createProgram();
+			gl.attachShader(prog, compileShader(gl, gl.VERTEX_SHADER, vs));
+			gl.attachShader(prog, compileShader(gl, gl.FRAGMENT_SHADER, fs));
+			gl.linkProgram(prog);
+			if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
+				throw new Error(gl.getProgramInfoLog(prog));
+			return prog;
+		}
+
+		function makeBuffer(gl, data, usage = gl.STATIC_DRAW) {
+			const buf = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+			gl.bufferData(gl.ARRAY_BUFFER, data, usage);
+			gl.bindBuffer(gl.ARRAY_BUFFER, null);
+			return buf;
+		}
+
+		function makeVAO(gl, prog, buf, attribs) {
+			// attribs: [{ name, size, type, stride, offset }]
+			const vao = gl.createVertexArray();
+			gl.bindVertexArray(vao);
+			gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+			for (const a of attribs) {
+				const loc = gl.getAttribLocation(prog, a.name);
+				if (loc < 0) continue;
+				gl.enableVertexAttribArray(loc);
+				gl.vertexAttribPointer(loc, a.size, a.type ?? gl.FLOAT, false, a.stride, a.offset);
+			}
+			gl.bindVertexArray(null);
+			gl.bindBuffer(gl.ARRAY_BUFFER, null);
+			return vao;
+		}
+
+		// -------------------------------------------------------------------
+		// Main
+		// -------------------------------------------------------------------
+		async function run() {
+			const backend = await Awgl2.Backend.create(canvas);
+			const gl = backend.gl;
+
+			// -- Triangle --
+			//    x, y,     r, g, b
+			const triData = new Float32Array([
+				 0.0,  0.55,   1.0, 0.35, 0.55,
+				-0.48, -0.28,  0.35, 0.75, 1.0,
+				 0.48, -0.28,  0.85, 1.0,  0.45,
+			]);
+			const STRIDE = 5 * 4;
+			const triProg = linkProgram(gl, VS, FS);
+			const triBuf  = makeBuffer(gl, triData);
+			const triVAO  = makeVAO(gl, triProg, triBuf, [
+				{ name: "aPos",   size: 2, stride: STRIDE, offset: 0 },
+				{ name: "aColor", size: 3, stride: STRIDE, offset: 8 },
+			]);
+
+			// -- Background quad --
+			const quadData = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
+			const bgProg = linkProgram(gl, BG_VS, BG_FS);
+			const bgBuf  = makeBuffer(gl, quadData);
+			const bgVAO  = makeVAO(gl, bgProg, bgBuf, [
+				{ name: "aPos", size: 2, stride: 8, offset: 0 },
+			]);
+
+			// -- Aflow graph --
+			// BeginFrame
+			//   └─ BgPass  (background gradient, no depth clear)
+			//       └─ TriPass  (triangle on top)
+			//           └─ EndFrame
+
+			const flow = new Aflow(new Agraph({ label: "gl2demo" }));
+
+			const nBegin = flow.addNode({ payload: [ new Awgl2.BeginFrame() ] });
+
+			const nBgPass = flow.addNode({ payload: [
+				new Awgl2.RenderPass({
+					clearColor: [0.02, 0.02, 0.06, 1],
+					clearColorEnabled: true,
+					useDepth: false,
+				}),
+				new Awgl2.UseProgram(bgProg),
+				new Awgl2.SetBuffers({ vao: bgVAO }),
+				// uniforms written dynamically each frame via a custom Afcmd below
+			] });
+
+			// Custom cmd: write per-frame uniforms for the background
+			class BgUniforms extends Afcmd {
+				exec({ state }) {
+					if (!state.gl || !state.program) return;
+					const gl = state.gl;
+					const t  = performance.now() * 0.001;
+					const rl = gl.getUniformLocation(state.program, "uTime");
+					const rr = gl.getUniformLocation(state.program, "uRes");
+					if (rl) gl.uniform1f(rl, t);
+					if (rr) gl.uniform2f(rr, canvas.width, canvas.height);
+				}
+			}
+			const nBgUniforms = flow.addNode({ payload: [
+				new BgUniforms(),
+				new Awgl2.Draw({ count: 4, mode: null }), // TRIANGLE_STRIP set below
+			] });
+
+			// We need gl.TRIANGLE_STRIP but that value is only known after backend init
+			// so patch mode here
+			nBgUniforms.data[1].mode = gl.TRIANGLE_STRIP;
+
+			const nBgEnd = flow.addNode({ payload: [ new Awgl2.EndPass() ] });
+
+			const nTriPass = flow.addNode({ payload: [
+				new Awgl2.RenderPass({
+					clearColorEnabled: false, // keep bg
+					useDepth: false,
+				}),
+				new Awgl2.UseProgram(triProg),
+				new Awgl2.SetBuffers({ vao: triVAO }),
+			] });
+
+			class TriUniforms extends Afcmd {
+				exec({ state }) {
+					if (!state.gl || !state.program) return;
+					const gl = state.gl;
+					const t  = performance.now() * 0.001;
+					const la = gl.getUniformLocation(state.program, "uAngle");
+					const lt = gl.getUniformLocation(state.program, "uTime");
+					if (la) gl.uniform1f(la, t * 0.9);
+					if (lt) gl.uniform1f(lt, t);
+				}
+			}
+			const nTriDraw = flow.addNode({ payload: [
+				new TriUniforms(),
+				new Awgl2.Draw({ count: 3 }),
+				new Awgl2.EndPass(),
+			] });
+
+			const nEnd = flow.addNode({ payload: [ new Awgl2.EndFrame() ] });
+
+			flow.addLink({ srcId: nBegin.id,   dstId: nBgPass.id });
+			flow.addLink({ srcId: nBgPass.id,   dstId: nBgUniforms.id });
+			flow.addLink({ srcId: nBgUniforms.id, dstId: nBgEnd.id });
+			flow.addLink({ srcId: nBgEnd.id,    dstId: nTriPass.id });
+			flow.addLink({ srcId: nTriPass.id,  dstId: nTriDraw.id });
+			flow.addLink({ srcId: nTriDraw.id,  dstId: nEnd.id });
+
+			// -- Resize --
+			function resize() {
+				backend.resize({ maxPixelRatio: 2 });
+			}
+			resize();
+			new ResizeObserver(resize).observe(canvas);
+
+			// -- Loop --
+			let frames = 0;
+			let fpsTime = performance.now();
+
+			function frame() {
+				flow.run({ from: nBegin.id, state: backend.newState() });
+				frames++;
+				const now = performance.now();
+				if (now - fpsTime >= 500) {
+					const fps = (frames / ((now - fpsTime) * 0.001)).toFixed(1);
+					stats.textContent = `${fps} fps  |  ${canvas.width}×${canvas.height}  |  WebGL2`;
+					frames = 0;
+					fpsTime = now;
+				}
+				requestAnimationFrame(frame);
+			}
+			requestAnimationFrame(frame);
+		}
+
+		run().catch(err => {
+			console.error("[Awgl2demo] fatal", err);
+			stats.textContent = "error: " + err.message;
+		});
+	</script>
+</body>
+</html>
