@@ -30,7 +30,7 @@ const root = flow.addNode({ payload: [
 // Render Pass Node
 const passNode = flow.addNode({ payload: [
     new Awgpu.RenderPass({ clearColor: [0.02, 0.02, 0.03, 1] }),
-    new Awgpu.UsePipeline(pipeline),
+    new Awgpu.UsePipeline({ pipeline: renderPipeline }),
     new Awgpu.SetBindGroups([{ index: 0, bindGroup: cameraBG }]),
     new Awgpu.SetBuffers({
         vertex: [{ slot: 0, buffer: vertexBuffer }],

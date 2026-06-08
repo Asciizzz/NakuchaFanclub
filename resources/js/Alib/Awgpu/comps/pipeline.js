@@ -1,9 +1,7 @@
 import { Afcmd } from "../../Aflow.js";
 
 export class UsePipeline extends Afcmd {
-	pipeline = null;
-
-	constructor(pipeline, data = {}) {
+	constructor(pipeline) {
 		super();
 		this.pipeline = pipeline ?? null;
 	}

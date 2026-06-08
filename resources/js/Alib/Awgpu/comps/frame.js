@@ -1,11 +1,9 @@
 import { Afcmd } from "../../Aflow.js";
 
 export class BeginFrame extends Afcmd {
-	label = "Wr3Frame";
-
-	constructor(data = {}) {
+	constructor(label = "AwgpuFrame") {
 		super();
-		this.label = data.label ?? "Wr3Frame";
+		this.label = label;
 	}
 
 	exec({ state, graph, link } = {}) {

@@ -33,7 +33,10 @@ function normalizeColorAttachments(value) {
 }
 
 export class RenderPass extends Afcmd {
-	constructor() { super(); }
+	constructor(data = {}) {
+		super();
+		this.data = data;
+	}
 
 	exec({ state, graph, link } = {}) {
 		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
@@ -59,7 +62,10 @@ export class RenderPass extends Afcmd {
 }
 
 export class ComputePass extends Afcmd {
-	constructor() { super(); }
+	constructor(data = {}) {
+		super();
+		this.data = data;
+	}
 
 	exec({ state, graph, link } = {}) {
 		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
@@ -74,8 +80,6 @@ export class ComputePass extends Afcmd {
 }
 
 export class EndPass extends Afcmd {
-	constructor() { super(); }
-
 	exec({ state, graph, link } = {}) {
 		if (!state.pass) return;
 		state.pass.end();
