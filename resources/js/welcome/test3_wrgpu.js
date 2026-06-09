@@ -310,7 +310,6 @@ async function run() {
 			fcam,
 			world,
 			loader,
-			renderCtx,
 			worldRoot,
 			roomRoot,
 			nakuRoot,

@@ -12,6 +12,7 @@ function toNumber(value, fallback = 0) {
 export class RenderPass extends Afcmd {
 	constructor(data = {}) {
 		super();
+		this.data = data;
 	}
 
 	exec({ state } = {}) {

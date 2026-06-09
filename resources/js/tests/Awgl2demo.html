@@ -85,62 +85,62 @@
 		// Shaders
 		// -------------------------------------------------------------------
 		const VS = `#version 300 es
-precision highp float;
+			precision highp float;
 
-in vec2 aPos;
-in vec3 aColor;
+			in vec2 aPos;
+			in vec3 aColor;
 
-out vec3 vColor;
+			out vec3 vColor;
 
-uniform float uAngle;
+			uniform float uAngle;
 
-void main() {
-	float c = cos(uAngle);
-	float s = sin(uAngle);
-	vec2 p = vec2(c * aPos.x - s * aPos.y,
-	              s * aPos.x + c * aPos.y);
-	gl_Position = vec4(p, 0.0, 1.0);
-	vColor = aColor;
-}`;
+			void main() {
+				float c = cos(uAngle);
+				float s = sin(uAngle);
+				vec2 p = vec2(c * aPos.x - s * aPos.y,
+							s * aPos.x + c * aPos.y);
+				gl_Position = vec4(p, 0.0, 1.0);
+				vColor = aColor;
+			}`;
 
 		const FS = `#version 300 es
-precision highp float;
+			precision highp float;
 
-in  vec3 vColor;
-out vec4 fragColor;
+			in  vec3 vColor;
+			out vec4 fragColor;
 
-uniform float uTime;
+			uniform float uTime;
 
-void main() {
-	// subtle pulse on brightness
-	float pulse = 0.85 + 0.15 * sin(uTime * 2.0);
-	fragColor = vec4(vColor * pulse, 1.0);
-}`;
+			void main() {
+				// subtle pulse on brightness
+				float pulse = 0.85 + 0.15 * sin(uTime * 2.0);
+				fragColor = vec4(vColor * pulse, 1.0);
+			}`;
 
 		// Fullscreen quad vert - just shows a background gradient via fragment shader
 		const BG_VS = `#version 300 es
-precision highp float;
+			precision highp float;
 
-in vec2 aPos;
+			in vec2 aPos;
 
-void main() {
-	gl_Position = vec4(aPos, 0.0, 1.0);
-}`;
+			void main() {
+				gl_Position = vec4(aPos, 0.0, 1.0);
+			}`;
 
 		const BG_FS = `#version 300 es
-precision highp float;
+			precision highp float;
 
-out vec4 fragColor;
-uniform float uTime;
-uniform vec2  uRes;
+			out vec4 fragColor;
+			uniform float uTime;
+			uniform vec2  uRes;
 
-void main() {
-	vec2 uv = gl_FragCoord.xy / uRes;
-	vec3 a = vec3(0.04, 0.06, 0.18);
-	vec3 b = vec3(0.12, 0.04, 0.22);
-	vec3 col = mix(a, b, uv.y + 0.18 * sin(uv.x * 3.14 + uTime * 0.4));
-	fragColor = vec4(col, 1.0);
-}`;
+			void main() {
+				vec2 uv = gl_FragCoord.xy / uRes;
+				vec3 a = vec3(0.04, 0.06, 0.18);
+				vec3 b = vec3(0.12, 0.04, 0.22);
+				vec3 col = mix(a, b, uv.y + 0.18 * sin(uv.x * 3.14 + uTime * 0.4));
+				fragColor = vec4(col, 1.0);
+			}`;
 
 		// -------------------------------------------------------------------
 		// Helpers
@@ -217,12 +217,6 @@ void main() {
 			const bgVAO  = makeVAO(gl, bgProg, bgBuf, [
 				{ name: "aPos", size: 2, stride: 8, offset: 0 },
 			]);
-
-			// -- Aflow graph --
-			// BeginFrame
-			//   └─ BgPass  (background gradient, no depth clear)
-			//       └─ TriPass  (triangle on top)
-			//           └─ EndFrame
 
 			const flow = new Aflow(new Agraph({ label: "gl2demo" }));
 

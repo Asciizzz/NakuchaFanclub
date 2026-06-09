@@ -1,4 +1,4 @@
-# Awgl2
+# Awgl2 (!!!BETA!!!)
 
 Tiny WebGL2 execution layer for `Aflow`
 

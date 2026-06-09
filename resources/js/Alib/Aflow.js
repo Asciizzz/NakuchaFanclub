@@ -1,194 +1,198 @@
 /* Aflow
 By Asciiz
 
-A execution flow system built on top of Agraph
-
+Execution flow on top of Agraph
 */
 
-import { Agraph } from "./Agraph.js";
+import { Agraph, Anode, Aedge } from "./Agraph.js";
 
+/** Base command. Extend it, override `exec`. */
 export class Afcmd {
-    requiresGraph = false; // If true, cannot be made into fstatic
-
+    /**
+     * Runs when its node is hit. Root has `link.src = null`
+     * @param {{ state: object, graph: Agraph, link: { data: object, src: Anode|null, dst: Anode } }} ctx
+     */
     exec({ state, graph, link }) {
         throw new Error("Afcmd.exec not implemented");
     }
-    destroy({ node, graph }) {
-        throw new Error("Afcmd.destroy not implemented");
+}
+
+export class AfNodeData {
+    constructor(data = {}) {
+        Object.assign(this, data);
+    }
+
+    payload = [];
+    linkSortFn = defaultLinkSortFn;
+
+    appendPayload(cmd) {
+        this.payload.push(cmd);
+        return this;
     }
 }
 
-export class Afstatic {
-    constructor(nodes = [], flow = []) {
-        this.nodes = nodes; // Layer 1: Unique mutable node objects
-        this.flow = flow;   // Layer 2: Execution sequence [{ payload, link }]
+export class AfEdgeData {
+    constructor({srcId, dstId, ...data} = {}) {
+        Object.assign(this, data);
+        this.#srcId = srcId;
+        this.#dstId = dstId;
     }
 
-    run({ state } = {}) {
-        for (const { payload, link } of this.flow) {
-            for (const cmd of payload) {
-                cmd.exec({ state, graph: null, link });
-            }
-        }
-        return state;
-    }
+    #srcId = null;
+    #dstId = null;
+
+    order = 0;
+    enabled = true;
+
+    enable() { this.enabled = true; return this; }
+    disable() { this.enabled = false; return this; }
+    toggle() { this.enabled = !this.enabled; return this; }
 }
 
+/** Flow runner over `Agraph`. Nodes carry hidden `Afcmd[]` payloads */
 export class Aflow {
+    /** @param {Agraph} [graph] */
     constructor(graph = new Agraph()) {
         this.graph = graph;
     }
 
-    addNode({ payload = [], id = null } = {}) {
-        return this.graph.addNode({ id, data: payload });
+    // Nodes
+
+    /**
+     * Add node. Payload runs on visit
+     * @param {{ payload?: Afcmd[], linkSortFn?: (a: Aedge, b: Aedge) => number, id?: string|null }} [options]
+     * @returns {Anode}
+     */
+    addNode({
+        payload = [],
+        linkSortFn = defaultLinkSortFn,
+        id = null
+    } = {}) {
+        const data = new AfNodeData({ payload, linkSortFn });
+        const node = this.graph.addNode({ id, data });
+
+        return node;
     }
 
-    addLink({ srcId, dstId, data = {} } = {}) {
-        return this.graph.addEdge({
-            srcId,
-            dstId,
-            data: { 
-                enabled: true,
-                order: 0,
-                ...data
-            }
-        });
+    /** @param {string} id @returns {Anode|null} */
+    getNode(id) {
+        return this.graph.getNode(id);
     }
 
+    /** @param {string} id @returns {boolean} */
+    hasNode(id) {
+        return this.graph.hasNode(id);
+    }
+
+    /** @param {string} id @returns {Anode} */
     removeNode(id) {
         return this.graph.removeNode(id);
     }
 
+    // Links
+
+    /**
+     * Add link. `data.enabled = false` skips it during run
+     * @param {{ srcId: string, dstId: string, id?: string|null, data?: object }} options
+     * @returns {Aedge}
+     */
+    addLink({ srcId, dstId, data = {}, id = null } = {}) {
+        if (!this.graph.hasNode(srcId)) {
+            throw new Error(`Aflow.addLink: source node "${srcId}" does not exist`);
+        }
+        if (!this.graph.hasNode(dstId)) {
+            throw new Error(`Aflow.addLink: destination node "${dstId}" does not exist`);
+        }
+
+        const edgeData = new AfEdgeData({ srcId, dstId, ...data });
+
+        return this.graph.addEdge({ srcId, dstId, id, data: edgeData });
+    }
+
+    /** @param {string} id @returns {Aedge|null} */
+    getLink(id) {
+        return this.graph.getEdge(id);
+    }
+
+    /** @param {string} id @returns {Aedge} */
+    removeLink(id) {
+        return this.graph.removeEdge(id);
+    }
+
+
+    // Queries
+
+    /** @param {string} a @param {string} b @returns {Aedge[]} */
     connectivity(a, b) {
         return this.graph.edgesConnecting({ a, b });
     }
 
-    /**
-     * Create a static snapshot of a flow branch
-     * Encounters with fstaticValid === false will throw
-     * Generates a completely independent set of nodes and sequence
-     */
-    makeStatic(from) {
-        const root = this.graph.getNode(from);
-        if (!root) return new Afstatic();
-
-        const uniqueNodes = new Map(); // originalId -> newNodeRef
-        const flowSequence = [];
-        
-        const getNewNode = (originalNode) => {
-            if (uniqueNodes.has(originalNode.id)) return uniqueNodes.get(originalNode.id);
-            
-            // Check static validity and copy components
-            const payload = (originalNode.data ?? []).map(cmd => {
-                if (cmd.requiresGraph) {
-                    throw new Error(`Aflow.makeStatic: Component in node ${originalNode.id} is not static-valid`);
-                }
-                // Copy component instance
-                const copy = Object.create(Object.getPrototypeOf(cmd));
-                Object.assign(copy, cmd);
-                return copy;
-            });
-
-            const newNode = {
-                id: originalNode.id,
-                data: payload
-            };
-            
-            uniqueNodes.set(originalNode.id, newNode);
-            return newNode;
-        };
-
-        const stack = [{ 
-            path: new Set(), 
-            link: { data: {}, src: null, dst: root } 
-        }];
-
-        while (stack.length > 0) {
-            const { path, link } = stack.pop();
-            const originalNode = link.dst;
-
-            if (path.has(originalNode.id)) throw new Error(`Aflow: Cycle detected at ${originalNode.id}`);
-            
-            const newNode = getNewNode(originalNode);
-            const newSrc = link.src ? getNewNode(link.src) : null;
-            
-            // Record execution entry with path-specific link and shared mutable node
-            flowSequence.push({
-                payload: newNode.data,
-                link: {
-                    data: { ...(link.data ?? {}) },
-                    src: newSrc,
-                    dst: newNode
-                }
-            });
-
-            const outEdges = this.graph.outEdges(originalNode.id)
-                .filter(e => e.data.enabled !== false)
-                .sort((a, b) => b.data.order - a.data.order);
-
-            const nextPath = new Set(path);
-            nextPath.add(originalNode.id);
-
-            for (const edge of outEdges) {
-                const dstNode = this.graph.getNode(edge.dstId);
-                if (!dstNode) continue;
-                
-                stack.push({ 
-                    path: nextPath,
-                    link: {
-                        data: edge.data,
-                        src: originalNode,
-                        dst: dstNode
-                    }
-                });
-            }
-        }
-
-        return new Afstatic(Array.from(uniqueNodes.values()), flowSequence);
+    /** @param {string} srcId @param {string} dstId @returns {boolean} */
+    hasPath(srcId, dstId) {
+        return this.graph.hasPath({ srcId, dstId });
     }
 
-    run({ from, state = {} } = {}) {
-        const rootNode = this.graph.getNode(from);
-        if (!rootNode) return state;
+    // Run
 
-        // Stack for traversal: [{ path, link: { data, src, dst } }]
-        const stack = [{ 
-            path: new Set(), 
-            link: { data: {}, src: null, dst: rootNode } 
+    /**
+     * Run DFS from `from`. Payloads get `{ state, graph, link }`
+     * @param {{ from: string, state?: object }} options
+     * @returns {object} Final state
+     */
+    run({ from = null, state = {} } = {}) {
+        if (from == null) throw new Error(`Aflow.run: "from" node id is required`);
+
+        const rootNode = this.graph.getNode(from);
+        if (!rootNode) throw new Error(`Aflow.run: starting node "${from}" does not exist`);
+
+        // Stack entries: { path: Set<nodeId>, link: { data, src: Anode|null, dst: Anode } }
+        const stack = [{
+            path: new Set(),
+            link: { data: null, src: null, dst: rootNode }
         }];
 
         while (stack.length > 0) {
             const { path, link } = stack.pop();
             const node = link.dst;
 
-            if (path.has(node.id)) throw new Error(`Aflow: Cycle detected at ${node.id}`);
-            
-            // Run Components (Afcmd instances)
-            for (const cmd of node.data ?? []) {
-                if (cmd instanceof Afcmd) {
-                    cmd.exec({ state, graph: this.graph, link });
-                }
+            if (path.has(node.id)) {
+                throw new Error(`Aflow.run: cycle detected at node "${node.id}"`);
             }
 
-            // Get and Sort Links
-            const outEdges = this.graph.outEdges(node.id)
-                .filter(e => e.data.enabled !== false)
-                .sort((a, b) => b.data.order - a.data.order); // Reverse sort for stack popping
+            const nodeData = node.data;
+            if (!(nodeData instanceof AfNodeData)) {
+                throw new Error(`Aflow.run: node "${node.id}" data is not an AfNodeData instance`);
+            }
 
-            // Push children to stack
+            const payload = nodeData.payload;
+
+            for (let i = 0; i < payload.length; i++) {
+                const cmd = payload[i];
+                if (!(cmd instanceof Afcmd)) {
+                    throw new Error(`Aflow.run: node "${node.id}" payload[${i}] is not an Afcmd instance`);
+                }
+                cmd.exec({ state, graph: this.graph, link });
+            }
+
+            const outEdges = this.graph.outEdges(node.id)
+                .filter(e => e.data instanceof AfEdgeData && e.data.enabled)
+                .sort((b, a) => nodeData.linkSortFn(a, b));
+
+                // Note: reverse the sort because the order would be reversed when pushing to stack (LIFO)
+
             const nextPath = new Set(path);
             nextPath.add(node.id);
 
             for (const edge of outEdges) {
                 const dstNode = this.graph.getNode(edge.dstId);
-                if (!dstNode) continue;
+                if (!dstNode) throw new Error(`Aflow.run: link "${edge.id}" points to non-existent node "${edge.dstId}"`);
 
-                stack.push({ 
+                stack.push({
                     path: nextPath,
                     link: {
                         data: edge.data,
-                        src: node,
-                        dst: dstNode
+                        src:  node,
+                        dst:  dstNode
                     }
                 });
             }
@@ -196,4 +200,16 @@ export class Aflow {
 
         return state;
     }
+}
+
+
+/* Default link sort
+Note:
+
+This sort is lower order first
+*/
+function defaultLinkSortFn(a, b) {
+    const orderA = a.data?.order ?? 0;
+    const orderB = b.data?.order ?? 0;
+    return orderA - orderB;
 }

@@ -510,7 +510,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 					height: 6,
 					depth: 3,
 					rotation: -0.4,
-					color: v3(0.8, 0.8, 5.8),
+					color: v3(0.8, 0.8, 9.8),
 					type: "convex",
 				}),
 				// light,
@@ -910,6 +910,8 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 
 			resize();
 			requestAnimationFrame(tick);
+
+			window.flow = flow;
 		}
 
 		main().catch((error) => {
