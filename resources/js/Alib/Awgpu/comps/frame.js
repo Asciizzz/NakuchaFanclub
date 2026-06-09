@@ -6,18 +6,18 @@ export class BeginFrame extends Afstep {
 		this.label = label;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (state.encoder) return;
-		state.encoder = state.backend.createEncoder(this.label);
-		state.ended = false;
+	exec({ ctx, graph, link } = {}) {
+		if (ctx.encoder) return;
+		ctx.encoder = ctx.backend.createEncoder(this.label);
+		ctx.ended = false;
 	}
 }
 
 export class EndFrame extends Afstep {
-	exec({ state, graph, link } = {}) {
-		if (state.encoder && !state.ended) {
-			state.backend.submit(state.encoder);
-			state.ended = true;
+	exec({ ctx, graph, link } = {}) {
+		if (ctx.encoder && !ctx.ended) {
+			ctx.backend.submit(ctx.encoder);
+			ctx.ended = true;
 		}
 	}
 }

@@ -4,12 +4,12 @@ function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
 }
 
-function ensureEncoder(state, label = "AwgpuCopy") {
-	if (state.encoder) return state.encoder;
-	if (!state.backend) return null;
-	state.encoder = state.backend.createEncoder(label);
-	state.ended = false;
-	return state.encoder;
+function ensureEncoder(ctx, label = "AwgpuCopy") {
+	if (ctx.encoder) return ctx.encoder;
+	if (!ctx.backend) return null;
+	ctx.encoder = ctx.backend.createEncoder(label);
+	ctx.ended = false;
+	return ctx.encoder;
 }
 
 export class CopyBufferToBuffer extends Afstep {
@@ -28,9 +28,9 @@ export class CopyBufferToBuffer extends Afstep {
 		this.size = uint(data.size);
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (state.pass || !this.source || !this.destination || this.size <= 0) return;
-		const encoder = ensureEncoder(state);
+	exec({ ctx, graph, link } = {}) {
+		if (ctx.pass || !this.source || !this.destination || this.size <= 0) return;
+		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
 		encoder.copyBufferToBuffer(
 			this.source,
@@ -54,9 +54,9 @@ export class CopyBufferToTexture extends Afstep {
 		this.size = data.size ?? null;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (state.pass || !this.source || !this.destination || !this.size) return;
-		const encoder = ensureEncoder(state);
+	exec({ ctx, graph, link } = {}) {
+		if (ctx.pass || !this.source || !this.destination || !this.size) return;
+		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
 		encoder.copyBufferToTexture(this.source, this.destination, this.size);
 	}
@@ -74,9 +74,9 @@ export class CopyTextureToBuffer extends Afstep {
 		this.size = data.size ?? null;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (state.pass || !this.source || !this.destination || !this.size) return;
-		const encoder = ensureEncoder(state);
+	exec({ ctx, graph, link } = {}) {
+		if (ctx.pass || !this.source || !this.destination || !this.size) return;
+		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
 		encoder.copyTextureToBuffer(this.source, this.destination, this.size);
 	}
@@ -94,9 +94,9 @@ export class CopyTextureToTexture extends Afstep {
 		this.size = data.size ?? null;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (state.pass || !this.source || !this.destination || !this.size) return;
-		const encoder = ensureEncoder(state);
+	exec({ ctx, graph, link } = {}) {
+		if (ctx.pass || !this.source || !this.destination || !this.size) return;
+		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
 		encoder.copyTextureToTexture(this.source, this.destination, this.size);
 	}

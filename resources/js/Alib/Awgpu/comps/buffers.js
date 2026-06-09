@@ -22,32 +22,32 @@ export class SetBuffers extends Afstep {
 		this.indirect = data.indirect ?? null;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.pass || state.passKind !== "render") return;
-		this.setVertexBuffers(state);
-		this.setIndexBuffer(state);
-		this.setIndirectBuffer(state);
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.pass || ctx.passKind !== "render") return;
+		this.setVertexBuffers(ctx);
+		this.setIndexBuffer(ctx);
+		this.setIndirectBuffer(ctx);
 	}
 
-	setVertexBuffers(state) {
+	setVertexBuffers(ctx) {
 		for (const entry of this.vertex) {
 			const slot = uint(entry?.slot);
 			const buffer = entry?.buffer ?? null;
 			if (!buffer) continue;
 			const offset = uint(entry.offset);
-			if (entry.size == null) state.pass.setVertexBuffer(slot, buffer, offset);
-			else state.pass.setVertexBuffer(slot, buffer, offset, uint(entry.size));
-			state.buffers.vertex.set(slot, { buffer, offset, size: entry.size ?? null });
+			if (entry.size == null) ctx.pass.setVertexBuffer(slot, buffer, offset);
+			else ctx.pass.setVertexBuffer(slot, buffer, offset, uint(entry.size));
+			ctx.buffers.vertex.set(slot, { buffer, offset, size: entry.size ?? null });
 		}
 	}
 
-	setIndexBuffer(state) {
+	setIndexBuffer(ctx) {
 		if (this.index?.buffer) {
 			const offset = uint(this.index.offset);
 			const format = this.index.format ?? "uint32";
-			if (this.index.size == null) state.pass.setIndexBuffer(this.index.buffer, format, offset);
-			else state.pass.setIndexBuffer(this.index.buffer, format, offset, uint(this.index.size));
-			state.buffers.index = {
+			if (this.index.size == null) ctx.pass.setIndexBuffer(this.index.buffer, format, offset);
+			else ctx.pass.setIndexBuffer(this.index.buffer, format, offset, uint(this.index.size));
+			ctx.buffers.index = {
 				buffer: this.index.buffer,
 				format,
 				offset,
@@ -56,9 +56,9 @@ export class SetBuffers extends Afstep {
 		}
 	}
 
-	setIndirectBuffer(state) {
+	setIndirectBuffer(ctx) {
 		if (this.indirect?.buffer) {
-			state.buffers.indirect = {
+			ctx.buffers.indirect = {
 				buffer: this.indirect.buffer,
 				offset: uint(this.indirect.offset),
 			};

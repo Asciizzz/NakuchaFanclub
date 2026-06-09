@@ -10,9 +10,9 @@ import { Agraph, Anode, Aedge } from "./Agraph.js";
 export class Afstep {
     /**
      * Runs when its node is hit. Root has `link.src = null`
-     * @param {{ state: object, graph: Agraph, link: { data: object, src: Anode|null, dst: Anode } }} ctx
+     * @param {{ ctx: object, graph: Agraph, link: { data: object, src: Anode|null, dst: Anode } }} ctx
      */
-    exec({ state, graph, link }) {
+    exec({ ctx, graph, link }) {
         throw new Error("Afstep.exec not implemented");
     }
 }
@@ -135,11 +135,11 @@ export class Aflow {
     // Run
 
     /**
-     * Run DFS from `from`. Payloads get `{ state, graph, link }`
-     * @param {{ from: string, state?: object }} options
-     * @returns {object} Final state
+     * Run DFS from `from`. Payloads get `{ ctx, graph, link }`
+     * @param {{ from: string, ctx?: object }} options
+     * @returns {object} Final ctx
      */
-    run({ from = null, state = {} } = {}) {
+    run({ from = null, ctx = {} } = {}) {
         if (from == null) throw new Error(`Aflow.run: "from" node id is required`);
 
         const rootNode = this.graph.getNode(from);
@@ -171,7 +171,7 @@ export class Aflow {
                 if (!(cmd instanceof Afstep)) {
                     throw new Error(`Aflow.run: node "${node.id}" payload[${i}] is not an Afstep instance`);
                 }
-                cmd.exec({ state, graph: this.graph, link });
+                cmd.exec({ ctx, graph: this.graph, link });
             }
 
             const outEdges = this.graph.outEdges(node.id)
@@ -198,7 +198,7 @@ export class Aflow {
             }
         }
 
-        return state;
+        return ctx;
     }
 }
 

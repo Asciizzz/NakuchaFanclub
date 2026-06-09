@@ -18,17 +18,17 @@
 
 ### Graph theory
 
-#### Agraph.js
+#### `Agraph`
 
 - Custom graph library for generic directed graph structures with mutable nodes and edges
 - Needed for excution flow and scene graph management
 - Old tree and DAG-lite structure was not sufficient, since Edge having data is genuinely useful and flexible ah hell
 
-#### Aflow.js
+#### `Aflow`
 
 - Layer on top of Agraph for defining execution flows
 - Was made to support the new Render-as-a-Component (RaaC) structure in Awgpu/Awgl2, but can be used for any kind of directed execution workflow (downstream for execute, upstream for dependency and debugging)
-- Significant upgrade over old Adag.js thanks to having edge data for more customizability, better control, and a good way for me to use the SOLID thingy I learnt in software design class (I almost flunked)
+- Significant upgrade over old Adag thanks to having edge data for more customizability, better control, and a good way for me to use the SOLID thingy I learnt in software design class (I almost flunked)
 
 ##### Traversal:
 
@@ -52,12 +52,12 @@ Notable benefits:
 
 ### Rendering engine
 
-#### Awgpu
+#### `Awgpu`
 
 - Extension of Aflow, support WebGPU RaaC structure, `rendering command` extend `Afstep` to be used in a flow
-- Refer to previous example in Aflow.js section above
+- Refer to previous example in Aflow section above
 
-#### Awgl2 (Beta)
+#### `Awgl2` (Beta)
 
 - Similar to Awgpu but with commands for WebGL2
 - Early in development since I need to 
@@ -70,7 +70,7 @@ Notable benefits:
 
 ### Scene engine
 
-#### WeebRender
+#### `WeebRender`
 
 - Has understanding of high level rendering concepts like Mesh, Material, Camera, Scene, etc
 - Tree structure for scene management, but still uses the Awgpu/Awgl2 for rendering
@@ -80,16 +80,28 @@ Notable benefits:
 
 ### Other
 
-#### Adoc.js
+#### `Adoc`
 
 - Lightweight document compiler
 - I don't want to go on google everytime I want to use regex to parse text and shi, so this compiler turns those instruction into more human-friendly attribute names
 
-#### Alm.js
+##### Adoc Shaders
+
+- Shader builder for WebGPU and WebGL2
+- Several components like Mesh, Material, World, Camera etc can inject specific code and rule into the shader doc to allow for fluent shader building. Allowing you to use only important features that you need
+
+#### `Alm`
 
 - Math library for vectors, matrices and quater-onions (yummers, wanna cram in as much fat fck)
 
-#### Atree.js
+#### `Atree`
 
 - Simple n-ary tree structure for general use
-- API is highly confusing so will be reworked soon
+- API is highly confusing so will be reworked soon to use Agraph as composition instead of dedicated class
+
+## Note
+
+- This entire engine does NOT use any Three.js, Babylon.js, PlayCanvas, or any other existing libraries/engines, all libraries, engines work, etc are fully made from scratch
+
+- Remember what I said about `Atree` soon to be reworked? Well yea, that rework might be lil bit more urgent since the test scene with the Nakufumo model is broken lmao
+  - Uuuh update, nvm, found the reason, i forgot to use the new API lol

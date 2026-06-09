@@ -7,7 +7,7 @@ Awgpu is not a game renderer, scene renderer, mesh system, shader builder, loade
 It only provides:
 *   `Backend` for device, canvas context, frame encoder, screen attachments, and depth attachment management
 *   `Afstep` components that call raw WebGPU commands during `Aflow` traversal
-*   A mutable state object created by `backend.newState()`
+*   A mutable ctx object created by `backend.newCtx()`
 
 Everything else (scene trees, model packing, asset management) stays outside of Awgpu
 
@@ -50,21 +50,21 @@ flow.addLink({ srcId: root.id, dstId: passNode.id });
 flow.addLink({ srcId: passNode.id, dstId: endNode.id });
 
 // Execute
-flow.run({ from: root.id, state: backend.newState() });
+flow.run({ from: root.id, ctx: backend.newCtx() });
 ```
 
 ## Important Rules
 
-Awgpu components **do not own GPU resources**. They store references and call methods on the active pass in the `state` object. If you create a buffer, texture, or pipeline, you manage its lifecycle yourself
+Awgpu components **do not own GPU resources**. They store references and call methods on the active pass in the `ctx` object. If you create a buffer, texture, or pipeline, you manage its lifecycle yourself
 
 Awgpu does not understand high-level concepts like `mesh`, `material`, `camera`, or `scene`. Those belong in higher layers like `WrGPU`
 
 ## Execution Signature
 
 All components inherit from `Afstep` and implement the following signature:
-`exec({ state, graph, link })`
+`exec({ ctx, graph, link })`
 
-*   **state**: The mutable object containing the encoder, current pass, and global backend references
+*   **ctx**: The mutable object containing the encoder, current pass, and global backend references
 *   **graph**: The underlying `Agraph` instance
 *   **link**: The incoming connection context `{ data, src, dst }`. For root nodes, `link.src` is `null`
 

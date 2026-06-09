@@ -117,7 +117,7 @@ export class Backend {
 		return this.device.createCommandEncoder({ label });
 	}
 
-	newState() {
+	newCtx() {
 		return {
 			backend: this,
 			device: this.device,
@@ -140,16 +140,16 @@ export class Backend {
 		};
 	}
 
-	getScreenColorAttachment(options = {}, state = null) {
+	getScreenColorAttachment(options = {}, ctx = null) {
 		if (!this.context) return null;
 		const sampleCount = sampleCountOf(options.sampleCount ?? this.sampleCount, this.sampleCount);
-		let view = state?.screen?.view ?? null;
+		let view = ctx?.screen?.view ?? null;
 		if (!view) {
 			const texture = this.context.getCurrentTexture();
 			view = texture.createView();
-			if (state?.screen) {
-				state.screen.texture = texture;
-				state.screen.view = view;
+			if (ctx?.screen) {
+				ctx.screen.texture = texture;
+				ctx.screen.view = view;
 			}
 		}
 		const msaaView = sampleCount > 1 ? this.getMsaaColorView(sampleCount) : null;

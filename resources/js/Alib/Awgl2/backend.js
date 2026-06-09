@@ -62,7 +62,7 @@ export class Backend {
 		return true;
 	}
 
-	newState() {
+	newCtx() {
 		return {
 			backend: this,
 			gl: this.gl,

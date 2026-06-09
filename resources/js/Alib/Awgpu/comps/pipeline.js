@@ -6,10 +6,10 @@ export class UsePipeline extends Afstep {
 		this.pipeline = pipeline ?? null;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.pass || !this.pipeline) return;
-		state.pass.setPipeline(this.pipeline);
-		state.pipeline = this.pipeline;
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.pass || !this.pipeline) return;
+		ctx.pass.setPipeline(this.pipeline);
+		ctx.pipeline = this.pipeline;
 	}
 }
 

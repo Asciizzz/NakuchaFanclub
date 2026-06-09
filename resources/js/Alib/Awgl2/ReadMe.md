@@ -7,7 +7,7 @@ Awgl2 is the WebGL2 counterpart to `Awgpu`. Same idea: wrap raw GL calls in `Afs
 It only provides:
 *   `Backend` for canvas context, depth renderbuffer, viewport management, and per-frame state
 *   `Afstep` components that call raw WebGL2 commands during `Aflow` traversal
-*   A mutable state object created by `backend.newState()`
+*   A mutable state object created by `backend.newCtx()`
 
 Everything else (scene trees, mesh packing, shader builder) stays outside Awgl2
 
@@ -43,7 +43,7 @@ const endNode = flow.addNode({ payload: [
 flow.addLink({ srcId: root.id, dstId: passNode.id });
 flow.addLink({ srcId: passNode.id, dstId: endNode.id });
 
-flow.run({ from: root.id, state: backend.newState() });
+flow.run({ from: root.id, state: backend.newCtx() });
 ```
 
 ## Important Rules

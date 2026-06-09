@@ -298,7 +298,7 @@ async function run() {
 		background.data.set([canvas.width, canvas.height, 0, 0], 4);
 		backend.queue.writeBuffer(background.buffer, 0, background.data);
 
-		flow.run({ from: rootId, state: backend.newState() });
+		flow.run({ from: rootId, state: backend.newCtx() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);

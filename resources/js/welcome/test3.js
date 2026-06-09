@@ -504,7 +504,7 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
-		flow.run({ from: rootId, state: backend.newState() });
+		flow.run({ from: rootId, state: backend.newCtx() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);

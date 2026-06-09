@@ -896,7 +896,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 				fcam.update(dt);
 				updateCommon();
 				updateRadiosityUniforms();
-				flow.run({ from: rootId, state: backend.newState() });
+				flow.run({ from: rootId, state: backend.newCtx() });
 				frame++;
 
 				lastTime = now;

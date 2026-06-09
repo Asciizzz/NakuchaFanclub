@@ -38,26 +38,26 @@ export class RenderPass extends Afstep {
 		this.data = data;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
-		if (!state.encoder || state.pass) return;
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.encoder) ctx.encoder = ctx.backend.createEncoder("Wr3Frame");
+		if (!ctx.encoder || ctx.pass) return;
 
 		const colorAttachments = hasOwn(this.data, "colorAttachments")
 			? normalizeColorAttachments(this.data.colorAttachments)
-			: [state.backend.getScreenColorAttachment(this.data, state)].filter(Boolean);
+			: [ctx.backend.getScreenColorAttachment(this.data, ctx)].filter(Boolean);
 		const depthStencilAttachment = hasOwn(this.data, "depthStencilAttachment")
 			? (this.data.depthStencilAttachment ?? undefined)
-			: (state.backend.getDepthAttachment(this.data) ?? undefined);
+			: (ctx.backend.getDepthAttachment(this.data) ?? undefined);
 
 		if (colorAttachments.length <= 0 && !depthStencilAttachment) return;
 
-		state.pass = state.encoder.beginRenderPass({
+		ctx.pass = ctx.encoder.beginRenderPass({
 			label: this.data.label,
 			colorAttachments,
 			depthStencilAttachment,
 		});
-		state.passKind = "render";
-		state.pipeline = null;
+		ctx.passKind = "render";
+		ctx.pipeline = null;
 	}
 }
 
@@ -67,24 +67,24 @@ export class ComputePass extends Afstep {
 		this.data = data;
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.encoder) state.encoder = state.backend.createEncoder("Wr3Frame");
-		if (!state.encoder || state.pass) return;
-		state.pass = state.encoder.beginComputePass({
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.encoder) ctx.encoder = ctx.backend.createEncoder("Wr3Frame");
+		if (!ctx.encoder || ctx.pass) return;
+		ctx.pass = ctx.encoder.beginComputePass({
 			label: this.data.label,
 			timestampWrites: this.data.timestampWrites,
 		});
-		state.passKind = "compute";
-		state.pipeline = null;
+		ctx.passKind = "compute";
+		ctx.pipeline = null;
 	}
 }
 
 export class EndPass extends Afstep {
-	exec({ state, graph, link } = {}) {
-		if (!state.pass) return;
-		state.pass.end();
-		state.pass = null;
-		state.passKind = null;
-		state.pipeline = null;
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.pass) return;
+		ctx.pass.end();
+		ctx.pass = null;
+		ctx.passKind = null;
+		ctx.pipeline = null;
 	}
 }

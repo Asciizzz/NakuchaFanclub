@@ -14,10 +14,10 @@ export class Draw extends Afstep {
 		this.firstInstance = Math.max(0, Number(data.firstInstance ?? 0) | 0);
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.pass || state.passKind !== "render") return;
-		if (!state.pipeline) return;
-		state.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.pass || ctx.passKind !== "render") return;
+		if (!ctx.pipeline) return;
+		ctx.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
 	}
 }
 
@@ -37,10 +37,10 @@ export class DrawIndexed extends Afstep {
 		this.firstInstance = Math.max(0, Number(data.firstInstance ?? 0) | 0);
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.pass || state.passKind !== "render") return;
-		if (!state.pipeline) return;
-		state.pass.drawIndexed(this.indexCount, this.instanceCount, this.firstIndex, this.baseVertex, this.firstInstance);
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.pass || ctx.passKind !== "render") return;
+		if (!ctx.pipeline) return;
+		ctx.pass.drawIndexed(this.indexCount, this.instanceCount, this.firstIndex, this.baseVertex, this.firstInstance);
 	}
 }
 
@@ -54,12 +54,12 @@ export class DrawIndirect extends Afstep {
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.pass || state.passKind !== "render") return;
-		if (!state.pipeline) return;
-		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : state.buffers.indirect;
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.pass || ctx.passKind !== "render") return;
+		if (!ctx.pipeline) return;
+		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : ctx.buffers.indirect;
 		if (!indirect?.buffer) return;
-		state.pass.drawIndirect(indirect.buffer, indirect.offset ?? 0);
+		ctx.pass.drawIndirect(indirect.buffer, indirect.offset ?? 0);
 	}
 }
 
@@ -73,12 +73,12 @@ export class DrawIndexedIndirect extends Afstep {
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}
 
-	exec({ state, graph, link } = {}) {
-		if (!state.pass || state.passKind !== "render") return;
-		if (!state.pipeline) return;
-		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : state.buffers.indirect;
+	exec({ ctx, graph, link } = {}) {
+		if (!ctx.pass || ctx.passKind !== "render") return;
+		if (!ctx.pipeline) return;
+		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : ctx.buffers.indirect;
 		if (!indirect?.buffer) return;
-		state.pass.drawIndexedIndirect(indirect.buffer, indirect.offset ?? 0);
+		ctx.pass.drawIndexedIndirect(indirect.buffer, indirect.offset ?? 0);
 	}
 }
 
