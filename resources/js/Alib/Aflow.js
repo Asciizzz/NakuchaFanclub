@@ -6,14 +6,14 @@ Execution flow on top of Agraph
 
 import { Agraph, Anode, Aedge } from "./Agraph.js";
 
-/** Base command. Extend it, override `exec`. */
-export class Afcmd {
+/** Base step. Extend it, override `exec`. */
+export class Afstep {
     /**
      * Runs when its node is hit. Root has `link.src = null`
      * @param {{ state: object, graph: Agraph, link: { data: object, src: Anode|null, dst: Anode } }} ctx
      */
     exec({ state, graph, link }) {
-        throw new Error("Afcmd.exec not implemented");
+        throw new Error("Afstep.exec not implemented");
     }
 }
 
@@ -49,7 +49,7 @@ export class AfEdgeData {
     toggle() { this.enabled = !this.enabled; return this; }
 }
 
-/** Flow runner over `Agraph`. Nodes carry hidden `Afcmd[]` payloads */
+/** Flow runner over `Agraph`. Nodes carry hidden `Afstep[]` payloads */
 export class Aflow {
     /** @param {Agraph} [graph] */
     constructor(graph = new Agraph()) {
@@ -60,7 +60,7 @@ export class Aflow {
 
     /**
      * Add node. Payload runs on visit
-     * @param {{ payload?: Afcmd[], linkSortFn?: (a: Aedge, b: Aedge) => number, id?: string|null }} [options]
+     * @param {{ payload?: Afstep[], linkSortFn?: (a: Aedge, b: Aedge) => number, id?: string|null }} [options]
      * @returns {Anode}
      */
     addNode({
@@ -168,8 +168,8 @@ export class Aflow {
 
             for (let i = 0; i < payload.length; i++) {
                 const cmd = payload[i];
-                if (!(cmd instanceof Afcmd)) {
-                    throw new Error(`Aflow.run: node "${node.id}" payload[${i}] is not an Afcmd instance`);
+                if (!(cmd instanceof Afstep)) {
+                    throw new Error(`Aflow.run: node "${node.id}" payload[${i}] is not an Afstep instance`);
                 }
                 cmd.exec({ state, graph: this.graph, link });
             }

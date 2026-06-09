@@ -74,7 +74,7 @@
 	</div>
 
 	<script type="module">
-		import { Aflow, Afcmd } from "../Alib/Aflow.js";
+		import { Aflow, Afstep } from "../Alib/Aflow.js";
 		import { Agraph } from "../Alib/Agraph.js";
 		import { Awgl2 } from "../Alib/Awgl2/index.js";
 
@@ -230,11 +230,11 @@
 				}),
 				new Awgl2.UseProgram(bgProg),
 				new Awgl2.SetBuffers({ vao: bgVAO }),
-				// uniforms written dynamically each frame via a custom Afcmd below
+				// uniforms written dynamically each frame via a custom Afstep below
 			] });
 
 			// Custom cmd: write per-frame uniforms for the background
-			class BgUniforms extends Afcmd {
+			class BgUniforms extends Afstep {
 				exec({ state }) {
 					if (!state.gl || !state.program) return;
 					const gl = state.gl;
@@ -265,7 +265,7 @@
 				new Awgl2.SetBuffers({ vao: triVAO }),
 			] });
 
-			class TriUniforms extends Afcmd {
+			class TriUniforms extends Afstep {
 				exec({ state }) {
 					if (!state.gl || !state.program) return;
 					const gl = state.gl;

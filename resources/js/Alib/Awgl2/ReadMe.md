@@ -2,18 +2,18 @@
 
 Tiny WebGL2 execution layer for `Aflow`
 
-Awgl2 is the WebGL2 counterpart to `Awgpu`. Same idea: wrap raw GL calls in `Afcmd` nodes, plug them into an `Aflow` graph, and let the graph topology define the render sequence
+Awgl2 is the WebGL2 counterpart to `Awgpu`. Same idea: wrap raw GL calls in `Afstep` nodes, plug them into an `Aflow` graph, and let the graph topology define the render sequence
 
 It only provides:
 *   `Backend` for canvas context, depth renderbuffer, viewport management, and per-frame state
-*   `Afcmd` components that call raw WebGL2 commands during `Aflow` traversal
+*   `Afstep` components that call raw WebGL2 commands during `Aflow` traversal
 *   A mutable state object created by `backend.newState()`
 
 Everything else (scene trees, mesh packing, shader builder) stays outside Awgl2
 
 ## Design
 
-Same render-flow model as `Awgpu`. Build resources manually, wrap execution in `Afcmd` nodes, connect them in `Aflow`:
+Same render-flow model as `Awgpu`. Build resources manually, wrap execution in `Afstep` nodes, connect them in `Aflow`:
 
 ```js
 import { Aflow, Agraph } from "./Alib/Aflow.js";
@@ -62,7 +62,7 @@ Awgl2 has no concept of bind groups, pipelines, or command encoders - those are 
 
 ## Execution Signature
 
-All components inherit from `Afcmd`:
+All components inherit from `Afstep`:
 `exec({ state, graph, link })`
 
 *   **state**: mutable object with `gl`, `program`, `vao`, `buffers`, `textures`, `framebuffer`, `passKind`, `ended`

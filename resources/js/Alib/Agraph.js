@@ -13,7 +13,6 @@ export class Anode {
         this.data = data;
     }
 
-    /** @returns {string} */
     get id() { return this.#id; }
 }
 
@@ -30,11 +29,8 @@ export class Aedge {
         this.data   = data;
     }
 
-    /** @returns {string} */
     get id()    { return this.#id; }
-    /** @returns {string} */
     get srcId() { return this.#srcId; }
-    /** @returns {string} */
     get dstId() { return this.#dstId; }
 }
 
@@ -46,7 +42,6 @@ export class Agraph {
     static SELF    = "self";
     static UNKNOWN = "unknown";
 
-    /** @param {{ label?: string }} [options] - Prefix for auto IDs */
     constructor({ label = "" } = {}) {
         this.label = label;
 
@@ -60,9 +55,7 @@ export class Agraph {
         this._nextEdgeId = 0;
     }
 
-    /** @returns {string} */
     makeNodeId() { return `${this.label}_n${this._nextNodeId++}`; }
-    /** @returns {string} */
     makeEdgeId() { return `${this.label}_e${this._nextEdgeId++}`; }
 
 
@@ -119,10 +112,7 @@ export class Agraph {
         return node;
     }
 
-    /** @returns {Anode[]} */
     getNodes() { return [...this.nodes.values()]; }
-
-    /** @type {number} */
     get nodeCount() { return this.nodes.size; }
 
 

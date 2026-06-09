@@ -1,4 +1,4 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
 // SetUniforms: uploads uniform values to the active program.
 // Equivalent of Awgpu's SetBindGroups, but for the non-texture uniform side.
@@ -9,7 +9,7 @@ import { Afcmd } from "../../Aflow.js";
 //             "mat2" "mat3" "mat4"
 //   value   - matching JS primitive / array / Float32Array
 //   program - override which program to look the location up on (defaults to state.program)
-export class SetUniforms extends Afcmd {
+export class SetUniforms extends Afstep {
 	entries = [];
 
 	constructor(entries = [], data = {}) {

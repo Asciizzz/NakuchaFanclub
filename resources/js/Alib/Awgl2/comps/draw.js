@@ -1,11 +1,11 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
 function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
 }
 
 // Draw: gl.drawArrays - non-indexed vertex drawing
-export class Draw extends Afcmd {
+export class Draw extends Afstep {
 	mode = null;        // gl.TRIANGLES / gl.LINES / gl.POINTS etc.; null = gl.TRIANGLES
 	first = 0;
 	count = 0;
@@ -32,7 +32,7 @@ export class Draw extends Afcmd {
 }
 
 // DrawIndexed: gl.drawElements - indexed drawing
-export class DrawIndexed extends Afcmd {
+export class DrawIndexed extends Afstep {
 	mode = null;
 	count = 0;
 	type = null;        // gl.UNSIGNED_SHORT / gl.UNSIGNED_INT; null = auto from state

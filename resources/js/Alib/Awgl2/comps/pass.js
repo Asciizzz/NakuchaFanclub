@@ -1,4 +1,4 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
 function toNumber(value, fallback = 0) {
 	const n = Number(value);
@@ -9,7 +9,7 @@ function toNumber(value, fallback = 0) {
 // clears color / depth based on options. No "pass object" in WebGL2 - the
 // "pass" is just the currently bound framebuffer. We store the kind in state
 // so downstream comps can guard themselves.
-export class RenderPass extends Afcmd {
+export class RenderPass extends Afstep {
 	constructor(data = {}) {
 		super();
 		this.data = data;
@@ -66,7 +66,7 @@ export class RenderPass extends Afcmd {
 }
 
 // EndPass: unbinds the framebuffer and resets pass state
-export class EndPass extends Afcmd {
+export class EndPass extends Afstep {
 	exec({ state } = {}) {
 		if (!state.gl || !state.passKind) return;
 		state.gl.bindFramebuffer(state.gl.FRAMEBUFFER, null);

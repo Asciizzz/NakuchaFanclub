@@ -1,10 +1,10 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
 function uint(value, fallback = 1) {
 	return Math.max(1, Number(value ?? fallback) | 0);
 }
 
-export class Dispatch extends Afcmd {
+export class Dispatch extends Afstep {
 	x = 1;
 	y = 1;
 	z = 1;
@@ -23,7 +23,7 @@ export class Dispatch extends Afcmd {
 	}
 }
 
-export class DispatchIndirect extends Afcmd {
+export class DispatchIndirect extends Afstep {
 	buffer = null;
 	offset = 0;
 

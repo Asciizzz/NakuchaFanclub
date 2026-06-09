@@ -1,4 +1,4 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
 function list(value) {
 	if (Array.isArray(value)) return value;
@@ -10,7 +10,7 @@ function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
 }
 
-export class SetBuffers extends Afcmd {
+export class SetBuffers extends Afstep {
 	vertex = [];
 	index = null;
 	indirect = null;

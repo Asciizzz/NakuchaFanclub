@@ -1,6 +1,6 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
-export class UsePipeline extends Afcmd {
+export class UsePipeline extends Afstep {
 	constructor(pipeline) {
 		super();
 		this.pipeline = pipeline ?? null;

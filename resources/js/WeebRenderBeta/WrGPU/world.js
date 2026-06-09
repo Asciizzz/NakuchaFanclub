@@ -1,6 +1,6 @@
 import { Mat4 } from "../../Alib/Alm.js";
 import { Ctx as TreeCtx, Node as TreeNode } from "../../Alib/Atree.js";
-import { Afcmd } from "../../Alib/Aflow.js";
+import { Afstep } from "../../Alib/Aflow.js";
 import { Material, Mesh, MeshDeform, Texture } from "./mesh.js";
 
 function uint(value, fallback = 0) {
@@ -255,7 +255,7 @@ export class WorldNode extends TreeNode {
 	}
 }
 
-export class WorldRenderCmd extends Afcmd {
+export class WorldRenderCmd extends Afstep {
 	constructor(world, data = {}) {
 		super();
 		this.world = world;

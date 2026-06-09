@@ -1,7 +1,7 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
 // UseProgram: equivalent of UsePipeline. Binds a compiled WebGLProgram.
-export class UseProgram extends Afcmd {
+export class UseProgram extends Afstep {
 	program = null;
 
 	constructor(program, data = {}) {

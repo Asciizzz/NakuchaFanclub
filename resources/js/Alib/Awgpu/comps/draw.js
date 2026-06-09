@@ -1,6 +1,6 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
-export class Draw extends Afcmd {
+export class Draw extends Afstep {
 	vertexCount = 0;
 	instanceCount = 1;
 	firstVertex = 0;
@@ -21,7 +21,7 @@ export class Draw extends Afcmd {
 	}
 }
 
-export class DrawIndexed extends Afcmd {
+export class DrawIndexed extends Afstep {
 	indexCount = 0;
 	instanceCount = 1;
 	firstIndex = 0;
@@ -44,7 +44,7 @@ export class DrawIndexed extends Afcmd {
 	}
 }
 
-export class DrawIndirect extends Afcmd {
+export class DrawIndirect extends Afstep {
 	buffer = null;
 	offset = 0;
 
@@ -63,7 +63,7 @@ export class DrawIndirect extends Afcmd {
 	}
 }
 
-export class DrawIndexedIndirect extends Afcmd {
+export class DrawIndexedIndirect extends Afstep {
 	buffer = null;
 	offset = 0;
 

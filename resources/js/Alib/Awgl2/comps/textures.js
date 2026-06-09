@@ -1,4 +1,4 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
 // SetTextures: equivalent of SetBindGroups for the texture side of things.
 // Activates one or more texture units and binds a WebGLTexture to each.
@@ -9,7 +9,7 @@ import { Afcmd } from "../../Aflow.js";
 //   target  - gl.TEXTURE_2D (default), gl.TEXTURE_CUBE_MAP, gl.TEXTURE_2D_ARRAY, etc.
 //   uniform - optional name of the sampler uniform; if provided the location is looked
 //             up on program (state.program) and the unit index is written automatically
-export class SetTextures extends Afcmd {
+export class SetTextures extends Afstep {
 	entries = [];
 
 	constructor(entries = [], data = {}) {

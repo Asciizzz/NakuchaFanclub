@@ -1,6 +1,6 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
-export class SetBindGroups extends Afcmd {
+export class SetBindGroups extends Afstep {
 	groups = [];
 
 	constructor(groups = []) {

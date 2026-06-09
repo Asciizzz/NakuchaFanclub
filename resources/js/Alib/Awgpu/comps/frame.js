@@ -1,6 +1,6 @@
-import { Afcmd } from "../../Aflow.js";
+import { Afstep } from "../../Aflow.js";
 
-export class BeginFrame extends Afcmd {
+export class BeginFrame extends Afstep {
 	constructor(label = "AwgpuFrame") {
 		super();
 		this.label = label;
@@ -13,7 +13,7 @@ export class BeginFrame extends Afcmd {
 	}
 }
 
-export class EndFrame extends Afcmd {
+export class EndFrame extends Afstep {
 	exec({ state, graph, link } = {}) {
 		if (state.encoder && !state.ended) {
 			state.backend.submit(state.encoder);
