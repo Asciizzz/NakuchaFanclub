@@ -303,7 +303,7 @@
 			let fpsTime = performance.now();
 
 			function frame() {
-				flow.run({ from: nBegin.id, state: backend.newCtx() });
+				flow.run({ from: nBegin.id, ctx: backend.newCtx() });
 				frames++;
 				const now = performance.now();
 				if (now - fpsTime >= 500) {

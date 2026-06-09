@@ -261,8 +261,8 @@ export class WorldRenderCmd extends Afstep {
 		this.world = world;
 	}
 
-	exec({ state, graph, link } = {}) {
-		this.world?.execRender?.(state);
+	exec({ ctx, graph, link } = {}) {
+		this.world?.execRender?.(ctx);
 	}
 }
 
@@ -648,11 +648,11 @@ export class World extends TreeCtx {
 		return this.result;
 	}
 
-	execRender(state) {
-		if (!state?.pass || state.passKind !== "render") return false;
+	execRender(ctx) {
+		if (!ctx?.pass || ctx.passKind !== "render") return false;
 		const batches = this.result?.batches ?? [];
 		if (batches.length <= 0) return false;
-		for (const batch of batches) this.#drawBatch(state, batch);
+		for (const batch of batches) this.#drawBatch(ctx, batch);
 		return true;
 	}
 
@@ -779,14 +779,14 @@ export class World extends TreeCtx {
 		return batches;
 	}
 
-	#drawBatch(state, batch) {
-		const pass = state.pass;
+	#drawBatch(ctx, batch) {
+		const pass = ctx.pass;
 		const mesh = batch.mesh ?? null;
 		const shader = batch.shader ?? null;
 		if (!pass || !mesh?.vertexBuffer || !mesh?.indexBuffer || !shader?.pipeline) return false;
 
 		pass.setPipeline(shader.pipeline);
-		state.pipeline = shader.pipeline;
+		ctx.pipeline = shader.pipeline;
 
 		const shaderGroups = [...asList(shader.bindGroups)];
 		const instanceBG = this.#instanceBindGroup(shader);
@@ -796,7 +796,7 @@ export class World extends TreeCtx {
 				bindGroup: instanceBG,
 			});
 		}
-		this.#setBindGroups(state, shaderGroups);
+		this.#setBindGroups(ctx, shaderGroups);
 
 		const groups = [...asList(batch.bindGroups)];
 		const deformBG = this.#ensureDeformBindGroup(batch.deform);
@@ -806,7 +806,7 @@ export class World extends TreeCtx {
 				bindGroup: deformBG,
 			});
 		}
-		this.#setBindGroups(state, groups);
+		this.#setBindGroups(ctx, groups);
 
 		pass.setVertexBuffer(0, mesh.vertexBuffer);
 		for (const entry of asList(batch.vertex)) {
@@ -818,7 +818,7 @@ export class World extends TreeCtx {
 		const materialGroupIndex = batch.items[0]?.renderer.cfg.materialGroupIndex ?? this.cfg.materialGroupIndex;
 		for (const submesh of mesh.submeshes ?? []) {
 			if (materialGroupIndex != null && submesh.material?.bindGroup) {
-				this.#setBindGroups(state, [{ index: materialGroupIndex, bindGroup: submesh.material.bindGroup }]);
+				this.#setBindGroups(ctx, [{ index: materialGroupIndex, bindGroup: submesh.material.bindGroup }]);
 			}
 			pass.drawIndexed(
 				submesh.indexCount,
@@ -831,16 +831,16 @@ export class World extends TreeCtx {
 		return true;
 	}
 
-	#setBindGroups(state, groups) {
-		if (!state?.pass) return;
+	#setBindGroups(ctx, groups) {
+		if (!ctx?.pass) return;
 		for (const entry of groups) {
 			const index = uint(entry?.index ?? entry?.group, 0);
 			const bindGroup = entry?.bindGroup ?? entry?.groupRef ?? null;
 			if (!bindGroup) continue;
 			const offsets = entry?.offsets ?? entry?.dynamicOffsets;
-			if (offsets) state.pass.setBindGroup(index, bindGroup, offsets);
-			else state.pass.setBindGroup(index, bindGroup);
-			state.bindGroups?.set?.(index, { bindGroup, offsets: offsets ?? null });
+			if (offsets) ctx.pass.setBindGroup(index, bindGroup, offsets);
+			else ctx.pass.setBindGroup(index, bindGroup);
+			ctx.bindGroups?.set?.(index, { bindGroup, offsets: offsets ?? null });
 		}
 	}
 
