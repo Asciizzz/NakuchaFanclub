@@ -1,7 +1,9 @@
+import { Ares } from "./Ares.js";
+
 /* Agraph
 By Asciiz
 
-Tiny directed graph. Stores topology only; traversal is your job
+Tiny directed graph. Stores topology only; traversal is your job. tryX returns Aok or Aerr. Underlying errors live in data.error when useful.
 */
 
 export class Anode {
@@ -42,6 +44,12 @@ export class Agraph {
     static SELF    = "self";
     static UNKNOWN = "unknown";
 
+    static isDirection(direction) {
+        return direction === Agraph.OUT ||
+               direction === Agraph.IN  ||
+               direction === Agraph.BOTH;
+    }
+
     constructor({ label = "" } = {}) {
         this.label = label;
 
@@ -56,7 +64,9 @@ export class Agraph {
     }
 
     makeNodeId() { return `${this.label}_n${this._nextNodeId++}`; }
+
     makeEdgeId() { return `${this.label}_e${this._nextEdgeId++}`; }
+
 
 
     // Nodes
@@ -82,11 +92,23 @@ export class Agraph {
         return node;
     }
 
+    tryAddNode(options = {}) {
+        return _agraphAresTry({
+            src: "Agraph.tryAddNode",
+            code: "ADD_NODE_FAILED",
+            raw: 'Could not add node "$id$": $error$',
+            data: options,
+            fn: () => this.addNode(options),
+        });
+    }
+
     /** @param {string} id @returns {Anode|null} */
     getNode(id) { return this.nodes.get(id) ?? null; }
 
+
     /** @param {string} id @returns {boolean} */
     hasNode(id) { return this.nodes.has(id); }
+
 
     /** Remove node + its edges. @param {string} id @returns {Anode} */
     removeNode(id) {
@@ -112,8 +134,20 @@ export class Agraph {
         return node;
     }
 
+    tryRemoveNode(id) {
+        return _agraphAresTry({
+            src: "Agraph.tryRemoveNode",
+            code: "REMOVE_NODE_FAILED",
+            raw: 'Could not remove node "$id$": $error$',
+            data: { id },
+            fn: () => this.removeNode(id),
+        });
+    }
+
     getNodes() { return [...this.nodes.values()]; }
+
     get nodeCount() { return this.nodes.size; }
+
 
 
     // Edges
@@ -149,11 +183,23 @@ export class Agraph {
         return edge;
     }
 
+    tryAddEdge(options = {}) {
+        return _agraphAresTry({
+            src: "Agraph.tryAddEdge",
+            code: "ADD_EDGE_FAILED",
+            raw: 'Could not add edge "$srcId$" -> "$dstId$": $error$',
+            data: options,
+            fn: () => this.addEdge(options),
+        });
+    }
+
     /** @param {string} id @returns {Aedge|null} */
     getEdge(id) { return this.edges.get(id) ?? null; }
 
+
     /** @param {string} id @returns {boolean} */
     hasEdge(id) { return this.edges.has(id); }
+
 
     /** @param {string} id @returns {Aedge} */
     removeEdge(id) {
@@ -170,11 +216,23 @@ export class Agraph {
         return edge;
     }
 
+    tryRemoveEdge(id) {
+        return _agraphAresTry({
+            src: "Agraph.tryRemoveEdge",
+            code: "REMOVE_EDGE_FAILED",
+            raw: 'Could not remove edge "$id$": $error$',
+            data: { id },
+            fn: () => this.removeEdge(id),
+        });
+    }
+
     /** @returns {Aedge[]} */
     getEdges() { return [...this.edges.values()]; }
 
+
     /** @type {number} */
     get edgeCount() { return this.edges.size; }
+
 
 
     // Direction
@@ -189,6 +247,7 @@ export class Agraph {
     }
 
 
+
     // Edge queries
 
     /**
@@ -197,7 +256,7 @@ export class Agraph {
      * @returns {Aedge[]}
      */
     edgesOf({ nodeId, direction = Agraph.OUT } = {}) {
-        this.assertDirection(direction);
+        if (!Agraph.isDirection(direction)) return [];
         if (!this.nodes.has(nodeId)) return [];
 
         if (direction === Agraph.OUT) {
@@ -216,17 +275,20 @@ export class Agraph {
         return this.#edgesFromIdSet(edgeIds);
     }
 
+
     /**
      * @param {string} nodeId
      * @returns {Aedge[]}
      */
     outEdges(nodeId) { return this.edgesOf({ nodeId, direction: Agraph.OUT }); }
 
+
     /**
      * @param {string} nodeId
      * @returns {Aedge[]}
      */
     inEdges(nodeId) { return this.edgesOf({ nodeId, direction: Agraph.IN }); }
+
 
     /**
      * Edges from `srcId` to `dstId` only. Missing node => `[]`
@@ -242,6 +304,7 @@ export class Agraph {
         }
         return result;
     }
+
 
     /**
      * Edges between `a` and `b`, both ways. Missing node => `[]`
@@ -259,6 +322,7 @@ export class Agraph {
     }
 
 
+
     // Connection / neighbor queries
 
     /**
@@ -267,7 +331,7 @@ export class Agraph {
      * @returns {Array<{ from: Anode, to: Anode, edge: Aedge, dir: string }>}
      */
     connectionsOf({ nodeId, direction = Agraph.OUT } = {}) {
-        this.assertDirection(direction);
+        if (!Agraph.isDirection(direction)) return [];
         if (!this.nodes.has(nodeId)) return [];
 
         const node  = this.getNode(nodeId);
@@ -288,6 +352,7 @@ export class Agraph {
         return result;
     }
 
+
     /**
      * Unique neighbor nodes
      * @param {{ nodeId: string, direction?: "out"|"in"|"both" }} options
@@ -299,11 +364,13 @@ export class Agraph {
             .filter(uniqueById());
     }
 
+
     /**
      * @param {string} nodeId
      * @returns {Anode[]}
      */
     successors(nodeId)   { return this.neighborsOf({ nodeId, direction: Agraph.OUT }); }
+
 
     /**
      * @param {string} nodeId
@@ -312,16 +379,20 @@ export class Agraph {
     predecessors(nodeId) { return this.neighborsOf({ nodeId, direction: Agraph.IN }); }
 
 
+
     // Degree
 
     /** Total degree; self-loop counts once. @param {string} nodeId @returns {number} */
     degree(nodeId)    { return this.edgesOf({ nodeId, direction: Agraph.BOTH }).length; }
 
+
     /** @param {string} nodeId @returns {number} */
     outDegree(nodeId) { return this.outgoing.get(nodeId)?.size ?? 0; }
 
+
     /** @param {string} nodeId @returns {number} */
     inDegree(nodeId)  { return this.incoming.get(nodeId)?.size ?? 0; }
+
 
 
     // Iteration helpers
@@ -331,9 +402,29 @@ export class Agraph {
         for (const node of this.nodes.values()) fn(node);
     }
 
+    tryForEachNode(fn) {
+        return _agraphAresTry({
+            src: "Agraph.tryForEachNode",
+            code: "FOR_EACH_NODE_FAILED",
+            raw: "Node callback failed: $error$",
+            data: { fn },
+            fn: () => this.forEachNode(fn),
+        });
+    }
+
     /** @param {function(Aedge): void} fn */
     forEachEdge(fn) {
         for (const edge of this.edges.values()) fn(edge);
+    }
+
+    tryForEachEdge(fn) {
+        return _agraphAresTry({
+            src: "Agraph.tryForEachEdge",
+            code: "FOR_EACH_EDGE_FAILED",
+            raw: "Edge callback failed: $error$",
+            data: { fn },
+            fn: () => this.forEachEdge(fn),
+        });
     }
 
     /** @param {function(Anode): boolean} fn @returns {Anode[]} */
@@ -345,6 +436,16 @@ export class Agraph {
         return result;
     }
 
+    tryFilterNodes(fn) {
+        return _agraphAresTry({
+            src: "Agraph.tryFilterNodes",
+            code: "FILTER_NODES_FAILED",
+            raw: "Node filter callback failed: $error$",
+            data: { fn },
+            fn: () => this.filterNodes(fn),
+        });
+    }
+
     /** @param {function(Aedge): boolean} fn @returns {Aedge[]} */
     filterEdges(fn) {
         const result = [];
@@ -354,6 +455,16 @@ export class Agraph {
         return result;
     }
 
+    tryFilterEdges(fn) {
+        return _agraphAresTry({
+            src: "Agraph.tryFilterEdges",
+            code: "FILTER_EDGES_FAILED",
+            raw: "Edge filter callback failed: $error$",
+            data: { fn },
+            fn: () => this.filterEdges(fn),
+        });
+    }
+
     /** @param {function(Anode): *} fn @returns {Array<*>} */
     mapNodeData(fn) {
         const result = [];
@@ -361,11 +472,31 @@ export class Agraph {
         return result;
     }
 
+    tryMapNodeData(fn) {
+        return _agraphAresTry({
+            src: "Agraph.tryMapNodeData",
+            code: "MAP_NODE_DATA_FAILED",
+            raw: "Node mapper callback failed: $error$",
+            data: { fn },
+            fn: () => this.mapNodeData(fn),
+        });
+    }
+
     /** @param {function(Aedge): *} fn @returns {Array<*>} */
     mapEdgeData(fn) {
         const result = [];
         for (const edge of this.edges.values()) result.push(fn(edge));
         return result;
+    }
+
+    tryMapEdgeData(fn) {
+        return _agraphAresTry({
+            src: "Agraph.tryMapEdgeData",
+            code: "MAP_EDGE_DATA_FAILED",
+            raw: "Edge mapper callback failed: $error$",
+            data: { fn },
+            fn: () => this.mapEdgeData(fn),
+        });
     }
 
 
@@ -376,10 +507,12 @@ export class Agraph {
         return this.filterNodes(node => this.inDegree(node.id) === 0);
     }
 
+
     /** @returns {Anode[]} Nodes with no outgoing edges */
     leaves() {
         return this.filterNodes(node => this.outDegree(node.id) === 0);
     }
+
 
     /**
      * BFS: can `srcId` reach `dstId`?
@@ -406,6 +539,7 @@ export class Agraph {
 
         return false;
     }
+
 
     /** @returns {Anode[]} Topological order; cycles throw */
     topoSort() {
@@ -439,6 +573,16 @@ export class Agraph {
         return sorted;
     }
 
+    tryTopoSort() {
+        return _agraphAresTry({
+            src: "Agraph.tryTopoSort",
+            code: "TOPO_SORT_FAILED",
+            raw: 'Could not topologically sort graph "$label$": $error$',
+            data: { label: this.label },
+            fn: () => this.topoSort(),
+        });
+    }
+
 
     // Subgraph / clone / merge
 
@@ -467,6 +611,16 @@ export class Agraph {
         return sub;
     }
 
+    trySubgraph(nodeIds) {
+        return _agraphAresTry({
+            src: "Agraph.trySubgraph",
+            code: "SUBGRAPH_FAILED",
+            raw: 'Could not create subgraph from nodes $nodeIds$: $error$',
+            data: { nodeIds },
+            fn: () => this.subgraph(nodeIds),
+        });
+    }
+
     /** @returns {Agraph} Deep clone via `structuredClone` */
     clone() {
         const g = new Agraph({ label: this.label });
@@ -487,6 +641,16 @@ export class Agraph {
         }
 
         return g;
+    }
+
+    tryClone() {
+        return _agraphAresTry({
+            src: "Agraph.tryClone",
+            code: "CLONE_FAILED",
+            raw: 'Could not clone graph "$label$": $error$',
+            data: { label: this.label },
+            fn: () => this.clone(),
+        });
     }
 
     /** @param {Agraph} otherGraph @returns {this} Merge in; skip dupes */
@@ -511,6 +675,16 @@ export class Agraph {
         return this;
     }
 
+    tryMergeFrom(otherGraph) {
+        return _agraphAresTry({
+            src: "Agraph.tryMergeFrom",
+            code: "MERGE_FROM_FAILED",
+            raw: 'Could not merge graph "$otherLabel$" into "$label$": $error$',
+            data: { label: this.label, otherLabel: otherGraph?.label, otherGraph },
+            fn: () => this.mergeFrom(otherGraph),
+        });
+    }
+
 
     // Serialization
 
@@ -522,6 +696,16 @@ export class Agraph {
             _nextEdgeId:  this._nextEdgeId,
             nodes: [...this.nodes.values()].map(n => ({ id: n.id, data: n.data })),
             edges: [...this.edges.values()].map(e => ({ id: e.id, srcId: e.srcId, dstId: e.dstId, data: e.data })),
+        });
+    }
+
+    trySerialize() {
+        return _agraphAresTry({
+            src: "Agraph.trySerialize",
+            code: "SERIALIZE_FAILED",
+            raw: 'Could not serialize graph "$label$": $error$',
+            data: { label: this.label },
+            fn: () => this.serialize(),
         });
     }
 
@@ -540,6 +724,16 @@ export class Agraph {
         }
 
         return g;
+    }
+
+    static tryDeserialize(json) {
+        return _agraphAresTry({
+            src: "Agraph.tryDeserialize",
+            code: "DESERIALIZE_FAILED",
+            raw: 'Could not deserialize graph JSON: $error$',
+            data: { json },
+            fn: () => Agraph.deserialize(json),
+        });
     }
 
 
@@ -582,4 +776,18 @@ function uniqueById() {
         seen.add(node.id);
         return true;
     };
+}
+
+function _agraphAresTry({ src, code, raw = "$error$", data = null, fn }) {
+    try {
+        return Ares.ok(fn());
+    } catch (error) {
+        const baseData = data && typeof data === "object" ? data : { data };
+        return Ares.err({
+            src,
+            code,
+            raw,
+            data: { ...baseData, error },
+        });
+    }
 }
