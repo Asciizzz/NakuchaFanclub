@@ -36,6 +36,8 @@ export class Aedge {
     get dstId() { return this.#dstId; }
 }
 
+// ==================== Generic directed graph =====================
+
 export class Agraph {
     static OUT  = "out";
     static IN   = "in";
@@ -64,10 +66,7 @@ export class Agraph {
     }
 
     makeNodeId() { return `${this.label}_n${this._nextNodeId++}`; }
-
     makeEdgeId() { return `${this.label}_e${this._nextEdgeId++}`; }
-
-
 
     // Nodes
 
@@ -104,8 +103,6 @@ export class Agraph {
 
     /** @param {string} id @returns {Anode|null} */
     getNode(id) { return this.nodes.get(id) ?? null; }
-
-
     /** @param {string} id @returns {boolean} */
     hasNode(id) { return this.nodes.has(id); }
 
@@ -145,10 +142,7 @@ export class Agraph {
     }
 
     getNodes() { return [...this.nodes.values()]; }
-
     get nodeCount() { return this.nodes.size; }
-
-
 
     // Edges
 
@@ -196,7 +190,6 @@ export class Agraph {
     /** @param {string} id @returns {Aedge|null} */
     getEdge(id) { return this.edges.get(id) ?? null; }
 
-
     /** @param {string} id @returns {boolean} */
     hasEdge(id) { return this.edges.has(id); }
 
@@ -228,8 +221,6 @@ export class Agraph {
 
     /** @returns {Aedge[]} */
     getEdges() { return [...this.edges.values()]; }
-
-
     /** @type {number} */
     get edgeCount() { return this.edges.size; }
 
@@ -276,19 +267,10 @@ export class Agraph {
     }
 
 
-    /**
-     * @param {string} nodeId
-     * @returns {Aedge[]}
-     */
+    /** @param {string} nodeId @returns {Aedge[]} */
     outEdges(nodeId) { return this.edgesOf({ nodeId, direction: Agraph.OUT }); }
-
-
-    /**
-     * @param {string} nodeId
-     * @returns {Aedge[]}
-     */
+    /** @param {string} nodeId @returns {Aedge[]} */
     inEdges(nodeId) { return this.edgesOf({ nodeId, direction: Agraph.IN }); }
-
 
     /**
      * Edges from `srcId` to `dstId` only. Missing node => `[]`
@@ -365,35 +347,17 @@ export class Agraph {
     }
 
 
-    /**
-     * @param {string} nodeId
-     * @returns {Anode[]}
-     */
+    /** @param {string} nodeId @returns {Anode[]} */
     successors(nodeId)   { return this.neighborsOf({ nodeId, direction: Agraph.OUT }); }
-
-
-    /**
-     * @param {string} nodeId
-     * @returns {Anode[]}
-     */
+    /** @param {string} nodeId @returns {Anode[]} */
     predecessors(nodeId) { return this.neighborsOf({ nodeId, direction: Agraph.IN }); }
-
-
-
-    // Degree
 
     /** Total degree; self-loop counts once. @param {string} nodeId @returns {number} */
     degree(nodeId)    { return this.edgesOf({ nodeId, direction: Agraph.BOTH }).length; }
-
-
     /** @param {string} nodeId @returns {number} */
     outDegree(nodeId) { return this.outgoing.get(nodeId)?.size ?? 0; }
-
-
     /** @param {string} nodeId @returns {number} */
     inDegree(nodeId)  { return this.incoming.get(nodeId)?.size ?? 0; }
-
-
 
     // Iteration helpers
 
@@ -503,15 +467,9 @@ export class Agraph {
     // Graph-level queries
 
     /** @returns {Anode[]} Nodes with no incoming edges */
-    roots() {
-        return this.filterNodes(node => this.inDegree(node.id) === 0);
-    }
-
-
+    roots() { return this.filterNodes(node => this.inDegree(node.id) === 0); }
     /** @returns {Anode[]} Nodes with no outgoing edges */
-    leaves() {
-        return this.filterNodes(node => this.outDegree(node.id) === 0);
-    }
+    leaves() { return this.filterNodes(node => this.outDegree(node.id) === 0); }
 
 
     /**
