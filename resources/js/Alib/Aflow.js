@@ -4,7 +4,7 @@ By Asciiz
 Execution flow on top of Agraph
 */
 
-import { Agraph, Anode, Aedge } from "./Agraph.js";
+import { Agraph, Adag, Anode, Aedge } from "./Agraph.js";
 
 /** Base step. Extend it, override `exec`. */
 export class Afstep {
@@ -127,10 +127,12 @@ export class Aflow {
     /**
      * Add link. `data.enabled = false` skips it during run.
      * @param {Agraph} graph
-     * @param {{ srcId: string, dstId: string, id?: string|null, data?: object }} options
+     * @param {string} srcId
+     * @param {string} dstId
+     * @param {{ id?: string|null, data?: object }} [options]
      * @returns {Aedge}
      */
-    static addLink(graph, { srcId, dstId, data = {}, id = null } = {}) {
+    static addLink(graph, srcId, dstId, { data = {}, id = null } = {}) {
         Aflow.#assertGraph(graph, "addLink");
 
         if (!graph.hasNode(srcId)) {
@@ -141,12 +143,12 @@ export class Aflow {
         }
 
         const edgeData = new AfEdgeData({ srcId, dstId, ...data });
-        return graph.addEdge({ srcId, dstId, id, data: edgeData });
+        return Adag.addEdge(graph, srcId, dstId, { id, data: edgeData });
     }
 
-    /** @param {{ srcId: string, dstId: string, id?: string|null, data?: object }} options @returns {Aedge} */
-    addLink(options = {}) {
-        return Aflow.addLink(this.graph, options);
+    /** @param {string} srcId @param {string} dstId @param {{ id?: string|null, data?: object }} [options] @returns {Aedge} */
+    addLink(srcId, dstId, options = {}) {
+        return Aflow.addLink(this.graph, srcId, dstId, options);
     }
 
     /** @param {Agraph} graph @param {string} id @returns {Aedge|null} */
@@ -173,21 +175,21 @@ export class Aflow {
 
     // Queries
 
-    /** @param {Agraph} graph @param {string} a @param {string} b @returns {Aedge[]} */
-    static connectivity(graph, a, b) {
+    /** @param {Agraph} graph @param {string} nodeId1 @param {string} nodeId2 @returns {Aedge[]} */
+    static connectivity(graph, nodeId1, nodeId2) {
         Aflow.#assertGraph(graph, "connectivity");
-        return graph.edgesConnecting({ a, b });
+        return graph.edgesConnecting(nodeId1, nodeId2);
     }
 
-    /** @param {string} a @param {string} b @returns {Aedge[]} */
-    connectivity(a, b) {
-        return Aflow.connectivity(this.graph, a, b);
+    /** @param {string} nodeId1 @param {string} nodeId2 @returns {Aedge[]} */
+    connectivity(nodeId1, nodeId2) {
+        return Aflow.connectivity(this.graph, nodeId1, nodeId2);
     }
 
     /** @param {Agraph} graph @param {string} srcId @param {string} dstId @returns {boolean} */
     static hasPath(graph, srcId, dstId) {
         Aflow.#assertGraph(graph, "hasPath");
-        return graph.hasPath({ srcId, dstId });
+        return graph.hasPath(srcId, dstId);
     }
 
     /** @param {string} srcId @param {string} dstId @returns {boolean} */
@@ -200,10 +202,11 @@ export class Aflow {
     /**
      * Run DFS from `from`. Payloads get `{ ctx, graph, link }`.
      * @param {Agraph} graph
-     * @param {{ from: string, ctx?: * }} options
+     * @param {string} from
+     * @param {{ ctx?: * }} [options]
      * @returns {*} Final ctx
      */
-    static run(graph, { from = null, ctx = {} } = {}) {
+    static run(graph, from, { ctx = {} } = {}) {
         Aflow.#assertGraph(graph, "run");
 
         if (from == null) throw new Error(`Aflow.run: "from" node id is required`);
@@ -271,11 +274,12 @@ export class Aflow {
 
     /**
      * Run DFS from `from`. Payloads get `{ ctx, graph, link }`.
-     * @param {{ from: string, ctx?: * }} options
+     * @param {string} from
+     * @param {{ ctx?: * }} [options]
      * @returns {*} Final ctx
      */
-    run(options = {}) {
-        return Aflow.run(this.graph, options);
+    run(from, options = {}) {
+        return Aflow.run(this.graph, from, options);
     }
 
     static #assertGraph(graph, method) {

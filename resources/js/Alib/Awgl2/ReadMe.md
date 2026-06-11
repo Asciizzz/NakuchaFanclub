@@ -40,10 +40,10 @@ const endNode = flow.addNode({ payload: [
     new Awgl2.EndFrame()
 ]});
 
-flow.addLink({ srcId: root.id, dstId: passNode.id });
-flow.addLink({ srcId: passNode.id, dstId: endNode.id });
+flow.addLink(root.id, passNode.id);
+flow.addLink(passNode.id, endNode.id);
 
-flow.run({ from: root.id, ctx: backend.newCtx() });
+flow.run(root.id, { ctx: backend.newCtx() });
 ```
 
 ## Important Rules

@@ -832,10 +832,10 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 					new Awgpu.EndFrame()
 				]});
 
-				flow.addLink({ srcId: rootId, dstId: radiosityPass.id, data: { order: 0 } });
-				flow.addLink({ srcId: radiosityPass.id, dstId: rayPass.id, data: { order: 0 } });
-				flow.addLink({ srcId: rayPass.id, dstId: presentPass.id, data: { order: 0 } });
-				flow.addLink({ srcId: presentPass.id, dstId: endFrame.id, data: { order: 0 } });
+				flow.addLink(rootId, radiosityPass.id, { order: 0 });
+				flow.addLink(radiosityPass.id, rayPass.id, { order: 0 });
+				flow.addLink(rayPass.id, presentPass.id, { order: 0 });
+				flow.addLink(presentPass.id, endFrame.id, { order: 0 });
 			}
 
 			function resize() {
@@ -896,7 +896,7 @@ fn fs_present(input: VSOut) -> @location(0) vec4f {
 				fcam.update(dt);
 				updateCommon();
 				updateRadiosityUniforms();
-				flow.run({ from: rootId, ctx: backend.newCtx() });
+				flow.run(rootId, { ctx: backend.newCtx() });
 				frame++;
 
 				lastTime = now;
