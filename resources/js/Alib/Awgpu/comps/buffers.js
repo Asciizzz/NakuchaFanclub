@@ -22,7 +22,7 @@ export class SetBuffers extends Afstep {
 		this.indirect = data.indirect ?? null;
 	}
 
-	exec({ ctx, graph, link } = {}) {
+	exec({ ctx, graph } = {}) {
 		if (!ctx.pass || ctx.passKind !== "render") return;
 		this.setVertexBuffers(ctx);
 		this.setIndexBuffer(ctx);

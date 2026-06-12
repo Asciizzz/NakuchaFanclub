@@ -6,7 +6,7 @@ export class BeginFrame extends Afstep {
 		this.label = label;
 	}
 
-	exec({ ctx, graph, link } = {}) {
+	exec({ ctx, graph } = {}) {
 		if (ctx.encoder) return;
 		ctx.encoder = ctx.backend.createEncoder(this.label);
 		ctx.ended = false;
@@ -14,7 +14,7 @@ export class BeginFrame extends Afstep {
 }
 
 export class EndFrame extends Afstep {
-	exec({ ctx, graph, link } = {}) {
+	exec({ ctx, graph } = {}) {
 		if (ctx.encoder && !ctx.ended) {
 			ctx.backend.submit(ctx.encoder);
 			ctx.ended = true;

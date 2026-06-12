@@ -9,48 +9,16 @@ import { Agraph, Adag, Anode, Aedge } from "./Agraph.js";
 /** Base step. Extend it, override `exec`. */
 export class Afstep {
     /**
-     * Runs when its node is hit.
-     * @param {{ ctx: *, graph: Agraph, link: { data: AfEdgeData|null, src: Anode|null, dst: Anode } }} args
+     * Runs when its node is hit
+     * @param {{ ctx: *, graph: Agraph, entry: { src: Anode|null, dst: Anode, link: Aedge|null } }} options
      */
-    exec({ ctx, graph, link }) {
+    exec({ ctx, graph, entry }) {
         throw new Error("Afstep.exec not implemented");
     }
 }
 
-export class AfNodeData {
-    constructor(data = {}) {
-        Object.assign(this, data);
-    }
-
-    payload = [];
-    linkSortFn = defaultLinkSortFn;
-
-    appendPayload(step) {
-        this.payload.push(step);
-        return this;
-    }
-}
-
-export class AfEdgeData {
-    constructor({ srcId, dstId, ...data } = {}) {
-        Object.assign(this, data);
-        this.#srcId = srcId;
-        this.#dstId = dstId;
-    }
-
-    #srcId = null;
-    #dstId = null;
-
-    order = 0;
-    enabled = true;
-
-    enable() { this.enabled = true; return this; }
-    disable() { this.enabled = false; return this; }
-    toggle() { this.enabled = !this.enabled; return this; }
-}
-
 /**
- * Static flow helpers over `Agraph`.
+ * Static flow helpers over `Agraph`
  *
  * Can be used directly:
  * `Aflow.addNode(graph, options)`
@@ -68,25 +36,55 @@ export class Aflow {
     // Nodes
 
     /**
-     * Add node. Payload runs on visit.
+     * Add node. Payload runs on visit
      * @param {Agraph} graph
-     * @param {{ payload?: Afstep[], linkSortFn?: (a: Aedge, b: Aedge) => number, id?: string|null }} [options]
+     * @param {{ payload?: Afstep[], id?: string|null }} [options]
      * @returns {Anode}
      */
-    static addNode(graph, {
-        payload = [],
-        linkSortFn = defaultLinkSortFn,
-        id = null
-    } = {}) {
+    static addNode(graph, { payload = [], id = null } = {}) {
         Aflow.#assertGraph(graph, "addNode");
-
-        const data = new AfNodeData({ payload, linkSortFn });
-        return graph.addNode({ id, data });
+        return graph.addNode({ id, data: payload });
     }
 
-    /** @param {string} id @returns {Anode} */
+    /** @param { { payload?: Afstep[], id?: string|null }} [options] @returns {Anode} */
     addNode(options = {}) {
         return Aflow.addNode(this.graph, options);
+    }
+
+    /** @param {Agraph} graph @param {string} nodeId @param {Afstep} step @returns {this} */
+    static addPayload(graph, nodeId, step) {
+        const node = graph.getNode(nodeId);
+        if (!node) {
+            throw new Error(`Aflow.addPayload: node "${nodeId}" does not exist`);
+        }
+        if (!(node.data instanceof Array)) {
+            throw new Error(`Aflow.addPayload: node "${nodeId}" data is not an array`);
+        }
+        node.data.push(step);
+        return this;
+    }
+
+    /** @param {string} nodeId @param {Afstep} step @returns {this} */
+    addPayload(nodeId, step) {
+        return Aflow.addPayload(this.graph, nodeId, step);
+    }
+
+    /** @param {Agraph} graph @param {string} nodeId @param {Afstep[]} steps @returns {this} */
+    static addPayloads(graph, nodeId, steps) {
+        const node = graph.getNode(nodeId);
+        if (!node) {
+            throw new Error(`Aflow.addPayloads: node "${nodeId}" does not exist`);
+        }
+        if (!(node.data instanceof Array)) {
+            throw new Error(`Aflow.addPayloads: node "${nodeId}" data is not an array`);
+        }
+        node.data.push(...steps);
+        return this;
+    }
+
+    /** @param {string} nodeId @param {Afstep[]} steps @returns {this} */
+    addPayloads(nodeId, steps) {
+        return Aflow.addPayloads(this.graph, nodeId, steps);
     }
 
     /** @param {Agraph} graph @param {string} id @returns {Anode|null} */
@@ -125,14 +123,14 @@ export class Aflow {
     // Links
 
     /**
-     * Add link. `data.enabled = false` skips it during run.
+     * Add link. `data.enabled = false` skips it during run
      * @param {Agraph} graph
      * @param {string} srcId
      * @param {string} dstId
-     * @param {{ id?: string|null, data?: object }} [options]
+     * @param {{ id?: string|null, data?: any }} [options]
      * @returns {Aedge}
      */
-    static addLink(graph, srcId, dstId, { data = {}, id = null } = {}) {
+    static addLink(graph, srcId, dstId, { data = null, id = null } = {}) {
         Aflow.#assertGraph(graph, "addLink");
 
         if (!graph.hasNode(srcId)) {
@@ -142,11 +140,10 @@ export class Aflow {
             throw new Error(`Aflow.addLink: destination node "${dstId}" does not exist`);
         }
 
-        const edgeData = new AfEdgeData({ srcId, dstId, ...data });
-        return Adag.addEdge(graph, srcId, dstId, { id, data: edgeData });
+        return Adag.addEdge(graph, srcId, dstId, { id, data });
     }
 
-    /** @param {string} srcId @param {string} dstId @param {{ id?: string|null, data?: object }} [options] @returns {Aedge} */
+    /** @param {string} srcId @param {string} dstId @param {{ id?: string|null, data?: any }} [options] @returns {Aedge} */
     addLink(srcId, dstId, options = {}) {
         return Aflow.addLink(this.graph, srcId, dstId, options);
     }
@@ -171,6 +168,52 @@ export class Aflow {
     /** @param {string} id @returns {Aedge} */
     removeLink(id) {
         return Aflow.removeLink(this.graph, id);
+    }
+
+    // Link Sorting
+
+    /**
+     * In-place sort the outgoing links of a node
+     * @param {Agraph} graph
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
+     */
+    static sortOutgoingLink(graph, nodeId, sortFn) {
+        Aflow.#assertGraph(graph, "sortOutgoingLink");
+        graph.sortOutgoingEdges(nodeId, sortFn);
+    }
+
+    /**
+     * In-place sort the outgoing links of a node
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
+     * @returns {this}
+     */
+    sortOutgoingLink(nodeId, sortFn) {
+        Aflow.sortOutgoingLink(this.graph, nodeId, sortFn);
+        return this;
+    }
+
+    /**
+     * In-place sort the incoming links of a node
+     * @param {Agraph} graph
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} [sortFn=defaultLinkSortFn]
+     */
+    static sortIncomingLink(graph, nodeId, sortFn = defaultLinkSortFn) {
+        Aflow.#assertGraph(graph, "sortIncomingLink");
+        graph.sortIncomingEdges(nodeId, sortFn);
+    }
+
+    /**
+     * In-place sort the incoming links of a node
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} [sortFn=defaultLinkSortFn]
+     * @returns {this}
+     */
+    sortIncomingLink(nodeId, sortFn = defaultLinkSortFn) {
+        Aflow.sortIncomingLink(this.graph, nodeId, sortFn);
+        return this;
     }
 
     // Queries
@@ -200,7 +243,7 @@ export class Aflow {
     // Run
 
     /**
-     * Run DFS from `from`. Payloads get `{ ctx, graph, link }`.
+     * Run DFS from `from`. Payloads get `{ ctx, graph, link }`
      * @param {Agraph} graph
      * @param {string} from
      * @param {{ ctx?: * }} [options]
@@ -217,54 +260,43 @@ export class Aflow {
         // Stack entries: { path: Set<nodeId>, link: { data, src: Anode|null, dst: Anode } }
         const stack = [{
             path: new Set(),
-            link: { data: null, src: null, dst: rootNode }
+            entry: { link: null, src: null, dst: rootNode }
         }];
 
         while (stack.length > 0) {
-            const { path, link } = stack.pop();
-            const node = link.dst;
+            const { path, entry } = stack.pop();
+            const node = entry.dst;
 
             if (path.has(node.id)) {
                 throw new Error(`Aflow.run: cycle detected at node "${node.id}"`);
             }
 
             const nodeData = node.data;
-            if (!(nodeData instanceof AfNodeData)) {
-                throw new Error(`Aflow.run: node "${node.id}" data is not an AfNodeData instance`);
+            if (!(nodeData instanceof Array)) {
+                throw new Error(`Aflow.run: node "${node.id}" data is not an array`);
             }
 
-            for (let i = 0; i < nodeData.payload.length; i++) {
-                const step = nodeData.payload[i];
+            for (let i = 0; i < nodeData.length; i++) {
+                const step = nodeData[i];
                 if (!(step instanceof Afstep)) {
                     throw new Error(`Aflow.run: node "${node.id}" payload[${i}] is not an Afstep instance`);
                 }
-                step.exec({ ctx, graph, link });
+                step.exec({ ctx, graph, entry });
             }
 
-            const outEdges = graph.outEdges(node.id)
-                .filter(edge => {
-                    if (!(edge.data instanceof AfEdgeData)) {
-                        throw new Error(`Aflow.run: link "${edge.id}" data is not an AfEdgeData instance`);
-                    }
-                    return edge.data.enabled;
-                })
-                // Reverse comparator because stack push is LIFO. User sort still means run order.
-                .sort((b, a) => nodeData.linkSortFn(a, b));
+            const outEdges = graph.outEdges(node.id);
 
             const nextPath = new Set(path);
             nextPath.add(node.id);
 
-            for (const edge of outEdges) {
+            for (let i = outEdges.length - 1; i >= 0; i--) {
+                const edge = outEdges[i];
                 const dstNode = graph.getNode(edge.dstId);
                 if (!dstNode) throw new Error(`Aflow.run: link "${edge.id}" points to non-existent node "${edge.dstId}"`);
 
                 stack.push({
                     path: nextPath,
-                    link: {
-                        data: edge.data,
-                        src: node,
-                        dst: dstNode
-                    }
+                    entry: { link: edge, src: node, dst: dstNode }
                 });
             }
         }
@@ -273,7 +305,7 @@ export class Aflow {
     }
 
     /**
-     * Run DFS from `from`. Payloads get `{ ctx, graph, link }`.
+     * Run DFS from `from`. Payloads get `{ ctx, graph, link }`
      * @param {string} from
      * @param {{ ctx?: * }} [options]
      * @returns {*} Final ctx
@@ -287,16 +319,4 @@ export class Aflow {
             throw new TypeError(`Aflow.${method}: graph must be an Agraph instance`);
         }
     }
-}
-
-
-/* Default link sort
-Note:
-
-This sort is lower order first
-*/
-function defaultLinkSortFn(a, b) {
-    const orderA = a.data?.order ?? 0;
-    const orderB = b.data?.order ?? 0;
-    return orderA - orderB;
 }

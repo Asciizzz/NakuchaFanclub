@@ -59,8 +59,8 @@ export class Agraph {
         this.nodes = new Map();    // nodeId -> Anode
         this.edges = new Map();    // edgeId -> Aedge
 
-        this.outgoing = new Map(); // nodeId -> Set(edgeId)
-        this.incoming = new Map(); // nodeId -> Set(edgeId)
+        this.outgoing = new Map(); // nodeId -> Array(edgeId)
+        this.incoming = new Map(); // nodeId -> Array(edgeId)
 
         this._nextNodeId = 0;
         this._nextEdgeId = 0;
@@ -85,8 +85,8 @@ export class Agraph {
         const node = new Anode(nodeId, data);
 
         this.nodes.set(nodeId, node);
-        this.outgoing.set(nodeId, new Set());
-        this.incoming.set(nodeId, new Set());
+        this.outgoing.set(nodeId, []);
+        this.incoming.set(nodeId, []);
 
         return node;
     }
@@ -172,8 +172,8 @@ export class Agraph {
         const edge = new Aedge(edgeId, srcId, dstId, data);
 
         this.edges.set(edgeId, edge);
-        this.outgoing.get(srcId).add(edgeId);
-        this.incoming.get(dstId).add(edgeId);
+        this.outgoing.get(srcId).push(edgeId);
+        this.incoming.get(dstId).push(edgeId);
 
         return edge;
     }
@@ -203,8 +203,16 @@ export class Agraph {
             throw new Error(`Agraph.removeEdge: edge "${id}" does not exist`);
         }
 
-        this.outgoing.get(edge.srcId)?.delete(id);
-        this.incoming.get(edge.dstId)?.delete(id);
+        const outArr = this.outgoing.get(edge.srcId);
+        if (outArr) {
+            const idx = outArr.indexOf(id);
+            if (idx !== -1) outArr.splice(idx, 1);
+        }
+        const inArr = this.incoming.get(edge.dstId);
+        if (inArr) {
+            const idx = inArr.indexOf(id);
+            if (idx !== -1) inArr.splice(idx, 1);
+        }
         this.edges.delete(id);
 
         return edge;
@@ -229,37 +237,24 @@ export class Agraph {
 
     // Direction
 
-    /** @param {"out"|"in"|"both"} direction */
-    assertDirection(direction) {
-        if (direction !== Agraph.OUT &&
-            direction !== Agraph.IN  &&
-            direction !== Agraph.BOTH) {
-            throw new Error(`Agraph: invalid direction "${direction}" -- expected Agraph.OUT, Agraph.IN, or Agraph.BOTH`);
-        }
-    }
-
-
-
     // Edge queries
 
     /**
      * Edges touching `nodeId`, filtered by direction
      * @param {string} nodeId
-     * @param {{ direction?: "out"|"in"|"both", edgeSortFn?: function|null }} [options]
+     * @param {{ direction?: "out"|"in"|"both" }} [options]
      * @returns {Aedge[]}
      */
-    edgesOf(nodeId, { direction = Agraph.OUT, edgeSortFn = null } = {}) {
+    edgesOf(nodeId, { direction = Agraph.OUT } = {}) {
         if (!Agraph.isDirection(direction)) return [];
         if (!this.nodes.has(nodeId)) return [];
 
-        const node = this.getNode(nodeId);
-
         if (direction === Agraph.OUT) {
-            return this.#edgesFromIdSet(this.outgoing.get(nodeId), { edgeSortFn, node });
+            return this.#edgesFromIds(this.outgoing.get(nodeId));
         }
 
         if (direction === Agraph.IN) {
-            return this.#edgesFromIdSet(this.incoming.get(nodeId), { edgeSortFn, node });
+            return this.#edgesFromIds(this.incoming.get(nodeId));
         }
 
         const edgeIds = new Set([
@@ -267,39 +262,36 @@ export class Agraph {
             ...this.incoming.get(nodeId)
         ]);
 
-        return this.#edgesFromIdSet(edgeIds, { edgeSortFn, node });
+        return this.#edgesFromIds(edgeIds);
     }
 
 
     /** 
      * @param {string} nodeId
-     * @param {{ edgeSortFn?: function|null }} [options]
      * @returns {Aedge[]}
      */
-    outEdges(nodeId, options = {}) {
-        return this.edgesOf(nodeId, { direction: Agraph.OUT, ...options });
+    outEdges(nodeId) {
+        return this.edgesOf(nodeId, { direction: Agraph.OUT });
     }
 
     /**
      * @param {string} nodeId
-     * @param {{ edgeSortFn?: function|null }} [options]
      * @returns {Aedge[]}
      */
-    inEdges(nodeId, options = {}) {
-        return this.edgesOf(nodeId, { direction: Agraph.IN, ...options });
+    inEdges(nodeId) {
+        return this.edgesOf(nodeId, { direction: Agraph.IN });
     }
 
     /**
      * @param {string} srcId
      * @param {string} dstId
-     * @param {{ edgeSortFn?: function|null }} [options]
      * @returns {Aedge[]}
      */
-    edgesBetween(srcId, dstId, { edgeSortFn = null } = {}) {
+    edgesBetween(srcId, dstId) {
         if (!this.nodes.has(srcId) || !this.nodes.has(dstId)) return [];
 
         const result = [];
-        for (const edge of this.outEdges(srcId, { edgeSortFn })) {
+        for (const edge of this.outEdges(srcId)) {
             if (edge.dstId === dstId) result.push(edge);
         }
         return result;
@@ -310,17 +302,16 @@ export class Agraph {
      * Edges between `nodeId1` and `nodeId2`, both ways
      * @param {string} nodeId1
      * @param {string} nodeId2
-     * @param {{ edgeSortFn?: function|null }} [options]
      * @returns {Aedge[]}
      */
-    edgesConnecting(nodeId1, nodeId2, { edgeSortFn = null } = {}) {
+    edgesConnecting(nodeId1, nodeId2) {
         if (!this.nodes.has(nodeId1) || !this.nodes.has(nodeId2)) return [];
 
         const edgeIds = new Set();
-        for (const edge of this.edgesBetween(nodeId1, nodeId2, { edgeSortFn })) edgeIds.add(edge.id);
-        for (const edge of this.edgesBetween(nodeId2, nodeId1, { edgeSortFn })) edgeIds.add(edge.id);
+        for (const edge of this.edgesBetween(nodeId1, nodeId2)) edgeIds.add(edge.id);
+        for (const edge of this.edgesBetween(nodeId2, nodeId1)) edgeIds.add(edge.id);
 
-        return this.#edgesFromIdSet(edgeIds, { edgeSortFn, node: this.getNode(nodeId1) });
+        return this.#edgesFromIds(edgeIds);
     }
 
 
@@ -330,15 +321,15 @@ export class Agraph {
     /**
      * Neighbor links with resolved nodes + dir tag
      * @param {string} nodeId
-     * @param {{ direction?: "out"|"in"|"both", edgeSortFn?: function|null }} [options]
+     * @param {{ direction?: "out"|"in"|"both" }} [options]
      * @returns {Array<{ from: Anode, to: Anode, edge: Aedge, dir: string }>}
      */
-    connectionsOf(nodeId, { direction = Agraph.OUT, edgeSortFn = null } = {}) {
+    connectionsOf(nodeId, { direction = Agraph.OUT } = {}) {
         if (!Agraph.isDirection(direction)) return [];
         if (!this.nodes.has(nodeId)) return [];
 
         const node  = this.getNode(nodeId);
-        const edges = this.edgesOf(nodeId, { direction, edgeSortFn });
+        const edges = this.edgesOf(nodeId, { direction });
 
         const result = [];
         for (const edge of edges) {
@@ -359,30 +350,30 @@ export class Agraph {
     /**
      * Unique neighbor nodes
      * @param {string} nodeId
-     * @param {{ direction?: "out"|"in"|"both", edgeSortFn?: function|null }} [options]
+     * @param {{ direction?: "out"|"in"|"both" }} [options]
      * @returns {Anode[]}
      */
-    neighborsOf(nodeId, { direction = Agraph.OUT, edgeSortFn = null } = {}) {
-        return this.connectionsOf(nodeId, { direction, edgeSortFn })
+    neighborsOf(nodeId, { direction = Agraph.OUT } = {}) {
+        return this.connectionsOf(nodeId, { direction })
             .map(c => c.to)
             .filter(uniqueById());
     }
 
     /** @param {string} nodeId @returns {Anode[]} */
-    successors(nodeId, options = {}) {
-        return this.neighborsOf(nodeId, { direction: Agraph.OUT, ...options });
+    successors(nodeId) {
+        return this.neighborsOf(nodeId, { direction: Agraph.OUT });
     }
     /** @param {string} nodeId @returns {Anode[]} */
-    predecessors(nodeId, options = {}) {
-        return this.neighborsOf(nodeId, { direction: Agraph.IN, ...options });
+    predecessors(nodeId) {
+        return this.neighborsOf(nodeId, { direction: Agraph.IN });
     }
 
     /** Total degree; self-loop counts once. @param {string} nodeId @returns {number} */
     degree(nodeId)    { return this.edgesOf(nodeId, { direction: Agraph.BOTH }).length; }
     /** @param {string} nodeId @returns {number} */
-    outDegree(nodeId) { return this.outgoing.get(nodeId)?.size ?? 0; }
+    outDegree(nodeId) { return this.outgoing.get(nodeId)?.length ?? 0; }
     /** @param {string} nodeId @returns {number} */
-    inDegree(nodeId)  { return this.incoming.get(nodeId)?.size ?? 0; }
+    inDegree(nodeId)  { return this.incoming.get(nodeId)?.length ?? 0; }
 
     // Iteration helpers
 
@@ -501,10 +492,9 @@ export class Agraph {
      * BFS: can `srcId` reach `dstId`?
      * @param {string} srcId
      * @param {string} dstId
-     * @param {{ edgeSortFn?: function|null }} [options]
      * @returns {boolean}
      */
-    hasPath(srcId, dstId, { edgeSortFn = null } = {}) {
+    hasPath(srcId, dstId) {
         if (!this.nodes.has(srcId) || !this.nodes.has(dstId)) return false;
         if (srcId === dstId) return true;
 
@@ -517,7 +507,7 @@ export class Agraph {
             if (visited.has(current)) continue;
             visited.add(current);
 
-            for (const edge of this.outEdges(current, { edgeSortFn })) {
+            for (const edge of this.outEdges(current)) {
                 if (edge.dstId === dstId) return true;
                 if (!visited.has(edge.dstId)) queue.push(edge.dstId);
             }
@@ -527,8 +517,8 @@ export class Agraph {
     }
 
 
-    /** @param {{ edgeSortFn?: function|null }} [options] @returns {Anode[]} Topological order; cycles throw */
-    topoSort({ edgeSortFn = null } = {}) {
+    /** @returns {Anode[]} Topological order; cycles throw */
+    topoSort() {
         const inDegree = new Map();
         for (const id of this.nodes.keys()) inDegree.set(id, 0);
         for (const edge of this.edges.values()) {
@@ -546,7 +536,7 @@ export class Agraph {
             const id = queue[queueIndex++];
             sorted.push(this.getNode(id));
 
-            for (const edge of this.outEdges(id, { edgeSortFn })) {
+            for (const edge of this.outEdges(id)) {
                 const newDeg = inDegree.get(edge.dstId) - 1;
                 inDegree.set(edge.dstId, newDeg);
                 if (newDeg === 0) queue.push(edge.dstId);
@@ -560,20 +550,20 @@ export class Agraph {
         return sorted;
     }
 
-    tryTopoSort(options = {}) {
+    tryTopoSort() {
         return _agraphAresTry({
             src: "Agraph.tryTopoSort",
             code: "TOPO_SORT_FAILED",
             raw: 'Could not topologically sort graph "$label$": $error$',
             data: { label: this.label },
-            fn: () => this.topoSort(options),
+            fn: () => this.topoSort(),
         });
     }
 
 
     // Subgraph / clone / merge
 
-    /** @param {string[]} nodeIds @returns {Agraph} Subgraph with those nodes + inner edges */
+    /** @param {string[]} nodeIds @returns {Agraph} */
     subgraph(nodeIds) {
         const idSet = new Set(nodeIds);
         const sub   = new Agraph({ label: `${this.label}_sub` });
@@ -606,7 +596,7 @@ export class Agraph {
         });
     }
 
-    /** @returns {Agraph} Deep clone via `structuredClone` */
+    /** @returns {Agraph} Deep clone via `structuredClone` (deep) */
     clone() {
         const g = new Agraph({ label: this.label });
         g._nextNodeId = this._nextNodeId;
@@ -737,7 +727,7 @@ export class Agraph {
 
 
 
-    #edgesFromIdSet(ids, { edgeSortFn = null, node = null } = {}) {
+    #edgesFromIds(ids) {
         if (!ids) return [];
 
         const result = [];
@@ -746,11 +736,65 @@ export class Agraph {
             if (edge) result.push(edge);
         }
 
-        if (typeof edgeSortFn === "function") {
-            result.sort((a, b) => edgeSortFn(a, b, node));
-        }
-
         return result;
+    }
+
+    /**
+     * In-place sort the outgoing edges of a node
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
+     */
+    sortOutgoingEdges(nodeId, sortFn) {
+        if (typeof sortFn !== "function") {
+            throw new Error(`Agraph.sortOutgoingEdges: sortFn must be a function`);
+        }
+        const edgeIds = this.outgoing.get(nodeId);
+        if (!edgeIds) return;
+        const node = this.getNode(nodeId);
+        edgeIds.sort((idA, idB) => {
+            const a = this.edges.get(idA);
+            const b = this.edges.get(idB);
+            return sortFn(a, b, node, this);
+        });
+    }
+
+    trySortOutgoingEdges(nodeId, sortFn) {
+        return _agraphAresTry({
+            src: "Agraph.trySortOutgoingEdges",
+            code: "SORT_OUTGOING_EDGES_FAILED",
+            raw: 'Could not sort outgoing edges of node "$nodeId$": $error$',
+            data: { nodeId, sortFn },
+            fn: () => this.sortOutgoingEdges(nodeId, sortFn),
+        });
+    }
+
+    /**
+     * In-place sort the incoming edges of a node
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
+     */
+    sortIncomingEdges(nodeId, sortFn) {
+        if (typeof sortFn !== "function") {
+            throw new Error(`Agraph.sortIncomingEdges: sortFn must be a function`);
+        }
+        const edgeIds = this.incoming.get(nodeId);
+        if (!edgeIds) return;
+        const node = this.getNode(nodeId);
+        edgeIds.sort((idA, idB) => {
+            const a = this.edges.get(idA);
+            const b = this.edges.get(idB);
+            return sortFn(a, b, node, this);
+        });
+    }
+
+    trySortIncomingEdges(nodeId, sortFn) {
+        return _agraphAresTry({
+            src: "Agraph.trySortIncomingEdges",
+            code: "SORT_INCOMING_EDGES_FAILED",
+            raw: 'Could not sort incoming edges of node "$nodeId$": $error$',
+            data: { nodeId, sortFn },
+            fn: () => this.sortIncomingEdges(nodeId, sortFn),
+        });
     }
 }
 
@@ -956,11 +1000,11 @@ export class Atree {
         return true;
     }
 
-    /** @param {Agraph} graph @param {string} nodeId @param {{ edgeSortFn?: function|null }} [options] @returns {Aedge|null} */
-    static parentEdgeOf(graph, nodeId, options = {}) {
+    /** @param {Agraph} graph @param {string} nodeId @returns {Aedge|null} */
+    static parentEdgeOf(graph, nodeId) {
         Atree.#assertNode(graph, nodeId, "Atree.parentEdgeOf");
 
-        const parentEdges = graph.inEdges(nodeId, options);
+        const parentEdges = graph.inEdges(nodeId);
         if (parentEdges.length > 1) {
             throw new Error(`Atree.parentEdgeOf: node "${nodeId}" has multiple parent edges`);
         }
@@ -968,21 +1012,21 @@ export class Atree {
         return parentEdges[0] ?? null;
     }
 
-    /** @param {Agraph} graph @param {string} nodeId @param {{ edgeSortFn?: function|null }} [options] @returns {Anode|null} */
-    static parentOf(graph, nodeId, options = {}) {
-        const edge = Atree.parentEdgeOf(graph, nodeId, options);
+    /** @param {Agraph} graph @param {string} nodeId @returns {Anode|null} */
+    static parentOf(graph, nodeId) {
+        const edge = Atree.parentEdgeOf(graph, nodeId);
         return edge ? graph.getNode(edge.srcId) : null;
     }
 
-    /** @param {Agraph} graph @param {string} nodeId @param {{ edgeSortFn?: function|null }} [options] @returns {Aedge[]} */
-    static childEdgesOf(graph, nodeId, options = {}) {
+    /** @param {Agraph} graph @param {string} nodeId @returns {Aedge[]} */
+    static childEdgesOf(graph, nodeId) {
         Atree.#assertNode(graph, nodeId, "Atree.childEdgesOf");
-        return graph.outEdges(nodeId, options);
+        return graph.outEdges(nodeId);
     }
 
-    /** @param {Agraph} graph @param {string} nodeId @param {{ edgeSortFn?: function|null }} [options] @returns {Anode[]} */
-    static childrenOf(graph, nodeId, options = {}) {
-        return Atree.childEdgesOf(graph, nodeId, options)
+    /** @param {Agraph} graph @param {string} nodeId @returns {Anode[]} */
+    static childrenOf(graph, nodeId) {
+        return Atree.childEdgesOf(graph, nodeId)
             .map(edge => graph.getNode(edge.dstId))
             .filter(Boolean);
     }
