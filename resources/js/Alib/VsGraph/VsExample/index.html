@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>VsGraph Example</title>
+	<style>
+		body {
+			margin: 0;
+			background: #17181b;
+		}
+
+		#app {
+			position: fixed;
+			inset: 0;
+			width: 100vw;
+			height: 100vh;
+		}
+	</style>
+</head>
+
+<body>
+	<div id="app"></div>
+
+	<script type="module">
+		import { Agraph }  from "../../Agraph.js";
+		import { VsGraph, VsDotGrid } from "../index.js";
+		import { ExampleNodeData } from "./ExampleNodeData.js";
+		import { ExampleEdgeData } from "./ExampleEdgeData.js";
+
+		// ---- Build a small graph ----
+
+		const graph = new Agraph({ label: "demo" });
+
+		const a = graph.addNode({
+			data: new ExampleNodeData({
+				label: "Node A",
+				color: "#e16570",
+				vsgraph: { x: -120, y: -80 },
+			}),
+		});
+
+		const b = graph.addNode({
+			data: new ExampleNodeData({
+				label: "Node B",
+				color: "#5b9fd6",
+				vsgraph: { x: 120, y: -80 },
+			}),
+		});
+
+		const c = graph.addNode({
+			data: new ExampleNodeData({
+				label: "Node C",
+				color: "#e5c07b",
+				vsgraph: { x: 0, y: 80 },
+			}),
+		});
+
+		const d = graph.addNode({
+			data: new ExampleNodeData({
+				label: "Node D",
+				color: "#98c379",
+				vsgraph: { x: 0, y: -200 },
+			}),
+		});
+
+		// Edges (edge data carries its own rendering via ExampleEdgeData)
+		graph.addEdge(a.id, b.id, { data: new ExampleEdgeData({ color: "#888" }) });
+		graph.addEdge(a.id, c.id, { data: new ExampleEdgeData({ color: "#888" }) });
+		graph.addEdge(b.id, c.id, { data: new ExampleEdgeData({ color: "#888" }) });
+		graph.addEdge(d.id, a.id, { data: new ExampleEdgeData({ color: "#888" }) });
+		graph.addEdge(d.id, b.id, { data: new ExampleEdgeData({ color: "#888" }) });
+
+		// ---- Mount VsGraph ----
+
+		const vsgraph = new VsGraph({
+			mount: document.querySelector("#app"),
+			graph,
+		});
+
+		// Dot grid background - independent Acanvas layer bound to VsGraph's root
+		const dotGrid = new VsDotGrid();
+		dotGrid.bindVsGraph(vsgraph);
+
+		// Inject self-reference into ctx so node drag handlers can re-render and read zoom
+		vsgraph.ctx = { vsgraph, dotGrid };
+
+		// Patch render to also update the dot grid
+		const _origRender = vsgraph.render.bind(vsgraph);
+		vsgraph.render = () => { _origRender(); dotGrid.update(); return vsgraph; };
+
+		vsgraph.render();
+
+		// Expose for console debugging
+		window.graph   = graph;
+		window.vsgraph = vsgraph;
+		window.dotGrid = dotGrid;
+	</script>
+</body>
+
+</html>

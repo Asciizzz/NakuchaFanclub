@@ -28,17 +28,9 @@ export class Acamera {
 		this.orthoSize = options.orthoSize ?? 5; // half-height
 	}
 
-	get forward() {
-		return Alm.Quat.transformV3(this.orientation, Alm.Vec3.FORWARD);
-	}
-
-	get right() {
-		return Alm.Quat.transformV3(this.orientation, Alm.Vec3.RIGHT);
-	}
-
-	get up() {
-		return Alm.Quat.transformV3(this.orientation, Alm.Vec3.UP);
-	}
+	get forward() { return Alm.Quat.transformV3(this.orientation, Alm.Vec3.FORWARD); }
+	get right() { return Alm.Quat.transformV3(this.orientation, Alm.Vec3.RIGHT); }
+	get up() { return Alm.Quat.transformV3(this.orientation, Alm.Vec3.UP); }
 
 	get view() {
 		const target = Alm.Vec3.add(this.position, this.forward);

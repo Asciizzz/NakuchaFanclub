@@ -8,7 +8,7 @@ export class SetBindGroups extends Afstep {
 		this.groups = Array.isArray(groups) ? groups.slice() : [];
 	}
 
-	exec({ ctx, graph, link } = {}) {
+	exec({ ctx, graph } = {}) {
 		if (!ctx.pass) return;
 		for (const entry of this.groups) {
 			const index = Math.max(0, Number(entry?.index ?? entry?.group ?? 0) | 0);
