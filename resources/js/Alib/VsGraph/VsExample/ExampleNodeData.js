@@ -18,8 +18,8 @@ export class ExampleNodeData extends VsData {
         this.vsgraph = { x: 0, y: 0, ...vsgraph };
     }
 
-    static createFn({ node, graph }) {
-        const { element, cache } = VsData.createFn({ node, graph });
+    static createFn({ node, graph, vsgraph }) {
+        const { element, cache } = VsData.createFn({ node, graph, vsgraph });
 
         Object.assign(element.style, {
             position:     "absolute",
@@ -75,7 +75,7 @@ export class ExampleNodeData extends VsData {
         return { element, cache };
     }
 
-    static renderFn({ node, graph, element, cache, ctx }) {
+    static renderFn({ node, element, graph, vsgraph, cache, ctx }) {
         // Store vsgraph ref from ctx so drag handlers can trigger render & read zoom
         cache.vsgraph = ctx?.vsgraph ?? null;
 

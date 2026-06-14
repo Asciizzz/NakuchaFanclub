@@ -60,13 +60,13 @@ export class VsGraph extends Acanvas {
             const DataClass = node.data.constructor;
 
             if (!_instances.has(key)) {
-                const { element, cache } = DataClass.createFn({ node, graph });
+                const { element, cache } = DataClass.createFn({ node, graph, vsgraph: this });
                 this.world.appendChild(element);
                 _instances.set(key, { element, cache, DataClass });
             }
 
             const inst = _instances.get(key);
-            inst.DataClass.renderFn({ node, graph, element: inst.element, cache: inst.cache, ctx });
+            inst.DataClass.renderFn({ node, graph, element: inst.element, cache: inst.cache, ctx, vsgraph: this });
         }
 
         // Edges
@@ -79,13 +79,13 @@ export class VsGraph extends Acanvas {
             const DataClass = edge.data.constructor;
 
             if (!_instances.has(key)) {
-                const { element, cache } = DataClass.createFn({ edge, graph });
+                const { element, cache } = DataClass.createFn({ edge, graph, vsgraph: this });
                 this.world.appendChild(element);
                 _instances.set(key, { element, cache, DataClass });
             }
 
             const inst = _instances.get(key);
-            inst.DataClass.renderFn({ edge, graph, element: inst.element, cache: inst.cache, ctx });
+            inst.DataClass.renderFn({ edge, graph, element: inst.element, cache: inst.cache, ctx, vsgraph: this });
         }
 
         // Remove elements for nodes/edges that no longer exist or lost their VsData
