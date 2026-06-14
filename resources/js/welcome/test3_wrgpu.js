@@ -277,11 +277,11 @@ async function run() {
 
 	const frameEndNode = flow.addNode({ payload: [new Awgpu.EndFrame()] });
 
-	flow.addLink({ srcId: rootId, dstId: bgNode.id });
-	flow.addLink({ srcId: bgNode.id, dstId: mainNode.id });
-	flow.addLink({ srcId: mainNode.id, dstId: worldNode.id });
-	flow.addLink({ srcId: worldNode.id, dstId: mainEndNode.id });
-	flow.addLink({ srcId: mainEndNode.id, dstId: frameEndNode.id });
+	flow.addLink(rootId, bgNode.id );
+	flow.addLink(bgNode.id, mainNode.id );
+	flow.addLink(mainNode.id, worldNode.id );
+	flow.addLink(worldNode.id, mainEndNode.id );
+	flow.addLink(mainEndNode.id, frameEndNode.id );
 
 	let last = performance.now();
 	function frame(now) {
@@ -298,7 +298,7 @@ async function run() {
 		background.data.set([canvas.width, canvas.height, 0, 0], 4);
 		backend.queue.writeBuffer(background.buffer, 0, background.data);
 
-		flow.run({ from: rootId, ctx: backend.newCtx() });
+		flow.run(rootId, { ctx: backend.newCtx() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);

@@ -335,7 +335,8 @@ export class World extends TreeCtx {
 	setRenderEntry(node) {
 		if (!node) return this;
 		this.#renderCmd = new WorldRenderCmd(this);
-		node.data.appendPayload(this.#renderCmd);
+		// node.data.appendPayload(this.#renderCmd);
+		node.data.push(this.#renderCmd);
 		return this;
 	}
 

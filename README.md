@@ -16,6 +16,18 @@
 
 - This shi is going to blow your fcking mind
 
+### Diagnostic
+
+#### `Adiag`
+
+- Basically a way to collect diagnostic data
+
+- An example for how this can be useful:
+  - Imagine you created a class A that uses B via composition, with a method that has the same name: A.doSomething() and B.doSomething()
+  - A.doSomething() calls B.doSomething(), but B.doSomething() can fail and throw an error
+  - But you want the error or throwing to have the context of A, not B: "A.doSomething() failed" instead of "B.doSomething() failed"
+  - So what you would do is collect the diagnostic in B, and then do whatever the f you want in A like replacing the error message and stuff
+
 ### Graph theory
 
 #### `Agraph`
@@ -32,7 +44,7 @@
 
 ##### Traversal:
 
-- `flow.run({ from: nodeId, state })` to execute from a specific node with a mutable state object
+- `flow.run({ from: nodeId, state, diag })` to execute from a specific node with a mutable state object
 - Flow runs through DFS, no visisted node checking so repeatition is supported (something we WANT)
 - This allow you to do something like:
 
@@ -50,6 +62,10 @@ Notable benefits:
 - `D[Draw Call` only needs to be defined once
 - Edge data allow for control over execution order
 
+##### Diagnostic:
+
+- Every `Afstep` (1 element of payload `node.data = []`) will have the ability to write diagnostic data into the `diag` object that is passed in `flow.run()`
+
 ### Rendering engine
 
 #### `Awgpu`
@@ -60,7 +76,7 @@ Notable benefits:
 #### `Awgl2` (Beta)
 
 - Similar to Awgpu but with commands for WebGL2
-- Early in development since I need to 
+- Early in development since I want to focus on WebGPU first (boss gave the green light)
 
 #### Note
 
@@ -68,7 +84,7 @@ Notable benefits:
 - Things like Mesh, Material, Camera, Scene, etc are not understood by Awgpu/Awgl2, those belongs in the WeebRender layer which will be discussed next
 - You can do some CRAZY shi with it
 
-### Scene engine
+### World engine
 
 #### `WeebRender`
 
@@ -94,14 +110,13 @@ Notable benefits:
 
 - Math library for vectors, matrices and quater-onions (yummers, wanna cram in as much fat fck)
 
-#### `Atree`
+#### `Atree` (obsolete)
 
 - Simple n-ary tree structure for general use
 - API is highly confusing so will be reworked soon to use Agraph as composition instead of dedicated class
 
 ## Note
 
-- This entire engine does NOT use any Three.js, Babylon.js, PlayCanvas, or any other existing libraries/engines, all libraries, engines work, etc are fully made from scratch
+- This entire engine does NOT use any Three.js, Babylon.js, PlayCanvas, or any other existing libraries/engines, all libraries, engines work, etc are fully made from scratch. Why? Because I can do whatever the f I want
 
 - Remember what I said about `Atree` soon to be reworked? Well yea, that rework might be lil bit more urgent since the test scene with the Nakufumo model is broken lmao
-  - Uuuh update, nvm, found the reason, i forgot to use the new API lol
