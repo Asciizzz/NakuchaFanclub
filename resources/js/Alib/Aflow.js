@@ -5,6 +5,7 @@ Execution flow on top of Agraph
 */
 
 import { Agraph, Adag, Anode, Aedge } from "./Agraph.js";
+import { Adiag } from "./Adiag.js";
 
 /** Base step. Extend it, override `exec`. */
 export class Afstep {
@@ -12,7 +13,7 @@ export class Afstep {
      * Runs when its node is hit
      * @param {{ ctx: *, graph: Agraph, entry: { src: Anode|null, dst: Anode, link: Aedge|null } }} options
      */
-    exec({ ctx, graph, entry }) {
+    exec({ ctx, graph, entry, diag } = {}) {
         throw new Error("Afstep.exec not implemented");
     }
 }
@@ -249,7 +250,7 @@ export class Aflow {
      * @param {{ ctx?: * }} [options]
      * @returns {*} Final ctx
      */
-    static run(graph, from, { ctx = {} } = {}) {
+    static run(graph, from, { ctx = {}, diag = new Adiag() } = {}) {
         Aflow.#assertGraph(graph, "run");
 
         if (from == null) throw new Error(`Aflow.run: "from" node id is required`);
@@ -281,7 +282,7 @@ export class Aflow {
                 if (!(step instanceof Afstep)) {
                     throw new Error(`Aflow.run: node "${node.id}" payload[${i}] is not an Afstep instance`);
                 }
-                step.exec({ ctx, graph, entry });
+                step.exec({ ctx, graph, entry, diag });
             }
 
             const outEdges = graph.outEdges(node.id);
@@ -301,7 +302,7 @@ export class Aflow {
             }
         }
 
-        return ctx;
+        return { ctx, diag };
     }
 
     /**
