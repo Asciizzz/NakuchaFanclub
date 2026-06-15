@@ -5,22 +5,22 @@ export class BeginFrame extends Afstep {
 		super();
 	}
 
-	exec({ state } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		// Reset all per-frame mutable state, gl side needs no "encoder" - just clean slate
-		state.ended = false;
-		state.program = null;
-		state.vao = null;
-		state.framebuffer = null;
-		state.buffers.vertex.clear();
-		state.buffers.index = null;
-		state.textures.clear();
+		ctx.ended = false;
+		ctx.program = null;
+		ctx.vao = null;
+		ctx.framebuffer = null;
+		ctx.buffers.vertex.clear();
+		ctx.buffers.index = null;
+		ctx.textures.clear();
 	}
 }
 
 export class EndFrame extends Afstep {
-	exec({ state } = {}) {
-		if (!state.gl || state.ended) return;
-		state.gl.flush();
-		state.ended = true;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.ended) return;
+		ctx.gl.flush();
+		ctx.ended = true;
 	}
 }

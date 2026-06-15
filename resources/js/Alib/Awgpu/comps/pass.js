@@ -38,7 +38,7 @@ export class RenderPass extends Afstep {
 		this.data = data;
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.encoder) ctx.encoder = ctx.backend.createEncoder("Wr3Frame");
 		if (!ctx.encoder || ctx.pass) return;
 
@@ -67,7 +67,7 @@ export class ComputePass extends Afstep {
 		this.data = data;
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.encoder) ctx.encoder = ctx.backend.createEncoder("Wr3Frame");
 		if (!ctx.encoder || ctx.pass) return;
 		ctx.pass = ctx.encoder.beginComputePass({
@@ -80,7 +80,7 @@ export class ComputePass extends Afstep {
 }
 
 export class EndPass extends Afstep {
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass) return;
 		ctx.pass.end();
 		ctx.pass = null;

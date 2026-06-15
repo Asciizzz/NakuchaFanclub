@@ -8,7 +8,7 @@ import { Afstep } from "../../Aflow.js";
 //   type    - one of: "1i" "1f" "2f" "3f" "4f" "1iv" "1fv" "2fv" "3fv" "4fv"
 //             "mat2" "mat3" "mat4"
 //   value   - matching JS primitive / array / Float32Array
-//   program - override which program to look the location up on (defaults to state.program)
+//   program - override which program to look the location up on (defaults to ctx.program)
 export class SetUniforms extends Afstep {
 	entries = [];
 
@@ -17,12 +17,12 @@ export class SetUniforms extends Afstep {
 		this.entries = Array.isArray(entries) ? entries.slice() : [];
 	}
 
-	exec({ state } = {}) {
-		if (!state.gl || state.passKind !== "render") return;
-		const gl = state.gl;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.passKind !== "render") return;
+		const gl = ctx.gl;
 
 		for (const entry of this.entries) {
-			const prog = entry.program ?? state.program;
+			const prog = entry.program ?? ctx.program;
 			if (!prog || !entry.name) continue;
 
 			const loc = gl.getUniformLocation(prog, entry.name);

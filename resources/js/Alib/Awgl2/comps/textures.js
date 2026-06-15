@@ -8,7 +8,7 @@ import { Afstep } from "../../Aflow.js";
 //   texture - WebGLTexture
 //   target  - gl.TEXTURE_2D (default), gl.TEXTURE_CUBE_MAP, gl.TEXTURE_2D_ARRAY, etc.
 //   uniform - optional name of the sampler uniform; if provided the location is looked
-//             up on program (state.program) and the unit index is written automatically
+//             up on program (ctx.program) and the unit index is written automatically
 export class SetTextures extends Afstep {
 	entries = [];
 
@@ -17,9 +17,9 @@ export class SetTextures extends Afstep {
 		this.entries = Array.isArray(entries) ? entries.slice() : [];
 	}
 
-	exec({ state } = {}) {
-		if (!state.gl || state.passKind !== "render") return;
-		const gl = state.gl;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.passKind !== "render") return;
+		const gl = ctx.gl;
 
 		for (const entry of this.entries) {
 			const texture = entry?.texture ?? null;
@@ -30,11 +30,11 @@ export class SetTextures extends Afstep {
 
 			gl.activeTexture(gl.TEXTURE0 + unit);
 			gl.bindTexture(target, texture);
-			state.textures.set(unit, { texture, target });
+			ctx.textures.set(unit, { texture, target });
 
 			// Optionally wire the sampler uniform so callers don't have to do it themselves
-			if (entry.uniform && state.program) {
-				const prog = entry.program ?? state.program;
+			if (entry.uniform && ctx.program) {
+				const prog = entry.program ?? ctx.program;
 				const loc = gl.getUniformLocation(prog, entry.uniform);
 				if (loc != null) gl.uniform1i(loc, unit);
 			}

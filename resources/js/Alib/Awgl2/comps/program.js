@@ -9,9 +9,9 @@ export class UseProgram extends Afstep {
 		this.program = program ?? null;
 	}
 
-	exec({ state } = {}) {
-		if (!state.gl || state.passKind !== "render" || !this.program) return;
-		state.gl.useProgram(this.program);
-		state.program = this.program;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.passKind !== "render" || !this.program) return;
+		ctx.gl.useProgram(this.program);
+		ctx.program = this.program;
 	}
 }

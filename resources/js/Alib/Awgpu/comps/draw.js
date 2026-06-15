@@ -14,7 +14,7 @@ export class Draw extends Afstep {
 		this.firstInstance = Math.max(0, Number(data.firstInstance ?? 0) | 0);
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass || ctx.passKind !== "render") return;
 		if (!ctx.pipeline) return;
 		ctx.pass.draw(this.vertexCount, this.instanceCount, this.firstVertex, this.firstInstance);
@@ -37,7 +37,7 @@ export class DrawIndexed extends Afstep {
 		this.firstInstance = Math.max(0, Number(data.firstInstance ?? 0) | 0);
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass || ctx.passKind !== "render") return;
 		if (!ctx.pipeline) return;
 		ctx.pass.drawIndexed(this.indexCount, this.instanceCount, this.firstIndex, this.baseVertex, this.firstInstance);
@@ -54,7 +54,7 @@ export class DrawIndirect extends Afstep {
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass || ctx.passKind !== "render") return;
 		if (!ctx.pipeline) return;
 		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : ctx.buffers.indirect;
@@ -73,7 +73,7 @@ export class DrawIndexedIndirect extends Afstep {
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass || ctx.passKind !== "render") return;
 		if (!ctx.pipeline) return;
 		const indirect = this.buffer ? { buffer: this.buffer, offset: this.offset } : ctx.buffers.indirect;

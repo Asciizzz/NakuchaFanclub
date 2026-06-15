@@ -15,15 +15,15 @@ export class RenderPass extends Afstep {
 		this.data = data;
 	}
 
-	exec({ state } = {}) {
-		if (!state.gl || state.passKind) return;
-		const gl = state.gl;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.passKind) return;
+		const gl = ctx.gl;
 
 		const fbo = this.data.framebuffer ?? null;
 		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-		state.framebuffer = fbo;
+		ctx.framebuffer = fbo;
 
-		const canvas = state.backend.canvas;
+		const canvas = ctx.backend.canvas;
 		const w = Math.max(1, (this.data.width ?? canvas?.width ?? 1) | 0);
 		const h = Math.max(1, (this.data.height ?? canvas?.height ?? 1) | 0);
 		gl.viewport(0, 0, w, h);
@@ -60,18 +60,18 @@ export class RenderPass extends Afstep {
 
 		if (clearMask) gl.clear(clearMask);
 
-		state.passKind = "render";
-		state.program = null;
+		ctx.passKind = "render";
+		ctx.program = null;
 	}
 }
 
 // EndPass: unbinds the framebuffer and resets pass state
 export class EndPass extends Afstep {
-	exec({ state } = {}) {
-		if (!state.gl || !state.passKind) return;
-		state.gl.bindFramebuffer(state.gl.FRAMEBUFFER, null);
-		state.framebuffer = null;
-		state.passKind = null;
-		state.program = null;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || !ctx.passKind) return;
+		ctx.gl.bindFramebuffer(ctx.gl.FRAMEBUFFER, null);
+		ctx.framebuffer = null;
+		ctx.passKind = null;
+		ctx.program = null;
 	}
 }

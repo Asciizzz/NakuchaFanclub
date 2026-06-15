@@ -16,7 +16,7 @@ export class Dispatch extends Afstep {
 		this.z = uint(data.z);
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass || ctx.passKind !== "compute") return;
 		if (!ctx.pipeline) return;
 		ctx.pass.dispatchWorkgroups(this.x, this.y, this.z);
@@ -33,7 +33,7 @@ export class DispatchIndirect extends Afstep {
 		this.offset = Math.max(0, Number(data.offset ?? 0) | 0);
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass || ctx.passKind !== "compute") return;
 		if (!ctx.pipeline || !this.buffer) return;
 		ctx.pass.dispatchWorkgroupsIndirect(this.buffer, this.offset);

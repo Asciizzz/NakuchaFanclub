@@ -4,7 +4,7 @@ By Asciiz
 Lightweight agnostic tree structure, you can do literally anything you want with it
 Best used as inherited base (Scene extends Ctx, Entity extends Node, etc)
 
-!!! OBSOLETED !!!
+!!! OBSOLETE SOON !!!
 */
 
 const NODE_OP = Symbol("AtreeNodeOp");

@@ -20,17 +20,17 @@ export class Adiag {
         }
     }
 
-    allOk() { return this.results.every(result => result.type === Adiag.TYPE_OK); }
-    findOk() { return this.results.filter(result => result.type === Adiag.TYPE_OK); }
+    allOks() { return this.results.every(result => result.type === Adiag.TYPE_OK); }
+    getOks() { return this.results.filter(result => result.type === Adiag.TYPE_OK); }
 
     hasErrs() { return this.results.some(result => result.type === Adiag.TYPE_ERR); }
-    findErrs() { return this.results.filter(result => result.type === Adiag.TYPE_ERR); }
+    getErrs() { return this.results.filter(result => result.type === Adiag.TYPE_ERR); }
 
     hasWarns() { return this.results.some(result => result.type === Adiag.TYPE_WARN); }
-    findWarns() { return this.results.filter(result => result.type === Adiag.TYPE_WARN); }
+    getWarns() { return this.results.filter(result => result.type === Adiag.TYPE_WARN); }
 
     hasInfos() { return this.results.some(result => result.type === Adiag.TYPE_INFO); }
-    findInfos() { return this.results.filter(result => result.type === Adiag.TYPE_INFO); }
+    getInfos() { return this.results.filter(result => result.type === Adiag.TYPE_INFO); }
 
     /*
     Replace all $key$ with data.key in the message.

@@ -8,7 +8,7 @@ import { Other } from "../WeebRenderBeta/index.js";
 
 const container = document.getElementById("main-canvas");
 const INSTANCE_COUNT = 3;
-const SCENE_SHADER_URL = new URL("./shaders/scene4.wgsl", import.meta.url).href;
+const SCENE_SHADER_URL = new URL("./shaders/tests/scene4.wgsl", import.meta.url).href;
 const STD_VERTEX_STRIDE = 96;
 const STD_VERTEX_BUFFER = Object.freeze({
 	arrayStride: STD_VERTEX_STRIDE,
@@ -465,22 +465,22 @@ async function run() {
 	const frameEndNode = flow.addNode({ payload: [new Awgpu.EndFrame()] });
 
 	// Topology
-	flow.addLink({ srcId: rootId, dstId: gradientNode.id });
-	flow.addLink({ srcId: gradientNode.id, dstId: computeNode.id });
-	flow.addLink({ srcId: computeNode.id, dstId: mainPassNode.id });
+	flow.addLink(rootId, gradientNode.id);
+	flow.addLink(gradientNode.id, computeNode.id);
+	flow.addLink(computeNode.id, mainPassNode.id);
 	
-	flow.addLink({ srcId: mainPassNode.id, dstId: outlineShaderNode.id, data: { order: 0 } });
-	flow.addLink({ srcId: mainPassNode.id, dstId: mainShaderNode.id, data: { order: 1 } });
-	
-	flow.addLink({ srcId: outlineShaderNode.id, dstId: cubeStateNode.id });
-	flow.addLink({ srcId: mainShaderNode.id, dstId: cubeStateNode.id });
+	flow.addLink(mainPassNode.id, mainShaderNode.id, { order: 1 });
+	flow.addLink(mainPassNode.id, outlineShaderNode.id, { order: 0 });
+
+	flow.addLink(outlineShaderNode.id, cubeStateNode.id);
+	flow.addLink(mainShaderNode.id, cubeStateNode.id);
 
 	for (const drawNode of drawNodes) {
-		flow.addLink({ srcId: cubeStateNode.id, dstId: drawNode.id });
-		flow.addLink({ srcId: drawNode.id, dstId: mainEndNode.id });
+		flow.addLink(cubeStateNode.id, drawNode.id);
+		flow.addLink(drawNode.id, mainEndNode.id);
 	}
 
-	flow.addLink({ srcId: mainEndNode.id, dstId: frameEndNode.id });
+	flow.addLink(mainEndNode.id, frameEndNode.id);
 
 	// ---------- Frame loop
 	let last = performance.now();
@@ -504,7 +504,7 @@ async function run() {
 		instanceCompute.params[3] = 0;
 		device.queue.writeBuffer(instanceCompute.paramsBuffer, 0, instanceCompute.params);
 
-		flow.run({ from: rootId, ctx: backend.newCtx() });
+		flow.run(rootId, { ctx: backend.newCtx() });
 		requestAnimationFrame(frame);
 	}
 	requestAnimationFrame(frame);

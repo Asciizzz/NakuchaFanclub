@@ -28,7 +28,7 @@ export class CopyBufferToBuffer extends Afstep {
 		this.size = uint(data.size);
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (ctx.pass || !this.source || !this.destination || this.size <= 0) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
@@ -54,7 +54,7 @@ export class CopyBufferToTexture extends Afstep {
 		this.size = data.size ?? null;
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (ctx.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
@@ -74,7 +74,7 @@ export class CopyTextureToBuffer extends Afstep {
 		this.size = data.size ?? null;
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (ctx.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
@@ -94,7 +94,7 @@ export class CopyTextureToTexture extends Afstep {
 		this.size = data.size ?? null;
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		if (ctx.pass || !this.source || !this.destination || !this.size) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;

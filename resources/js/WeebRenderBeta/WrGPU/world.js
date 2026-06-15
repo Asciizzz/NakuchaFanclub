@@ -261,7 +261,7 @@ export class WorldRenderCmd extends Afstep {
 		this.world = world;
 	}
 
-	exec({ ctx, graph } = {}) {
+	exec({ ctx, graph, diag } = {}) {
 		this.world?.execRender?.(ctx);
 	}
 }

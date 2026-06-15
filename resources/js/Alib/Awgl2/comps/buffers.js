@@ -21,26 +21,26 @@ export class SetBuffers extends Afstep {
 		this.index = data.index ?? null;
 	}
 
-	exec({ state } = {}) {
-		if (!state.gl || state.passKind !== "render") return;
-		const gl = state.gl;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.passKind !== "render") return;
+		const gl = ctx.gl;
 
 		if (this.vao) {
 			gl.bindVertexArray(this.vao);
-			state.vao = this.vao;
+			ctx.vao = this.vao;
 		}
 
 		for (const entry of this.vertex) {
 			const buf = entry?.buffer ?? null;
 			if (!buf) continue;
 			gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-			state.buffers.vertex.set(uint(entry.slot), buf);
+			ctx.buffers.vertex.set(uint(entry.slot), buf);
 		}
 
 		if (this.index?.buffer) {
 			const type = this.index.type ?? gl.UNSIGNED_SHORT;
 			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.index.buffer);
-			state.buffers.index = { buffer: this.index.buffer, type };
+			ctx.buffers.index = { buffer: this.index.buffer, type };
 		}
 	}
 }

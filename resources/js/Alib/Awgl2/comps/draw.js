@@ -19,9 +19,9 @@ export class Draw extends Afstep {
 		this.instanceCount = uint(data.instanceCount);
 	}
 
-	exec({ state } = {}) {
-		if (!state.gl || state.passKind !== "render" || !state.program) return;
-		const gl = state.gl;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.passKind !== "render" || !ctx.program) return;
+		const gl = ctx.gl;
 		const mode = this.mode ?? gl.TRIANGLES;
 		if (this.instanceCount > 0) {
 			gl.drawArraysInstanced(mode, this.first, this.count, this.instanceCount);
@@ -48,11 +48,11 @@ export class DrawIndexed extends Afstep {
 		this.instanceCount = uint(data.instanceCount);
 	}
 
-	exec({ state } = {}) {
-		if (!state.gl || state.passKind !== "render" || !state.program) return;
-		const gl = state.gl;
+	exec({ ctx, graph, diag } = {}) {
+		if (!ctx.gl || ctx.passKind !== "render" || !ctx.program) return;
+		const gl = ctx.gl;
 		const mode = this.mode ?? gl.TRIANGLES;
-		const type = this.type ?? state.buffers.index?.type ?? gl.UNSIGNED_SHORT;
+		const type = this.type ?? ctx.buffers.index?.type ?? gl.UNSIGNED_SHORT;
 		if (this.instanceCount > 0) {
 			gl.drawElementsInstanced(mode, this.count, type, this.offset, this.instanceCount);
 		} else {
