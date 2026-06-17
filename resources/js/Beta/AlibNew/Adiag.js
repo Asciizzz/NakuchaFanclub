@@ -20,8 +20,6 @@ export class Adiag {
         }
     }
 
-    clear() { this.results = []; }
-
     allOk() { return this.results.every(result => result.type === Adiag.TYPE_OK); }
     findOk() { return this.results.filter(result => result.type === Adiag.TYPE_OK); }
 
