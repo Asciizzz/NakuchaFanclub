@@ -179,8 +179,8 @@ export class Aflow {
      * @param {string} nodeId
      * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
      */
-    static sortOutgoingLink(graph, nodeId, sortFn) {
-        Aflow.#assertGraph(graph, "sortOutgoingLink");
+    static sortOutgoingLinks(graph, nodeId, sortFn) {
+        Aflow.#assertGraph(graph, "sortOutgoingLinks");
         graph.sortOutgoingEdges(nodeId, sortFn);
     }
 
@@ -190,8 +190,8 @@ export class Aflow {
      * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
      * @returns {this}
      */
-    sortOutgoingLink(nodeId, sortFn) {
-        Aflow.sortOutgoingLink(this.graph, nodeId, sortFn);
+    sortOutgoingLinks(nodeId, sortFn) {
+        Aflow.sortOutgoingLinks(this.graph, nodeId, sortFn);
         return this;
     }
 
@@ -201,8 +201,8 @@ export class Aflow {
      * @param {string} nodeId
      * @param {function(Aedge, Aedge, Anode, Agraph): number} [sortFn=defaultLinkSortFn]
      */
-    static sortIncomingLink(graph, nodeId, sortFn = defaultLinkSortFn) {
-        Aflow.#assertGraph(graph, "sortIncomingLink");
+    static sortIncomingLinks(graph, nodeId, sortFn = defaultLinkSortFn) {
+        Aflow.#assertGraph(graph, "sortIncomingLinks");
         graph.sortIncomingEdges(nodeId, sortFn);
     }
 
@@ -212,8 +212,8 @@ export class Aflow {
      * @param {function(Aedge, Aedge, Anode, Agraph): number} [sortFn=defaultLinkSortFn]
      * @returns {this}
      */
-    sortIncomingLink(nodeId, sortFn = defaultLinkSortFn) {
-        Aflow.sortIncomingLink(this.graph, nodeId, sortFn);
+    sortIncomingLinks(nodeId, sortFn = defaultLinkSortFn) {
+        Aflow.sortIncomingLinks(this.graph, nodeId, sortFn);
         return this;
     }
 
