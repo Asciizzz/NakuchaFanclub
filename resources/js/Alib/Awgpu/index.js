@@ -1,11 +1,11 @@
-import { BeginFrame, EndFrame } from "./comps/frame.js";
-import { RenderPass, ComputePass, EndPass } from "./comps/pass.js";
-import { UsePipeline } from "./comps/pipeline.js";
-import { SetBuffers } from "./comps/buffers.js";
-import { SetBindGroups } from "./comps/bind.js";
-import { Draw, DrawIndexed, DrawIndirect, DrawIndexedIndirect } from "./comps/draw.js";
-import { Dispatch, DispatchIndirect } from "./comps/dispatch.js";
-import { CopyBufferToBuffer, CopyBufferToTexture, CopyTextureToBuffer, CopyTextureToTexture } from "./comps/copy.js";
+import { BeginFrame, EndFrame } from "./steps/frame.js";
+import { RenderPass, ComputePass, EndPass } from "./steps/pass.js";
+import { UsePipeline } from "./steps/pipeline.js";
+import { SetBuffers } from "./steps/buffers.js";
+import { SetBindGroups } from "./steps/bind.js";
+import { Draw, DrawIndexed, DrawIndirect, DrawIndexedIndirect } from "./steps/draw.js";
+import { Dispatch, DispatchIndirect } from "./steps/dispatch.js";
+import { CopyBufferToBuffer, CopyBufferToTexture, CopyTextureToBuffer, CopyTextureToTexture } from "./steps/copy.js";
 import { Backend } from "./backend.js";
 
 export {

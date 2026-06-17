@@ -1,118 +1,124 @@
-# Awgl2 (!!!BETA!!!)
+# Awgpu
 
-Tiny WebGL2 execution layer for `Aflow`
+Tiny WebGPU execution layer for `Aflow`
 
-Awgl2 is the WebGL2 counterpart to `Awgpu`. Same idea: wrap raw GL calls in `Afstep` nodes, plug them into an `Aflow` graph, and let the graph topology define the render sequence
+Awgpu is not a game renderer, scene renderer, mesh system, shader builder, loader, or asset manager. It provides a bridge between raw WebGPU commands and the `Aflow` execution model
 
 It only provides:
-*   `Backend` for canvas context, depth renderbuffer, viewport management, and per-frame state
-*   `Afstep` components that call raw WebGL2 commands during `Aflow` traversal
-*   A mutable state object created by `backend.newCtx()`
+*   `Backend` for device, canvas context, frame encoder, screen attachments, and depth attachment management
+*   `Afstep` components that call raw WebGPU commands during `Aflow` traversal
+*   A mutable ctx object created by `backend.newCtx()`
 
-Everything else (scene trees, mesh packing, shader builder) stays outside Awgl2
+Everything else (scene trees, model packing, asset management) stays outside of Awgpu
 
 ## Design
 
-Same render-flow model as `Awgpu`. Build resources manually, wrap execution in `Afstep` nodes, connect them in `Aflow`:
+Awgpu follows the **render-flow model**. You create WebGPU resources yourself, then wrap execution logic into `Afstep` instances and attach them to `Aflow` nodes. The graph topology defines the execution sequence
 
 ```js
 import { Aflow, Agraph } from "./Alib/Aflow.js";
-import { Awgl2 } from "./Alib/Awgl2/index.js";
+import { Awgpu } from "./Alib/Awgpu/index.js";
 
 const flow = new Aflow(new Agraph());
-const backend = await Awgl2.Backend.create(canvas);
+const backend = await Awgpu.Backend.create(canvas);
 
+// Root Node: Start Frame
 const root = flow.addNode({ payload: [
-    new Awgl2.BeginFrame()
+    new Awgpu.BeginFrame()
 ]});
 
+// Render Pass Node
 const passNode = flow.addNode({ payload: [
-    new Awgl2.RenderPass({ clearColor: [0.02, 0.02, 0.03, 1] }),
-    new Awgl2.UseProgram(program),
-    new Awgl2.SetBuffers({ vao }),
-    new Awgl2.SetTextures([{ unit: 0, texture: albedo, uniform: "uAlbedo" }]),
-    new Awgl2.SetUniforms([{ name: "uViewProj", type: "mat4", value: viewProjMat }]),
-    new Awgl2.DrawIndexed({ count: indexCount }),
-    new Awgl2.EndPass()
+    new Awgpu.RenderPass({ clearColor: [0.02, 0.02, 0.03, 1] }),
+    new Awgpu.UsePipeline({ pipeline: renderPipeline }),
+    new Awgpu.SetBindGroups([{ index: 0, bindGroup: cameraBG }]),
+    new Awgpu.SetBuffers({
+        vertex: [{ slot: 0, buffer: vertexBuffer }],
+        index: { buffer: indexBuffer, format: "uint32" },
+    }),
+    new Awgpu.DrawIndexed({ indexCount: 36 }),
+    new Awgpu.EndPass()
 ]});
 
+// End Node: Finish Frame
 const endNode = flow.addNode({ payload: [
-    new Awgl2.EndFrame()
+    new Awgpu.EndFrame()
 ]});
 
-flow.addLink(root.id, passNode.id);
-flow.addLink(passNode.id, endNode.id);
+// Build Topology
+flow.addLink(root.id, passNode.id, { order: 0 });
+flow.addLink(root.id, endNode.id, { order: 1 });
 
+flow.sortOutgoingLinks(root.id, (a, b) => a.order - b.order);
+
+// Execute
 flow.run(root.id, { ctx: backend.newCtx() });
 ```
 
 ## Important Rules
 
-Awgl2 components do not own GL resources. They store references and call GL methods on whatever is in `state.gl`. You manage buffer/texture/program lifecycles yourself
+Awgpu components **do not own GPU resources**. They store references and call methods on the active pass in the `ctx` object. If you create a buffer, texture, or pipeline, you manage its lifecycle yourself
 
-Awgl2 has no concept of bind groups, pipelines, or command encoders - those are GPU-API concepts. The equivalents are:
-
-| Awgpu            | Awgl2                           |
-| ---------------- | ------------------------------- |
-| `UsePipeline`    | `UseProgram`                    |
-| `SetBindGroups`  | `SetTextures` + `SetUniforms`   |
-| `SetBuffers`     | `SetBuffers` (VAO-based)        |
-| `RenderPass`     | `RenderPass` (FBO + gl.clear)   |
-| `ComputePass`    | *(no equivalent in WebGL2)*     |
+Awgpu does not understand high-level concepts like `mesh`, `material`, `camera`, or `scene`. Those belong in higher layers like `WrGPU`
 
 ## Execution Signature
 
-All components inherit from `Afstep`:
-`exec({ state, graph, link })`
+All components inherit from `Afstep` and implement the following signature:
+`exec({ ctx, graph, link })`
 
-*   **state**: mutable object with `gl`, `program`, `vao`, `buffers`, `textures`, `framebuffer`, `passKind`, `ended`
-*   **graph**: underlying `Agraph`
-*   **link**: incoming connection context `{ data, src, dst }`
+*   **ctx**: The mutable object containing the encoder, current pass, and global backend references
+*   **graph**: The underlying `Agraph` instance
+*   **link**: The incoming connection context `{ data, src, dst }`. For root nodes, `link.src` is `null`
 
 ## Backend
 
-`Backend` owns the WebGL2 setup:
+`Backend` owns the browser WebGPU setup
 
 ```js
-const backend = await Awgl2.Backend.create(canvas, {
-    context: { antialias: false },
+const backend = await Awgpu.Backend.create(canvas, {
+    format: navigator.gpu.getPreferredCanvasFormat(),
+    depthFormat: "depth24plus",
+    context: { alphaMode: "premultiplied" },
 });
 ```
 
 ## Components
 
 ### Lifecycle
-*   **BeginFrame**: resets per-frame state (program, vao, buffers, textures)
-*   **EndFrame**: calls `gl.flush()`
+*   **BeginFrame**: Creates a command encoder if one does not exist
+*   **EndFrame**: Submits the command encoder to the GPU
+*   **EndPass**: Ends the current render or compute pass
 
-### Pass
-*   **RenderPass**: binds a framebuffer (null = default backbuffer), sets viewport, clears color/depth
-*   **EndPass**: unbinds framebuffer, resets pass state
+### Passes
+*   **RenderPass**: Begins a render pass. Supports `colorAttachments` and `depthStencilAttachment` overrides
+*   **ComputePass**: Begins a compute pass
 
-### Program
-*   **UseProgram**: calls `gl.useProgram(program)`
+### Pipeline & Binding
+*   **UsePipeline**: Binds a `GPURenderPipeline` or `GPUComputePipeline`
+*   **SetBindGroups**: Binds one or more `GPUBindGroup` instances
+*   **SetBuffers**: Binds vertex, index, and indirect buffers
 
-### Data Binding
-*   **SetBuffers**: binds a VAO plus optional raw VBO/EBO overrides
-*   **SetTextures**: activates texture units and binds WebGLTextures; can auto-write sampler uniforms
-*   **SetUniforms**: uploads uniform values (scalars, vectors, matrices) to the active program
+### Drawing & Dispatching
+*   **Draw / DrawIndexed**: Standard vertex/index drawing
+*   **DrawIndirect / DrawIndexedIndirect**: Indirect drawing from a buffer
+*   **Dispatch / DispatchIndirect**: Compute workgroup dispatching
 
-### Drawing
-*   **Draw**: `gl.drawArrays` / `gl.drawArraysInstanced`
-*   **DrawIndexed**: `gl.drawElements` / `gl.drawElementsInstanced`
+## Why This Exists
+
+Awgpu puts command execution into a node graph, allowing render flows to be branched, shared, reordered, or generated dynamically. The components are intentionally thin to remain as close to the WebGPU specification as possible
 
 ## Layout
 
 ```txt
-Awgl2/
+Awgpu/
     index.js
     backend.js
     comps/
         frame.js    (BeginFrame, EndFrame)
-        pass.js     (RenderPass, EndPass)
-        program.js  (UseProgram)
+        pass.js     (RenderPass, ComputePass, EndPass)
+        pipeline.js (UsePipeline)
+        bind.js     (SetBindGroups)
         buffers.js  (SetBuffers)
-        textures.js (SetTextures)
-        uniforms.js (SetUniforms)
-        draw.js     (Draw, DrawIndexed)
+        draw.js     (Draw, DrawIndexed, etc.)
+        dispatch.js (Dispatch, DispatchIndirect)
 ```

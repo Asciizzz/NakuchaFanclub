@@ -1,10 +1,10 @@
-import { BeginFrame, EndFrame } from "./comps/frame.js";
-import { RenderPass, EndPass } from "./comps/pass.js";
-import { UseProgram } from "./comps/program.js";
-import { SetBuffers } from "./comps/buffers.js";
-import { SetTextures } from "./comps/textures.js";
-import { SetUniforms } from "./comps/uniforms.js";
-import { Draw, DrawIndexed } from "./comps/draw.js";
+import { BeginFrame, EndFrame } from "./steps/frame.js";
+import { RenderPass, EndPass } from "./steps/pass.js";
+import { UseProgram } from "./steps/program.js";
+import { SetBuffers } from "./steps/buffers.js";
+import { SetTextures } from "./steps/textures.js";
+import { SetUniforms } from "./steps/uniforms.js";
+import { Draw, DrawIndexed } from "./steps/draw.js";
 import { Backend } from "./backend.js";
 
 export {
