@@ -10,6 +10,14 @@ function uint(value, fallback = 0) {
 	return Math.max(0, Number(value ?? fallback) | 0);
 }
 
+/**
+ * Binds vertex, index, and indirect buffers for the active render pass.
+ *
+ * @param {Object} data
+ * @param {Array<{slot?: number, buffer: GPUBuffer, offset?: number, size?: number}>|Object} [data.vertex]
+ * @param {{buffer: GPUBuffer, format?: "uint16"|"uint32", offset?: number, size?: number}} [data.index]
+ * @param {{buffer: GPUBuffer, offset?: number}} [data.indirect]
+ */
 export class SetBuffers extends Afstep {
 	vertex = [];
 	index = null;
@@ -17,7 +25,7 @@ export class SetBuffers extends Afstep {
 
 	constructor(data = {}) {
 		super();
-		this.vertex = list(data.vertex ?? data.vertices).slice();
+		this.vertex = list(data.vertex).slice();
 		this.index = data.index ?? null;
 		this.indirect = data.indirect ?? null;
 	}

@@ -7,12 +7,52 @@ import { FCamera } from "./FCamera.js";
 import { Other, WrGPU } from "../WeebRenderBeta/index.js";
 
 const container = document.getElementById("main-canvas");
-const SAMPLE_COUNT = 4;
 const WELCOME_SHADER_URL = new URL("./shaders/welcome.wgsl", import.meta.url).href;
+
+const DEPTH_FORMAT = "depth24plus";
+const SAMPLE_COUNT = 4;
 
 run().catch((error) => {
 	console.error("[WR3WorldTest] fatal", error);
 });
+
+
+let msaaTexture = null;
+let msaaView = null;
+let depthTexture = null;
+let depthView = null;
+
+function ensureRenderTargets(canvas, device, format) {
+    const w = canvas.width;
+    const h = canvas.height;
+
+    if (msaaTexture && msaaTexture.width === w && msaaTexture.height === h) {
+        return; // already correct size
+    }
+
+    msaaTexture?.destroy();
+    depthTexture?.destroy();
+
+    msaaTexture = device.createTexture({
+        label: "MsaaColorTexture",
+        size: [w, h],
+        format,
+        sampleCount: SAMPLE_COUNT,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    msaaView = msaaTexture.createView();
+
+    depthTexture = device.createTexture({
+        label: "DepthTexture",
+        size: [w, h],
+        format: DEPTH_FORMAT,
+        sampleCount: SAMPLE_COUNT,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    depthView = depthTexture.createView();
+}
+
+
 
 function createCanvas() {
 	const canvas = document.createElement("canvas");
@@ -129,6 +169,7 @@ function createBackground(backend) {
 			count: SAMPLE_COUNT,
 		},
 	});
+
 	return {
 		buffer,
 		bindGroup,
@@ -184,9 +225,10 @@ function setOutline(root, thickness) {
 	}
 }
 
+
 async function run() {
 	const canvas = createCanvas();
-	const backend = await Awgpu.Backend.create(canvas, { sampleCount: SAMPLE_COUNT });
+	const backend = await Awgpu.Backend.create(canvas);
 
 	const camera = new Acamera({
 		position: [0, 1.1, 4.5],
@@ -234,10 +276,11 @@ async function run() {
 	if (nakuRoot) setOutline(nakuRoot, 0.008);
 
 	const resize = () => {
-		backend.resize({ maxPixelRatio: 2 });
 		const w = Math.max(1, canvas.clientWidth || canvas.width || 1);
 		const h = Math.max(1, canvas.clientHeight || canvas.height || 1);
 		camera.aspect = w / h;
+
+		ensureRenderTargets(canvas, backend.device, backend.format);
 	};
 	resize();
 	new ResizeObserver(resize).observe(container);
@@ -247,26 +290,61 @@ async function run() {
 	const rootId = rootNode.id;
 
 	const bgNode = flow.addNode({ payload: [
-		new Awgpu.RenderPass({
-			label: "wr3-background-pass",
-			clearColor: [0, 0, 0, 1],
-			useDepth: false,
-			sampleCount: SAMPLE_COUNT,
-		}),
-		new Awgpu.UsePipeline(background.pipeline),
-		new Awgpu.SetBindGroups([{ index: 0, bindGroup: background.bindGroup }]),
-		new Awgpu.Draw({ vertexCount: 3 }),
-		new Awgpu.EndPass()
+		// new Awgpu.RenderPass({
+		// 	// label: "wr3-background-pass",
+		// 	// clearColor: [0, 0, 0, 1],
+		// 	// useDepth: false,
+		// 	// sampleCount: SAMPLE_COUNT,
+		// 	label: "background-pass",
+		// 	get colorAttachments() {
+        //         return [{
+        //             view: msaaView,
+        //             resolveTarget: backend.currentView(),
+        //             clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
+        //             loadOp: "clear",
+        //             storeOp: "discard", // DIE
+        //         }];
+        //     },
+        //     get depthStencilAttachment() {
+        //         return {
+        //             view: depthView,
+        //             depthClearValue: 1.0,
+        //             depthLoadOp: "clear",
+        //             depthStoreOp: "discard",
+        //         };
+        //     }
+		// }),
+		// new Awgpu.UsePipeline(background.pipeline),
+		// new Awgpu.SetBindGroups([{ index: 0, bindGroup: background.bindGroup }]),
+		// new Awgpu.Draw({ vertexCount: 3 }),
+		// new Awgpu.EndPass()
 	]});
 
 	const mainNode = flow.addNode({ payload: [
 		new Awgpu.RenderPass({
-			label: "wr3-world-pass",
-			clearColorEnabled: false,
-			clearDepth: 1,
-			clearDepthEnabled: true,
-			useDepth: true,
-			sampleCount: SAMPLE_COUNT,
+			// label: "wr3-world-pass",
+			// clearColorEnabled: false,
+			// clearDepth: 1,
+			// clearDepthEnabled: true,
+			// useDepth: true,
+			// sampleCount: SAMPLE_COUNT,
+			label: "world-pass",
+			get colorAttachments() {
+				return [{
+					view: msaaView,
+					resolveTarget: backend.currentView(),
+					clearValue: { r: 0, g: 0, b: 0, a: 1 },
+					loadOp: "load",
+					storeOp: "discard", // DIE
+				}];
+			},
+			get depthStencilAttachment() {
+				return {
+					view: depthView,
+					depthLoadOp: "load",
+					depthStoreOp: "discard",
+				};
+			}
 		})
 	]});
 

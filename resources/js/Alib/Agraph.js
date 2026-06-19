@@ -3,8 +3,60 @@ import { Adiag } from "./Adiag.js";
 /* Agraph
 By Asciiz
 
-Tiny directed graph. Stores topology only; traversal is your job
+Tiny directed graph. Stores topology only, traversal is your job
 Pass { diag } to any method to collect errors into an Adiag instead of throwing
+
+# Methods:
+
+addNode({ data?: any, id?: string, diag?: Adiag })  -> Anode|null
+getNode(id: string)                                 -> Anode|null
+hasNode(id: string)                                 -> boolean
+removeNode(id: string, { diag?: Adiag })            -> Anode|null
+getNodes()                                          -> Anode[]
+
+addEdge(srcId: string, dstId: string, {
+    data?: any, id?: string, diag?: Adiag
+})                                                  -> Aedge|null
+getEdge(id: string)                                 -> Aedge|null
+hasEdge(id: string)                                 -> boolean
+removeEdge(id: string, { diag?: Adiag })            -> Aedge|null
+getEdges()                                          -> Aedge[]
+
+edgesOf(nodeId: string, { direction: string })      -> Aedge[]
+outEdges(nodeId: string)                            -> Aedge[]
+inEdges(nodeId: string)                             -> Aedge[]
+edgesBetween(srcId: string, dstId: string)          -> Aedge[]
+edgesConnecting(nodeId1: string, nodeId2: string)   -> Aedge[]
+
+sortIncomingEdges(nodeId: string, compareFn: Func)  -> void
+sortOutgoingEdges(nodeId: string, compareFn: Func)  -> void
+* compareFn(
+    edgeA: Aedge,
+    edgeB: Aedge,
+    node?: Anode,
+    graph?: Agraph
+) -> number (-1, 0 or 1)
+
+connectionsOf(nodeId: string, { direction: string })-> Array<{from:Anode, to:Anode, edge:Aedge, dir:string}>
+neighborsOf(nodeId: string, { direction: string })  -> Anode[]
+successors(nodeId: string)                          -> Anode[]
+predecessors(nodeId: string)                        -> Anode[]
+
+degree(nodeId: string)                              -> number
+outDegree(nodeId: string)                           -> number
+inDegree(nodeId: string)                            -> number
+
+forEachNode(fn: Func, { diag: Adiag })              -> void
+forEachEdge(fn: Func, { diag: Adiag })              -> void
+filterNodes(fn: Func, { diag: Adiag })              -> Anode[]|null
+filterEdges(fn: Func, { diag: Adiag })              -> Aedge[]|null
+
+* For nodes: fn(node: Anode) -> boolean
+* For edges: fn(edge: Aedge) -> boolean
+
+serialize({ diag: Adiag })                          -> object
+deserialize(json: string, { diag: Adiag })          -> Agraph
+
 */
 
 export class Anode {
@@ -79,8 +131,7 @@ export class Agraph {
         const nodeId = id ?? this.makeNodeId();
 
         if (this.nodes.has(nodeId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "ADD_NODE_FAILED", raw: 'Could not add node "$nodeId$": node already exists', data: { nodeId } },
                 `Agraph.addNode: node "${nodeId}" already exists`,
             );
@@ -112,8 +163,7 @@ export class Agraph {
         const node = this.nodes.get(id);
 
         if (!node) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "REMOVE_NODE_FAILED", raw: 'Could not remove node "$id$": node does not exist', data: { id } },
                 `Agraph.removeNode: node "${id}" does not exist`,
             );
@@ -149,30 +199,26 @@ export class Agraph {
      */
     addEdge(srcId, dstId, { data = {}, id = null, diag } = {}) {
         if (srcId == null) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "ADD_EDGE_FAILED", raw: "Could not add edge: srcId is required", data: { srcId, dstId } },
                 `Agraph.addEdge: srcId is required`,
             );
         }
         if (dstId == null) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "ADD_EDGE_FAILED", raw: "Could not add edge: dstId is required", data: { srcId, dstId } },
                 `Agraph.addEdge: dstId is required`,
             );
         }
 
         if (!this.nodes.has(srcId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "ADD_EDGE_FAILED", raw: 'Could not add edge "$srcId$" -> "$dstId$": source node does not exist', data: { srcId, dstId } },
                 `Agraph.addEdge: source node "${srcId}" does not exist`,
             );
         }
         if (!this.nodes.has(dstId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "ADD_EDGE_FAILED", raw: 'Could not add edge "$srcId$" -> "$dstId$": destination node does not exist', data: { srcId, dstId } },
                 `Agraph.addEdge: destination node "${dstId}" does not exist`,
             );
@@ -181,8 +227,7 @@ export class Agraph {
         const edgeId = id ?? this.makeEdgeId();
 
         if (this.edges.has(edgeId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "ADD_EDGE_FAILED", raw: 'Could not add edge "$edgeId$": edge already exists', data: { edgeId, srcId, dstId } },
                 `Agraph.addEdge: edge "${edgeId}" already exists`,
             );
@@ -214,8 +259,7 @@ export class Agraph {
         const edge = this.edges.get(id);
 
         if (!edge) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "REMOVE_EDGE_FAILED", raw: 'Could not remove edge "$id$": edge does not exist', data: { id } },
                 `Agraph.removeEdge: edge "${id}" does not exist`,
             );
@@ -288,6 +332,56 @@ export class Agraph {
      */
     inEdges(nodeId) {
         return this.edgesOf(nodeId, { direction: Agraph.IN });
+    }
+
+    /**
+     * In-place sort the outgoing edges of a node
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
+     * @param {{ diag?: Adiag }} [options]
+     */
+    sortOutgoingEdges(nodeId, sortFn, { diag } = {}) {
+        if (typeof sortFn !== "function") {
+            return _agraphFail(diag,
+                { code: "SORT_OUTGOING_EDGES_FAILED", raw: 'Could not sort outgoing edges of node "$nodeId$": sortFn must be a function', data: { nodeId } },
+                `Agraph.sortOutgoingEdges: sortFn must be a function`,
+            );
+        }
+        const edgeIds = this.outgoing.get(nodeId);
+        if (!edgeIds) return;
+        const node = this.getNode(nodeId);
+        edgeIds.sort((idA, idB) => {
+            const a = this.edges.get(idA);
+            const b = this.edges.get(idB);
+            return sortFn(a, b, node, this);
+        });
+        if (diag instanceof Adiag) diag.ok({ code: "SORT_OUTGOING_EDGES_OK", data: { nodeId } });
+    }
+
+    /**
+     * In-place sort the incoming edges of a node
+     * @param {string} nodeId
+     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
+     * @param {{ diag?: Adiag }} [options]
+     */
+    sortIncomingEdges(nodeId, sortFn, { diag } = {}) {
+        if (typeof sortFn !== "function") {
+            return _agraphFail(diag,
+                { code: "SORT_INCOMING_EDGES_FAILED", raw: 'Could not sort incoming edges of node "$nodeId$": sortFn must be a function', data: { nodeId } },
+                `Agraph.sortIncomingEdges: sortFn must be a function`,
+            );
+        }
+        const edgeIds = this.incoming.get(nodeId);
+        if (!edgeIds) return;
+        const node = this.getNode(nodeId);
+        edgeIds.sort((idA, idB) => {
+            const a = this.edges.get(idA);
+            const b = this.edges.get(idB);
+            return sortFn(a, b, node, this);
+        });
+        if (diag instanceof Adiag) diag.ok({ code: "SORT_INCOMING_EDGES_OK", data: { nodeId } });
+
+        return this.#edgesFromIds(edgeIds);
     }
 
     /**
@@ -391,8 +485,7 @@ export class Agraph {
             for (const node of this.nodes.values()) fn(node);
             if (diag instanceof Adiag) diag.ok({ code: "FOR_EACH_NODE_OK" });
         } catch (error) {
-            _agraphFail(
-                diag,
+            _agraphFail(diag,
                 { code: "FOR_EACH_NODE_FAILED", raw: "Node callback failed: $error$", data: { error } },
                 error,
             );
@@ -405,8 +498,7 @@ export class Agraph {
             for (const edge of this.edges.values()) fn(edge);
             if (diag instanceof Adiag) diag.ok({ code: "FOR_EACH_EDGE_OK" });
         } catch (error) {
-            _agraphFail(
-                diag,
+            _agraphFail(diag,
                 { code: "FOR_EACH_EDGE_FAILED", raw: "Edge callback failed: $error$", data: { error } },
                 error,
             );
@@ -423,8 +515,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "FILTER_NODES_OK" });
             return result;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "FILTER_NODES_FAILED", raw: "Node filter callback failed: $error$", data: { error } },
                 error,
             );
@@ -441,8 +532,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "FILTER_EDGES_OK" });
             return result;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "FILTER_EDGES_FAILED", raw: "Edge filter callback failed: $error$", data: { error } },
                 error,
             );
@@ -457,8 +547,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "MAP_NODE_DATA_OK" });
             return result;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "MAP_NODE_DATA_FAILED", raw: "Node mapper callback failed: $error$", data: { error } },
                 error,
             );
@@ -473,8 +562,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "MAP_EDGE_DATA_OK" });
             return result;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "MAP_EDGE_DATA_FAILED", raw: "Edge mapper callback failed: $error$", data: { error } },
                 error,
             );
@@ -550,8 +638,7 @@ export class Agraph {
         }
 
         if (sorted.length !== this.nodes.size) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TOPO_SORT_FAILED", raw: 'Could not topologically sort graph "$label$": graph contains a cycle', data: { label: this.label } },
                 `Agraph.topoSort: graph contains a cycle -- topological sort is not possible`,
             );
@@ -576,8 +663,7 @@ export class Agraph {
         for (const id of idSet) {
             const node = this.getNode(id);
             if (!node) {
-                return _agraphFail(
-                    diag,
+                return _agraphFail(diag,
                     { code: "SUBGRAPH_FAILED", raw: 'Could not create subgraph: node "$id$" does not exist', data: { id, nodeIds } },
                     `Agraph.subgraph: node "${id}" does not exist`,
                 );
@@ -623,8 +709,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "CLONE_OK", data: { label: this.label } });
             return g;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "CLONE_FAILED", raw: 'Could not clone graph "$label$": $error$', data: { label: this.label, error } },
                 error,
             );
@@ -657,8 +742,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "MERGE_FROM_OK", data: { label: this.label, otherLabel: otherGraph?.label } });
             return this;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "MERGE_FROM_FAILED", raw: 'Could not merge graph "$otherLabel$" into "$label$": $error$', data: { label: this.label, otherLabel: otherGraph?.label, error } },
                 error,
             );
@@ -685,8 +769,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "SERIALIZE_OK", data: { label: this.label } });
             return json;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "SERIALIZE_FAILED", raw: 'Could not serialize graph "$label$": $error$', data: { label: this.label, error } },
                 error,
             );
@@ -715,8 +798,7 @@ export class Agraph {
             if (diag instanceof Adiag) diag.ok({ code: "DESERIALIZE_OK" });
             return g;
         } catch (error) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DESERIALIZE_FAILED", raw: "Could not deserialize graph JSON: $error$", data: { error } },
                 error,
             );
@@ -754,56 +836,6 @@ export class Agraph {
 
         return result;
     }
-
-    /**
-     * In-place sort the outgoing edges of a node
-     * @param {string} nodeId
-     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
-     * @param {{ diag?: Adiag }} [options]
-     */
-    sortOutgoingEdges(nodeId, sortFn, { diag } = {}) {
-        if (typeof sortFn !== "function") {
-            return _agraphFail(
-                diag,
-                { code: "SORT_OUTGOING_EDGES_FAILED", raw: 'Could not sort outgoing edges of node "$nodeId$": sortFn must be a function', data: { nodeId } },
-                `Agraph.sortOutgoingEdges: sortFn must be a function`,
-            );
-        }
-        const edgeIds = this.outgoing.get(nodeId);
-        if (!edgeIds) return;
-        const node = this.getNode(nodeId);
-        edgeIds.sort((idA, idB) => {
-            const a = this.edges.get(idA);
-            const b = this.edges.get(idB);
-            return sortFn(a, b, node, this);
-        });
-        if (diag instanceof Adiag) diag.ok({ code: "SORT_OUTGOING_EDGES_OK", data: { nodeId } });
-    }
-
-    /**
-     * In-place sort the incoming edges of a node
-     * @param {string} nodeId
-     * @param {function(Aedge, Aedge, Anode, Agraph): number} sortFn
-     * @param {{ diag?: Adiag }} [options]
-     */
-    sortIncomingEdges(nodeId, sortFn, { diag } = {}) {
-        if (typeof sortFn !== "function") {
-            return _agraphFail(
-                diag,
-                { code: "SORT_INCOMING_EDGES_FAILED", raw: 'Could not sort incoming edges of node "$nodeId$": sortFn must be a function', data: { nodeId } },
-                `Agraph.sortIncomingEdges: sortFn must be a function`,
-            );
-        }
-        const edgeIds = this.incoming.get(nodeId);
-        if (!edgeIds) return;
-        const node = this.getNode(nodeId);
-        edgeIds.sort((idA, idB) => {
-            const a = this.edges.get(idA);
-            const b = this.edges.get(idB);
-            return sortFn(a, b, node, this);
-        });
-        if (diag instanceof Adiag) diag.ok({ code: "SORT_INCOMING_EDGES_OK", data: { nodeId } });
-    }
 }
 
 // ==================== Directed acyclic graph rules =====================
@@ -831,46 +863,40 @@ export class Adag {
      */
     static assertCanAddEdge(graph, srcId, dstId, { diag } = {}) {
         if (!(graph instanceof Agraph)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DAG_ADD_EDGE_FAILED", raw: "Adag.assertCanAddEdge: graph must be an Agraph instance", data: { srcId, dstId } },
                 `Adag.assertCanAddEdge: graph must be an Agraph instance`,
             );
         }
 
         if (srcId == null) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DAG_ADD_EDGE_FAILED", raw: "Adag.addEdge: srcId is required", data: { srcId, dstId } },
                 `Adag.addEdge: srcId is required`,
             );
         }
         if (dstId == null) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DAG_ADD_EDGE_FAILED", raw: "Adag.addEdge: dstId is required", data: { srcId, dstId } },
                 `Adag.addEdge: dstId is required`,
             );
         }
 
         if (!graph.hasNode(srcId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DAG_ADD_EDGE_FAILED", raw: 'Adag.addEdge: source node "$srcId$" does not exist', data: { srcId, dstId } },
                 `Adag.addEdge: source node "${srcId}" does not exist`,
             );
         }
         if (!graph.hasNode(dstId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DAG_ADD_EDGE_FAILED", raw: 'Adag.addEdge: destination node "$dstId$" does not exist', data: { srcId, dstId } },
                 `Adag.addEdge: destination node "${dstId}" does not exist`,
             );
         }
 
         if (_agraphWouldCreateCycle(graph, srcId, dstId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DAG_ADD_EDGE_FAILED", raw: 'Could not add DAG edge "$srcId$" -> "$dstId$": would create a cycle', data: { srcId, dstId } },
                 `Adag.addEdge: edge "${srcId}" -> "${dstId}" would create a cycle`,
             );
@@ -888,16 +914,14 @@ export class Adag {
      */
     static wouldCreateCycle(graph, srcId, dstId, { diag } = {}) {
         if (!(graph instanceof Agraph)) {
-            _agraphFail(
-                diag,
+            _agraphFail(diag,
                 { code: "WOULD_CREATE_CYCLE_FAILED", raw: "Adag.wouldCreateCycle: graph must be an Agraph instance", data: { srcId, dstId } },
                 `Adag.wouldCreateCycle: graph must be an Agraph instance`,
             );
             return false;
         }
         if (srcId == null || dstId == null) {
-            _agraphFail(
-                diag,
+            _agraphFail(diag,
                 { code: "WOULD_CREATE_CYCLE_FAILED", raw: "Adag.wouldCreateCycle: srcId and dstId are required", data: { srcId, dstId } },
                 `Adag.wouldCreateCycle: srcId and dstId are required`,
             );
@@ -931,8 +955,7 @@ export class Adag {
      */
     static assertDag(graph, { diag } = {}) {
         if (!(graph instanceof Agraph)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "DAG_ASSERT_FAILED", raw: "Adag.assertDag: graph must be an Agraph instance", data: {} },
                 `Adag.assertDag: graph must be an Agraph instance`,
             );
@@ -978,8 +1001,7 @@ export class Atree {
             }
         } catch (error) {
             graph.removeNode(node.id);
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_NODE_FAILED", raw: 'Could not add tree node "$id$" under parent "$parentId$": $error$', data: { id, parentId, error } },
                 error,
             );
@@ -1010,30 +1032,26 @@ export class Atree {
      */
     static assertCanAddNode(graph, { parentId = null, id = null, edgeId = null, diag } = {}) {
         if (!(graph instanceof Agraph)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_NODE_FAILED", raw: "Atree.assertCanAddNode: graph must be an Agraph instance", data: { id, parentId } },
                 `Atree.assertCanAddNode: graph must be an Agraph instance`,
             );
         }
 
         if (id != null && graph.hasNode(id)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_NODE_FAILED", raw: 'Atree.addNode: node "$id$" already exists', data: { id, parentId } },
                 `Atree.addNode: node "${id}" already exists`,
             );
         }
         if (edgeId != null && graph.hasEdge(edgeId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_NODE_FAILED", raw: 'Atree.addNode: edge "$edgeId$" already exists', data: { id, edgeId, parentId } },
                 `Atree.addNode: edge "${edgeId}" already exists`,
             );
         }
         if (parentId != null && !graph.hasNode(parentId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_NODE_FAILED", raw: 'Atree.addNode: parent node "$parentId$" does not exist', data: { id, parentId } },
                 `Atree.addNode: parent node "${parentId}" does not exist`,
             );
@@ -1051,61 +1069,53 @@ export class Atree {
      */
     static assertCanAddEdge(graph, srcId, dstId, { diag } = {}) {
         if (!(graph instanceof Agraph)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: "Atree.assertCanAddEdge: graph must be an Agraph instance", data: { srcId, dstId } },
                 `Atree.assertCanAddEdge: graph must be an Agraph instance`,
             );
         }
 
         if (srcId == null) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: "Atree.addEdge: srcId is required", data: { srcId, dstId } },
                 `Atree.addEdge: srcId is required`,
             );
         }
         if (dstId == null) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: "Atree.addEdge: dstId is required", data: { srcId, dstId } },
                 `Atree.addEdge: dstId is required`,
             );
         }
 
         if (!graph.hasNode(srcId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: 'Atree.addEdge: source node "$srcId$" does not exist', data: { srcId, dstId } },
                 `Atree.addEdge: source node "${srcId}" does not exist`,
             );
         }
         if (!graph.hasNode(dstId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: 'Atree.addEdge: destination node "$dstId$" does not exist', data: { srcId, dstId } },
                 `Atree.addEdge: destination node "${dstId}" does not exist`,
             );
         }
 
         if (srcId === dstId) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: 'Atree.addEdge: node "$srcId$" cannot be its own parent', data: { srcId, dstId } },
                 `Atree.addEdge: node "${srcId}" cannot be its own parent`,
             );
         }
         if (graph.inDegree(dstId) > 0) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: 'Atree.addEdge: child node "$dstId$" already has a parent', data: { srcId, dstId } },
                 `Atree.addEdge: child node "${dstId}" already has a parent`,
             );
         }
 
         if (_agraphWouldCreateCycle(graph, srcId, dstId)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ADD_EDGE_FAILED", raw: 'Atree.addEdge: edge "$srcId$" -> "$dstId$" would create a cycle', data: { srcId, dstId } },
                 `Atree.addEdge: edge "${srcId}" -> "${dstId}" would create a cycle`,
             );
@@ -1125,8 +1135,7 @@ export class Atree {
 
         const parentEdges = graph.inEdges(nodeId);
         if (parentEdges.length > 1) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "PARENT_EDGE_FAILED", raw: 'Atree.parentEdgeOf: node "$nodeId$" has multiple parent edges', data: { nodeId } },
                 `Atree.parentEdgeOf: node "${nodeId}" has multiple parent edges`,
             );
@@ -1162,8 +1171,7 @@ export class Atree {
      */
     static assertTree(graph, { allowForest = true, diag } = {}) {
         if (!(graph instanceof Agraph)) {
-            return _agraphFail(
-                diag,
+            return _agraphFail(diag,
                 { code: "TREE_ASSERT_FAILED", raw: "Atree.assertTree: graph must be an Agraph instance", data: {} },
                 `Atree.assertTree: graph must be an Agraph instance`,
             );
@@ -1174,8 +1182,7 @@ export class Atree {
 
         for (const node of graph.getNodes()) {
             if (graph.inDegree(node.id) > 1) {
-                return _agraphFail(
-                    diag,
+                return _agraphFail(diag,
                     { code: "TREE_ASSERT_FAILED", raw: 'Graph "$label$" is not a tree: node "$nodeId$" has multiple parents', data: { label: graph.label, nodeId: node.id } },
                     `Atree.assertTree: node "${node.id}" has multiple parents`,
                 );
@@ -1185,8 +1192,7 @@ export class Atree {
         if (!allowForest) {
             const roots = graph.roots();
             if (roots.length !== 1) {
-                return _agraphFail(
-                    diag,
+                return _agraphFail(diag,
                     { code: "TREE_ASSERT_FAILED", raw: 'Graph "$label$" is not a tree: expected exactly one root, got $rootCount$', data: { label: graph.label, rootCount: roots.length } },
                     `Atree.assertTree: expected exactly one root, got ${roots.length}`,
                 );

@@ -1,37 +1,12 @@
 import { Afstep } from "../../Aflow.js";
 
-function hasOwn(obj, key) {
-	return Object.prototype.hasOwnProperty.call(obj, key);
-}
-
-function toNumber(value, fallback = 0) {
-	const n = Number(value);
-	return Number.isFinite(n) ? n : fallback;
-}
-
-function toColor(value) {
-	const src = (Array.isArray(value) || ArrayBuffer.isView(value)) ? value : null;
-	if (!src) return value;
-	return {
-		r: toNumber(src[0], 0),
-		g: toNumber(src[1], 0),
-		b: toNumber(src[2], 0),
-		a: toNumber(src[3], 1),
-	};
-}
-
-function normalizeColorAttachments(value) {
-	const list = Array.isArray(value) ? value : [];
-	return list.map((attachment) => {
-		if (!attachment || typeof attachment !== "object") return attachment;
-		if (!Array.isArray(attachment.clearValue) && !ArrayBuffer.isView(attachment.clearValue)) return attachment;
-		return {
-			...attachment,
-			clearValue: toColor(attachment.clearValue),
-		};
-	});
-}
-
+/**
+ * Begins a render pass for drawing operations
+ * 
+ * @param {string} [data.label] - Optional label for debugging
+ * @param {Array<GPURenderPassColorAttachment>} [data.colorAttachments] - Color attachments
+ * @param {GPURenderPassDepthStencilAttachment} [data.depthStencilAttachment] - Depth/stencil attachment
+ */
 export class RenderPass extends Afstep {
 	constructor(data = {}) {
 		super();
@@ -39,15 +14,20 @@ export class RenderPass extends Afstep {
 	}
 
 	exec({ ctx, graph, diag } = {}) {
-		if (!ctx.encoder) ctx.encoder = ctx.backend.createEncoder("Wr3Frame");
+		if (!ctx.encoder) ctx.encoder = ctx.device.createCommandEncoder({ label: "AwgpuRenderFrame" });
 		if (!ctx.encoder || ctx.pass) return;
 
-		const colorAttachments = hasOwn(this.data, "colorAttachments")
-			? normalizeColorAttachments(this.data.colorAttachments)
-			: [ctx.backend.getScreenColorAttachment(this.data, ctx)].filter(Boolean);
-		const depthStencilAttachment = hasOwn(this.data, "depthStencilAttachment")
-			? (this.data.depthStencilAttachment ?? undefined)
-			: (ctx.backend.getDepthAttachment(this.data) ?? undefined);
+		if (ctx.pass) {
+			ctx.diag?.warn("RenderPass", "A pass is already active - ending it before starting a new one.");
+
+			ctx.pass.end();
+			ctx.pass = null;
+			ctx.passKind = null;
+			ctx.pipeline = null;
+		}
+
+		const colorAttachments = this.data.colorAttachments ?? undefined;
+		const depthStencilAttachment = this.data.depthStencilAttachment ?? undefined;
 
 		if (colorAttachments.length <= 0 && !depthStencilAttachment) return;
 
@@ -61,6 +41,13 @@ export class RenderPass extends Afstep {
 	}
 }
 
+/**
+ * Begins a compute pass for compute shader operations
+ *
+ * @param {Object} data - Configuration object
+ * @param {string} [data.label] - Optional label for debugging
+ * @param {GPUComputePassTimestampWrites} [data.timestampWrites] - Optional timestamp writes configuration
+ */
 export class ComputePass extends Afstep {
 	constructor(data = {}) {
 		super();
@@ -68,7 +55,7 @@ export class ComputePass extends Afstep {
 	}
 
 	exec({ ctx, graph, diag } = {}) {
-		if (!ctx.encoder) ctx.encoder = ctx.backend.createEncoder("Wr3Frame");
+		if (!ctx.encoder) ctx.encoder = ctx.device.createCommandEncoder({ label: "AwgpuComputeFrame" });
 		if (!ctx.encoder || ctx.pass) return;
 		ctx.pass = ctx.encoder.beginComputePass({
 			label: this.data.label,
@@ -79,6 +66,10 @@ export class ComputePass extends Afstep {
 	}
 }
 
+/**
+ * Ends the current render or compute pass
+ * No constructor parameters required
+ */
 export class EndPass extends Afstep {
 	exec({ ctx, graph, diag } = {}) {
 		if (!ctx.pass) return;

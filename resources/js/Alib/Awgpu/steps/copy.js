@@ -6,98 +6,132 @@ function uint(value, fallback = 0) {
 
 function ensureEncoder(ctx, label = "AwgpuCopy") {
 	if (ctx.encoder) return ctx.encoder;
-	if (!ctx.backend) return null;
-	ctx.encoder = ctx.backend.createEncoder(label);
+	if (!ctx.device) return null;
+	ctx.encoder = ctx.device.createCommandEncoder({ label });
 	ctx.ended = false;
 	return ctx.encoder;
 }
 
+/**
+ * Copies data from a source buffer to a destination buffer
+ *
+ * @param {Object} data - Configuration object
+ * @param {GPUBuffer} data.src - Source buffer
+ * @param {GPUBuffer} data.dst - Destination buffer
+ * @param {number} [data.srcOffset] - Byte offset in source buffer (default: 0)
+ * @param {number} [data.dstOffset] - Byte offset in destination buffer (default: 0)
+ * @param {number} data.size - Number of bytes to copy
+ */
 export class CopyBufferToBuffer extends Afstep {
-	source = null;
-	destination = null;
-	sourceOffset = 0;
-	destinationOffset = 0;
+	src = null;
+	dst = null;
+	srcOffset = 0;
+	dstOffset = 0;
 	size = 0;
 
 	constructor(data = {}) {
 		super();
-		this.source = data.source ?? data.sourceBuffer ?? null;
-		this.destination = data.destination ?? data.destinationBuffer ?? null;
-		this.sourceOffset = uint(data.sourceOffset);
-		this.destinationOffset = uint(data.destinationOffset);
+		this.src = data.src ?? null;
+		this.dst = data.dst ?? null;
+		this.srcOffset = uint(data.srcOffset);
+		this.dstOffset = uint(data.dstOffset);
 		this.size = uint(data.size);
 	}
 
 	exec({ ctx, graph, diag } = {}) {
-		if (ctx.pass || !this.source || !this.destination || this.size <= 0) return;
+		if (ctx.pass || !this.src || !this.dst || this.size <= 0) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
 		encoder.copyBufferToBuffer(
-			this.source,
-			this.sourceOffset,
-			this.destination,
-			this.destinationOffset,
+			this.src,
+			this.srcOffset,
+			this.dst,
+			this.dstOffset,
 			this.size,
 		);
 	}
 }
 
+/**
+ * Copies data from a buffer to a texture
+ *
+ * @param {Object} data - Configuration object
+ * @param {GPUImageCopyBufferLike} data.src - Buffer copy source
+ * @param {GPUImageCopyTextureTagged} data.dst - Texture copy destination
+ * @param {GPUExtent3DStrict} data.size - Size of the region to copy
+ */
 export class CopyBufferToTexture extends Afstep {
-	source = null;
-	destination = null;
+	src = null;
+	dst = null;
 	size = null;
 
 	constructor(data = {}) {
 		super();
-		this.source = data.source ?? null;
-		this.destination = data.destination ?? null;
+		this.src = data.src ?? null;
+		this.dst = data.dst ?? null;
 		this.size = data.size ?? null;
 	}
 
 	exec({ ctx, graph, diag } = {}) {
-		if (ctx.pass || !this.source || !this.destination || !this.size) return;
+		if (ctx.pass || !this.src || !this.dst || !this.size) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
-		encoder.copyBufferToTexture(this.source, this.destination, this.size);
+		encoder.copyBufferToTexture(this.src, this.dst, this.size);
 	}
 }
 
+/**
+ * Copies data from a texture to a buffer
+ *
+ * @param {Object} data - Configuration object
+ * @param {GPUImageCopyTextureTagged} data.src - Texture copy source
+ * @param {GPUImageCopyBufferLike} data.dst - Buffer copy destination
+ * @param {GPUExtent3DStrict} data.size - Size of the region to copy
+ */
 export class CopyTextureToBuffer extends Afstep {
-	source = null;
-	destination = null;
+	src = null;
+	dst = null;
 	size = null;
 
 	constructor(data = {}) {
 		super();
-		this.source = data.source ?? null;
-		this.destination = data.destination ?? null;
+		this.src = data.src ?? null;
+		this.dst = data.dst ?? null;
 		this.size = data.size ?? null;
 	}
 
 	exec({ ctx, graph, diag } = {}) {
-		if (ctx.pass || !this.source || !this.destination || !this.size) return;
+		if (ctx.pass || !this.src || !this.dst || !this.size) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
-		encoder.copyTextureToBuffer(this.source, this.destination, this.size);
+		encoder.copyTextureToBuffer(this.src, this.dst, this.size);
 	}
 }
 
+/**
+ * Copies data from a texture to another texture
+ *
+ * @param {Object} data - Configuration object
+ * @param {GPUImageCopyTextureTagged} data.src - Texture copy source
+ * @param {GPUImageCopyTextureTagged} data.dst - Texture copy destination
+ * @param {GPUExtent3DStrict} data.size - Size of the region to copy
+ */
 export class CopyTextureToTexture extends Afstep {
-	source = null;
-	destination = null;
+	src = null;
+	dst = null;
 	size = null;
 
 	constructor(data = {}) {
 		super();
-		this.source = data.source ?? null;
-		this.destination = data.destination ?? null;
+		this.src = data.src ?? null;
+		this.dst = data.dst ?? null;
 		this.size = data.size ?? null;
 	}
 
 	exec({ ctx, graph, diag } = {}) {
-		if (ctx.pass || !this.source || !this.destination || !this.size) return;
+		if (ctx.pass || !this.src || !this.dst || !this.size) return;
 		const encoder = ensureEncoder(ctx);
 		if (!encoder) return;
-		encoder.copyTextureToTexture(this.source, this.destination, this.size);
+		encoder.copyTextureToTexture(this.src, this.dst, this.size);
 	}
 }

@@ -540,6 +540,7 @@ export class World extends TreeCtx {
 			this.cfg.materialBindGroupLayout,
 			this.cfg.instanceBindGroupLayout,
 		].filter(Boolean);
+		
 		const pipeline = device.createRenderPipeline({
 			label: options.label ?? shader.label ?? "WrGPUWorldPipeline",
 			layout: options.layout ?? device.createPipelineLayout({
@@ -565,7 +566,7 @@ export class World extends TreeCtx {
 				count: Math.max(1, Number(options.sampleCount ?? this.cfg.sampleCount ?? this.backend?.sampleCount ?? 1) | 0),
 			},
 			depthStencil: options.depthStencil ?? {
-				format: options.depthFormat ?? this.backend?.depthFormat,
+				format: options.depthFormat ?? this.backend?.depthFormat ?? "depth24plus",
 				depthWriteEnabled: options.depthWriteEnabled !== false,
 				depthCompare: options.depthCompare ?? "less",
 			},

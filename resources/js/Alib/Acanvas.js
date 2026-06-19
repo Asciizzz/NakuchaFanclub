@@ -3,6 +3,8 @@ By Asciiz
 
 Lightweight agnostic "canvas" base class
 Not really a <canvas> element more like a mountable root container
+
+Is highly niche
 */
 
 export class Acanvas {

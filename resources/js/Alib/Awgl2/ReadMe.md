@@ -11,6 +11,8 @@ It only provides:
 
 Everything else (scene trees, model packing, asset management) stays outside of Awgpu
 
+Note: Awgl2 current API is pretty outdated right now, will change soon, specifically regarding the `Backend` behaviour and scope. It will only act as optional wrapper + execution context provider, no more no less
+
 ## Design
 
 Awgpu follows the **render-flow model**. You create WebGPU resources yourself, then wrap execution logic into `Afstep` instances and attach them to `Aflow` nodes. The graph topology defines the execution sequence
@@ -77,7 +79,6 @@ All components inherit from `Afstep` and implement the following signature:
 ```js
 const backend = await Awgpu.Backend.create(canvas, {
     format: navigator.gpu.getPreferredCanvasFormat(),
-    depthFormat: "depth24plus",
     context: { alphaMode: "premultiplied" },
 });
 ```

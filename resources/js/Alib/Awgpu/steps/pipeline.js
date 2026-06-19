@@ -1,5 +1,10 @@
 import { Afstep } from "../../Aflow.js";
 
+/**
+ * Sets the active pipeline for the current render or compute pass
+ *
+ * @param {GPURenderPipeline|GPUComputePipeline} pipeline - The pipeline to activate
+ */
 export class UsePipeline extends Afstep {
 	constructor(pipeline) {
 		super();

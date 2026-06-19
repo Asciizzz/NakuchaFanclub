@@ -7,11 +7,13 @@ Execution flow on top of Agraph
 import { Agraph, Adag, Anode, Aedge } from "./Agraph.js";
 import { Adiag } from "./Adiag.js";
 
+export { Agraph, Adag, Anode, Aedge, Adiag };
+
 /** Base step. Extend it, override `exec`. */
 export class Afstep {
     /**
-     * Runs when its node is hit
-     * @param {{ ctx: *, graph: Agraph, entry: { src: Anode|null, dst: Anode, link: Aedge|null } }} options
+     * Runs when it's node's turn
+     * @param {{ ctx: *, graph: Agraph, entry: {src: Anode|null, dst: Anode, link: Aedge|null } }} options
      */
     exec({ ctx, graph, entry, diag } = {}) {
         throw new Error("Afstep.exec not implemented");
