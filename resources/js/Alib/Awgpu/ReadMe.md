@@ -479,7 +479,7 @@ new Awgpu.CopyTextureToTexture({
 
 ---
 
-## Execution Quirks
+## Execution Quirks (refer to `Aflow` and `Agraph`)
 
 ### Graph Traversal and Step Repetition
 

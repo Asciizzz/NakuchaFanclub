@@ -2,6 +2,32 @@
 By Asciiz
 
 Execution flow on top of Agraph
+
+# Afstep: base inheritance class for node payload steps
+
+# Aflow (the wrapper one)
+
+addNode({ payload: Array<Afstep>, id: string }?): Anode
+addLink(srcId: string, dstId: string, { id: string, data: anything }?): Aedge
+
+addPayload(nodeId: string, step: Afstep): this
+addPayloads(nodeId: string, steps: Afstep[]): this
+
+getNode(id: string): Anode|null
+hasNode(id: string): boolean
+removeNode(id: string): Anode
+
+getLink(id: string): Aedge|null
+removeLink(id: string): Aedge
+
+sortOutgoingLinks(nodeId: string, sortFn: Function): this
+sortIncomingLinks(nodeId: string, sortFn: Function): this
+* sortFn(edgeA: Aedge, edgeB: Aedge, node?: Anode, graph?: Agraph): number
+
+connectivity(nodeId1: string, nodeId2: string): Aedge[]
+hasPath(srcId: string, dstId: string): boolean
+
+run(from: string, { ctx: anything, diag: Adiag }?): { ctx: any, diag: Adiag }
 */
 
 import { Agraph, Adag, Anode, Aedge } from "./Agraph.js";
