@@ -3,10 +3,140 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Nakucha Fanclub</title>
+    <title>Aitsuki Nakuru - Fanclub</title>
+    <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-    <div id="app"></div>
+
+    <!-- 1. Back WebGPU Canvas: Background Stage (Z-Index: 1) -->
+    <canvas id="back-canvas"></canvas>
+
+    <!-- 2. Middle Layer: Stacked Overlapping Section Views (Z-Index: 10) -->
+    <!-- Scrolling within a section scrolls that section. Section change is button-driven. -->
+    <div class="sections-layer" id="sections-layer">
+
+        <!-- Intro Section: Bottom Border Active -->
+        <section class="section-view active" id="intro-view" data-index="0">
+            <div class="section-content">
+                <span class="indicator-tag">INTRO // BOTTOM BORDER ACTIVE</span>
+                <h1 class="hero-title">AITSUKI NAKURU</h1>
+                <p class="hero-sub">Vocalist &bull; Anime MV Visual Stage &bull; Modular Sections</p>
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="section-1">
+                        <span>Go to Section 1 (Bottom Border Inactive) &rarr;</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 1: Bottom Border Inactive (Triggers downward hide). Internal scrollable demo. -->
+        <section class="section-view" id="section1-view" data-index="1">
+            <div class="section-content scrollable-demo">
+                <span class="indicator-tag">SECTION 1 // BOTTOM BORDER INACTIVE</span>
+                <h2>SECTION 01</h2>
+                <p class="section-note">Bottom border moved downward by total height to hide completely.</p>
+                <p class="scroll-prompt">Scroll down inside this div to test that scrolling only scrolls this section:</p>
+
+                <!-- Taller internal content blocks to test scrolling within this section -->
+                <div class="scroll-blocks">
+                    <div class="demo-card">
+                        <span class="card-num">01</span>
+                        <div class="card-body">
+                            <h4>Internal Scroll Block A</h4>
+                            <p>Scrolling within this view scrolls only this section. It does not trigger a section change.</p>
+                        </div>
+                    </div>
+                    <div class="demo-card">
+                        <span class="card-num">02</span>
+                        <div class="card-body">
+                            <h4>Internal Scroll Block B</h4>
+                            <p>Section change is strictly button-driven, preserving independent scroll states per section.</p>
+                        </div>
+                    </div>
+                    <div class="demo-card">
+                        <span class="card-num">03</span>
+                        <div class="card-body">
+                            <h4>Internal Scroll Block C</h4>
+                            <p>Section transitions trigger a directional camera shift with 70% cutoff.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="section-2">
+                        <span>Go to Section 2 (Bottom Border Active) &rarr;</span>
+                    </button>
+                    <button class="action-btn-outline" data-jump-section="intro">
+                        <span>&larr; Back to Intro</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Bottom Border Inactive -->
+        <section class="section-view" id="section2-view" data-index="2">
+            <div class="section-content">
+                <span class="indicator-tag">SECTION 2 // BOTTOM BORDER INACTIVE</span>
+                <h2>SECTION 02</h2>
+                <p class="section-note">Bottom border remains hidden downward.</p>
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="section-3">
+                        <span>Go to Section 3 &rarr;</span>
+                    </button>
+                    <button class="action-btn-outline" data-jump-section="intro">
+                        <span>&larr; Return to Intro</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Bottom Border Inactive -->
+        <section class="section-view" id="section3-view" data-index="3">
+            <div class="section-content">
+                <span class="indicator-tag">SECTION 3 // BOTTOM BORDER INACTIVE</span>
+                <h2>SECTION 03</h2>
+                <p class="section-note">Amber prism background with directional camera transition.</p>
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="intro">
+                        <span>&larr; Return to Intro</span>
+                    </button>
+                    <button class="action-btn-outline" data-jump-section="section-2">
+                        <span>&larr; Section 2</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- 3. Front WebGPU Canvas: Glass Window Overlay (Z-Index: 100, Pointer-Events: None) -->
+    <!-- Renders top border (rect + grid) and bottom border (grid + rect) in WebGPU -->
+    <canvas id="front-canvas"></canvas>
+
+    <!-- 4. Header Div Element (Absolute Fixed Top, Never Moves) (Z-Index: 101) -->
+    <header class="header-bar" id="header-bar">
+        <div class="header-inner">
+            <div class="brand-wrap">
+                <span class="brand-badge">[FANCLUB]</span>
+                <span class="brand-title">AITSUKI NAKURU</span>
+            </div>
+
+            <nav class="nav-wrap">
+                <a href="#intro" class="nav-link active" data-target="0">INTRO</a>
+                <a href="#section-1" class="nav-link" data-target="1">SECTION 1</a>
+                <a href="#section-2" class="nav-link" data-target="2">SECTION 2</a>
+                <a href="#section-3" class="nav-link" data-target="3">SECTION 3</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- 5. Footer Info Bar (Z-Index: 101, Translates with bottom border) -->
+    <footer class="footer-bar" id="footer-bar">
+        <div class="footer-inner">
+            <span>NAKUCHA FANCLUB // MODULAR SECTIONS // WEBGPU BORDERS</span>
+        </div>
+    </footer>
+
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

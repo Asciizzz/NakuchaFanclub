@@ -1,0 +1,356 @@
+@font-face {
+    font-family: "Outfit";
+    src: url("/fonts/Outfit-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 900;
+    font-display: swap;
+}
+
+:root {
+    /* Palette from Torinoko City Reference */
+    --ink-navy: #1A2838;
+    --blue-steel: #4B6B8A;
+    --cyan-soft: #B0C8DC;
+    --white-chalk: #E8F2FA;
+    --white-pure: #FFFFFF;
+
+    /* Dynamic heights synced with WebGPU borders */
+    --top-main-height: 58px;
+    --bottom-main-height: 38px;
+    --square-size: 10px;
+    --top-total-height: 78px;
+    --bottom-total-height: 58px;
+
+    --font-main: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Fira Code", monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--white-pure);
+    font-family: var(--font-main);
+    color: var(--ink-navy);
+}
+
+/* ================= 1. Back WebGPU Canvas: Background Stage (Z-Index: 1) ================= */
+#back-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* ================= 2. Middle Layer: Stacked Overlapping Section Views (Z-Index: 10) ================= */
+/* Scrolling is contained inside each individual section view. Scrolling never changes sections. */
+.sections-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.section-view {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: calc(var(--top-total-height) + 2rem) 2rem calc(var(--bottom-total-height) + 2rem);
+    pointer-events: auto;
+    scrollbar-gutter: stable;
+}
+
+.section-view.active {
+    display: flex;
+}
+
+/* Minimal subtle scrollbar per section */
+.section-view::-webkit-scrollbar {
+    width: 6px;
+}
+.section-view::-webkit-scrollbar-track {
+    background: transparent;
+}
+.section-view::-webkit-scrollbar-thumb {
+    background: rgba(75, 107, 138, 0.25);
+    border-radius: 3px;
+}
+.section-view::-webkit-scrollbar-thumb:hover {
+    background: rgba(26, 40, 56, 0.4);
+}
+
+.section-content {
+    max-width: 720px;
+    width: 100%;
+    margin: auto 0;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.section-content.scrollable-demo {
+    margin: 2rem 0; /* Allows content to exceed viewport for testing scrolling */
+}
+
+.indicator-tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--blue-steel);
+    margin-bottom: 1.2rem;
+    background: rgba(232, 242, 250, 0.7);
+    border: 1px solid var(--cyan-soft);
+    padding: 4px 12px;
+    border-radius: 4px;
+}
+
+.hero-title {
+    font-size: 4.4rem;
+    font-weight: 900;
+    color: var(--ink-navy);
+    letter-spacing: 0.04em;
+    margin-bottom: 0.8rem;
+    line-height: 1.05;
+}
+
+.hero-sub {
+    font-size: 1.15rem;
+    color: var(--blue-steel);
+    margin-bottom: 2rem;
+    font-weight: 500;
+}
+
+.section-content h2 {
+    font-size: 3.2rem;
+    font-weight: 900;
+    color: var(--ink-navy);
+    letter-spacing: 0.04em;
+    margin-bottom: 0.8rem;
+}
+
+.section-note {
+    font-size: 1.05rem;
+    color: var(--blue-steel);
+    margin-bottom: 1.2rem;
+    line-height: 1.6;
+}
+
+.scroll-prompt {
+    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    color: var(--blue-steel);
+    margin-bottom: 1.5rem;
+}
+
+/* Internal Scroll Demo Blocks */
+.scroll-blocks {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    width: 100%;
+    margin-bottom: 2rem;
+}
+
+.demo-card {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(176, 200, 220, 0.6);
+    border-radius: 8px;
+    padding: 1.2rem 1.6rem;
+    text-align: left;
+    box-shadow: 0 4px 15px rgba(26, 40, 56, 0.03);
+}
+
+.card-num {
+    font-family: var(--font-mono);
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--cyan-soft);
+}
+
+.card-body h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink-navy);
+    margin-bottom: 0.2rem;
+}
+
+.card-body p {
+    font-size: 0.85rem;
+    color: var(--blue-steel);
+    line-height: 1.5;
+}
+
+.hero-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    background: var(--ink-navy);
+    color: var(--white-pure);
+    border: 1px solid var(--ink-navy);
+    padding: 10px 22px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    font-family: var(--font-main);
+}
+.action-btn:hover {
+    background: var(--blue-steel);
+    border-color: var(--blue-steel);
+    transform: translateY(-1px);
+}
+
+.action-btn-outline {
+    background: transparent;
+    color: var(--ink-navy);
+    border: 1px solid var(--blue-steel);
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    font-family: var(--font-main);
+}
+.action-btn-outline:hover {
+    background: var(--white-chalk);
+    transform: translateY(-1px);
+}
+
+/* ================= 3. Front WebGPU Canvas: Glass Window Overlay (Z-Index: 100) ================= */
+#front-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    z-index: 100;
+    pointer-events: none;
+}
+
+/* ================= 4. Header Div Element (Absolute Fixed Top) (Z-Index: 101) ================= */
+.header-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: var(--top-main-height);
+    z-index: 101;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    background: transparent;
+}
+
+.header-inner {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+}
+
+.brand-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.brand-badge {
+    background: rgba(75, 107, 138, 0.4);
+    color: var(--white-pure);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+    border: 1px solid var(--blue-steel);
+}
+
+.brand-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: var(--white-pure);
+}
+
+.nav-wrap {
+    display: flex;
+    align-items: center;
+    gap: 1.8rem;
+}
+
+.nav-link {
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--cyan-soft);
+    text-decoration: none;
+    transition: color 0.2s;
+    cursor: pointer;
+}
+
+.nav-link:hover, .nav-link.active {
+    color: var(--white-pure);
+}
+
+/* ================= 5. Footer Info Bar (Z-Index: 101, Translates with bottom border) ================= */
+.footer-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: var(--bottom-main-height);
+    z-index: 101;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    background: transparent;
+    transform: translateY(0);
+    transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.footer-bar.occluded {
+    transform: translateY(calc(var(--bottom-main-height) + var(--square-size) * 2));
+}
+
+.footer-inner {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--cyan-soft);
+}
+
