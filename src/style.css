@@ -353,3 +353,30 @@ html, body {
     color: var(--ink-navy);
 }
 
+/* ================= 5. Discography Studio Stage Contrast ================= */
+#discography-view .section-content h2 {
+    color: var(--white-pure);
+    text-shadow: 0 4px 24px rgba(10, 20, 32, 0.75);
+}
+
+#discography-view .section-note {
+    color: var(--cyan-soft);
+    text-shadow: 0 2px 12px rgba(10, 20, 32, 0.55);
+}
+
+#discography-view .indicator-tag {
+    background: rgba(18, 30, 44, 0.85);
+    border-color: rgba(176, 200, 220, 0.45);
+    color: var(--cyan-soft);
+    backdrop-filter: blur(8px);
+}
+
+#discography-view .action-btn-outline {
+    color: var(--white-pure);
+    border-color: rgba(176, 200, 220, 0.55);
+}
+
+#discography-view .action-btn-outline:hover {
+    background: rgba(176, 200, 220, 0.15);
+}
+

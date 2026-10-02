@@ -82,7 +82,7 @@ export class GPUManager {
     }
 
     private _handleResize(): void {
-        this._dpr = window.devicePixelRatio || 1;
+        this._dpr = Math.min(window.devicePixelRatio || 1, 1.25);
         this._width = window.innerWidth;
         this._height = window.innerHeight;
 
