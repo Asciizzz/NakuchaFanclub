@@ -65,7 +65,9 @@ export function createCubicBezier(x1: number, y1: number, x2: number, y2: number
     };
 }
 
-// User specified cubic-bezier(.89, 0, .36, .99)
-export const cameraShiftEase = createCubicBezier(.44,-0.5,0,1)
+
+
+// User specified cubic-bezier, will delete later
+export const cameraShiftEase = createCubicBezier(.73,.41,.25,.94);
 // export const cameraShiftEase = createCubicBezier(0, 0, 0, 0);
 

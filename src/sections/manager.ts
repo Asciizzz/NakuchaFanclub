@@ -1,30 +1,21 @@
-import { Section, TransitionContext } from "./types.js";
-import { EventBus } from "../core/events.js";
-
-export interface TransitionManagerOptions {
-    navLinks?: NodeListOf<HTMLAnchorElement>;
-    footerBar?: HTMLElement | null;
-    initialSharedContext?: Record<string, unknown>;
-}
+import { Section, FrameContext } from "./types.js";
+import { testTransitionDurationTemp } from "../temp/index.js";
 
 export class SectionTransitionManager {
     readonly sections: Map<string, Section> = new Map();
     readonly sectionsList: Section[] = [];
-    readonly navLinks: NodeListOf<HTMLAnchorElement> | null;
-    readonly footerBar: HTMLElement | null;
 
     currentSection: Section;
     fromSection: Section | null = null;
     toSection: Section | null = null;
 
-    state: "IDLE" | "TRANSITIONING" = "IDLE";
-    duration = 0;  // ms
-    elapsed = 0;   // ms
-    progress = 0.0; // 0.0 -> 1.0
+    isTransitioning = false;
+    direction: 1 | -1 = 1;
+    duration = testTransitionDurationTemp;
+    elapsed = 0;
+    progress = 0.0;
 
-    readonly sharedContext: Record<string, unknown>;
-
-    constructor(sections: Section[], options: TransitionManagerOptions = {}) {
+    constructor(sections: Section[]) {
         this.sectionsList = [...sections];
         for (const sec of sections) {
             this.sections.set(sec.id, sec);
@@ -35,51 +26,11 @@ export class SectionTransitionManager {
         }
 
         this.currentSection = sections[0];
-        this.navLinks = options.navLinks ?? null;
-        this.footerBar = options.footerBar ?? null;
-        this.sharedContext = {
-            totalTransitions: 0,
-            lastTransitionPair: null,
-            ...options.initialSharedContext,
-        };
-
-        this._setupListeners();
         this._applyImmediate(this.currentSection);
     }
 
-    private _setupListeners(): void {
-        // 1. Header nav links
-        if (this.navLinks) {
-            this.navLinks.forEach((link) => {
-                link.addEventListener("click", (e) => {
-                    e.preventDefault();
-                    const target = link.getAttribute("data-target");
-                    if (target !== null) {
-                        const idx = parseInt(target, 10);
-                        if (this.sectionsList[idx]) {
-                            this.transitionTo(this.sectionsList[idx].id);
-                        }
-                    }
-                });
-            });
-        }
-
-        // 2. In-section action jump buttons (data-jump-section="section-1")
-        document.addEventListener("click", (e) => {
-            const target = (e.target as HTMLElement).closest("[data-jump-section]") as HTMLElement | null;
-            if (target) {
-                e.preventDefault();
-                const sectionId = target.getAttribute("data-jump-section");
-                if (sectionId) {
-                    this.transitionTo(sectionId);
-                }
-            }
-        });
-    }
-
-    transitionTo(targetId: string): { success: boolean; reason?: string; duration?: number } {
-        // Anti-spam guard: reject clicks while actively transitioning
-        if (this.state === "TRANSITIONING") {
+    transitionTo(targetId: string): { success: boolean; reason?: string } {
+        if (this.isTransitioning) {
             return { success: false, reason: "locked" };
         }
 
@@ -88,92 +39,90 @@ export class SectionTransitionManager {
             return { success: false, reason: "same-or-invalid" };
         }
 
+        const fromIdx = this.sectionsList.indexOf(this.currentSection);
+        const toIdx = this.sectionsList.indexOf(target);
+
+        this.direction = toIdx >= fromIdx ? 1 : -1;
         this.fromSection = this.currentSection;
         this.toSection = target;
-        this.state = "TRANSITIONING";
+        this.isTransitioning = true;
         this.elapsed = 0;
         this.progress = 0.0;
+        this.duration = testTransitionDurationTemp;
 
-        // Entry-driven duration resolution with pair override support
-        let resolvedDuration = target.enterDuration || 260;
-        if (this.fromSection.getExitDurationFor) {
-            const override = this.fromSection.getExitDurationFor(target);
-            if (override != null) resolvedDuration = override;
-        }
-        this.duration = resolvedDuration;
+        // Fire discrete entrance and departure start hooks at p = 0
+        this.fromSection.onLeaveStart?.(this.toSection);
+        this.toSection.onEnterStart?.(this.fromSection);
 
-        this.sharedContext.totalTransitions = ((this.sharedContext.totalTransitions as number) || 0) + 1;
-        this.sharedContext.lastTransitionPair = `${this.fromSection.id} -> ${this.toSection.id}`;
-
-        const ctx = this.getTransitionContext();
-
-        // Lifecycle calls
-        if (this.fromSection.onLeave) {
-            this.fromSection.onLeave(ctx);
-        }
-        if (this.toSection.onEnter) {
-            this.toSection.onEnter(ctx);
-        }
-
-        // Nav and footer updates
-        this._updateNavLinks(target.id);
-        this._updateFooterOcclusion(target.hasBottomBorder);
-
-        EventBus.get().emit("section-change", {
-            sectionId: target.id,
-            isIntro: target.id === "intro",
-            hasBottomBorder: target.hasBottomBorder,
-            duration: this.duration,
-        });
-
-        return { success: true, duration: this.duration };
+        return { success: true };
     }
 
     update(dt: number): void {
-        if (this.state !== "TRANSITIONING") return;
+        if (!this.isTransitioning) return;
 
         this.elapsed += dt * 1000;
-        this.progress = Math.min(this.elapsed / Math.max(1, this.duration), 1.0);
-
-        const ctx = this.getTransitionContext();
-
-        if (this.fromSection?.onTransitionTick) {
-            this.fromSection.onTransitionTick(ctx);
-        }
-        if (this.toSection?.onTransitionTick) {
-            this.toSection.onTransitionTick(ctx);
-        }
+        this.progress = Math.min(1.0, this.elapsed / Math.max(1, this.duration));
 
         if (this.progress >= 1.0) {
-            if (this.fromSection?.onLeaveComplete) {
-                this.fromSection.onLeaveComplete(ctx);
+            const from = this.fromSection;
+            const to = this.toSection!;
+
+            // Fire discrete departure and entrance end hooks at p = 1
+            from?.onLeaveEnd?.(to);
+            to.onEnterEnd?.(from);
+
+            if (from?.domElement) {
+                from.domElement.classList.remove("active");
+                from.domElement.style.transform = "";
             }
-            if (this.toSection?.onEnterComplete) {
-                this.toSection.onEnterComplete(ctx);
+            if (to.domElement) {
+                to.domElement.classList.add("active");
+                to.domElement.style.transform = "";
             }
 
-            if (this.toSection) {
-                this.currentSection = this.toSection;
-            }
-
+            this.currentSection = to;
             this.fromSection = null;
             this.toSection = null;
-            this.state = "IDLE";
+            this.isTransitioning = false;
             this.progress = 0.0;
             this.elapsed = 0;
         }
     }
 
-    getTransitionContext(): TransitionContext {
-        return {
-            state: this.state,
-            from: this.fromSection,
-            to: this.toSection,
-            duration: this.duration,
-            elapsed: this.elapsed,
-            progress: this.progress,
-            sharedContext: this.sharedContext,
-        };
+    getContextFor(section: Section | null, time: number, dt: number): FrameContext {
+        if (!this.isTransitioning || !this.fromSection || !this.toSection || !section) {
+            return { time, dt, transition: null };
+        }
+
+        if (section === this.fromSection) {
+            return {
+                time,
+                dt,
+                transition: {
+                    role: "leaving",
+                    other: this.toSection,
+                    progress: this.progress,
+                    duration: this.duration,
+                    direction: this.direction,
+                },
+            };
+        }
+
+        if (section === this.toSection) {
+            return {
+                time,
+                dt,
+                transition: {
+                    role: "entering",
+                    other: this.fromSection,
+                    progress: this.progress,
+                    duration: this.duration,
+                    direction: this.direction,
+                },
+            };
+        }
+
+        return { time, dt, transition: null };
     }
 
     private _applyImmediate(sec: Section): void {
@@ -186,31 +135,7 @@ export class SectionTransitionManager {
                 if (s.domElement) s.domElement.style.transform = "";
             }
         }
-        this._updateNavLinks(sec.id);
-        this._updateFooterOcclusion(sec.hasBottomBorder);
-        sec.onEnter?.(this.getTransitionContext());
-    }
-
-    private _updateNavLinks(activeId: string): void {
-        if (!this.navLinks) return;
-        const activeIdx = this.sectionsList.findIndex((s) => s.id === activeId);
-
-        this.navLinks.forEach((link) => {
-            const target = link.getAttribute("data-target");
-            if (target !== null && parseInt(target, 10) === activeIdx) {
-                link.classList.add("active");
-            } else {
-                link.classList.remove("active");
-            }
-        });
-    }
-
-    private _updateFooterOcclusion(hasBottomBorder: boolean): void {
-        if (!this.footerBar) return;
-        if (hasBottomBorder) {
-            this.footerBar.classList.remove("occluded");
-        } else {
-            this.footerBar.classList.add("occluded");
-        }
+        sec.onEnterStart?.(null);
+        sec.onEnterEnd?.(null);
     }
 }

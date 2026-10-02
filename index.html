@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aitsuki Nakuru - Fanclub</title>
     <link rel="stylesheet" href="/src/style.css" />
 </head>
+
 <body>
 
     <!-- 1. Back WebGPU Canvas: Background Stage (Z-Index: 1) -->
@@ -15,93 +17,137 @@
     <!-- Scrolling within a section scrolls that section. Section change is button-driven. -->
     <div class="sections-layer" id="sections-layer">
 
-        <!-- Intro Section: Bottom Border Active -->
-        <section class="section-view active" id="intro-view" data-index="0">
-            <div class="section-content">
-                <span class="indicator-tag">INTRO // BOTTOM BORDER ACTIVE</span>
-                <h1 class="hero-title">AITSUKI NAKURU</h1>
-                <p class="hero-sub">Vocalist &bull; Anime MV Visual Stage &bull; Modular Sections</p>
-                <div class="hero-actions">
-                    <button class="action-btn" data-jump-section="section-1">
-                        <span>Go to Section 1 (Bottom Border Inactive) &rarr;</span>
-                    </button>
-                </div>
-            </div>
-        </section>
+        <!-- Welcome Section -->
+        <section class="section-view active" id="welcome-view" data-index="0"></section>
 
-        <!-- Section 1: Bottom Border Inactive (Triggers downward hide). Internal scrollable demo. -->
-        <section class="section-view" id="section1-view" data-index="1">
+        <!-- Naku Wiki Section (Topographic Map Shader) -->
+        <section class="section-view" id="wiki-view" data-index="1">
             <div class="section-content scrollable-demo">
-                <span class="indicator-tag">SECTION 1 // BOTTOM BORDER INACTIVE</span>
-                <h2>SECTION 01</h2>
-                <p class="section-note">Bottom border moved downward by total height to hide completely.</p>
-                <p class="scroll-prompt">Scroll down inside this div to test that scrolling only scrolls this section:</p>
+                <h2>Fancuck</h2>
+                <p class="section-note">Pretty cool right?</p>
+                <p class="scroll-prompt">I made like this stupidly cool rendering animation engine thingy</p>
 
                 <!-- Taller internal content blocks to test scrolling within this section -->
                 <div class="scroll-blocks">
                     <div class="demo-card">
                         <span class="card-num">01</span>
                         <div class="card-body">
-                            <h4>Internal Scroll Block A</h4>
-                            <p>Scrolling within this view scrolls only this section. It does not trigger a section change.</p>
+                            <h4>WO CAO NI MA</h4>
+                            <p>Counting Stronk 2.</p>
                         </div>
                     </div>
                     <div class="demo-card">
                         <span class="card-num">02</span>
                         <div class="card-body">
-                            <h4>Internal Scroll Block B</h4>
-                            <p>Section change is strictly button-driven, preserving independent scroll states per section.</p>
+                            <h4>Wenochainsama</h4>
+                            <p>It's scrollable I think.</p>
                         </div>
                     </div>
                     <div class="demo-card">
                         <span class="card-num">03</span>
                         <div class="card-body">
-                            <h4>Internal Scroll Block C</h4>
-                            <p>Section transitions trigger a directional camera shift with 70% cutoff.</p>
+                            <h4>Lance Stroll</h4>
+                            <p>They added him into umamusume.</p>
+                        </div>
+                    </div>
+                    <div class="demo-card">
+                        <span class="card-num">04</span>
+                        <div class="card-body">
+                            <h4>Agnes Tachyon</h4>
+                            <p>Faster than light but not faster than a broken leg apparently.</p>
+                        </div>
+                    </div>
+                    <div class="demo-card">
+                        <span class="card-num">05</span>
+                        <div class="card-body">
+                            <h4>THEY ADDED CHICKEN TO CS2</h4>
+                            <p>WHO NEEDS ANTICHEAT.</p>
+                        </div>
+                    </div>
+                    <div class="demo-card">
+                        <span class="card-num">067</span>
+                        <div class="card-body">
+                            <h4>2026</h4>
+                            <p>Surprisingly I don't hate the memes in 2026 at all, the year is actuall very fine overall
+                                (until shit hit the fan in October and beyond lmao).</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="hero-actions">
-                    <button class="action-btn" data-jump-section="section-2">
-                        <span>Go to Section 2 (Bottom Border Active) &rarr;</span>
+                    <button class="action-btn" data-jump-section="schedule">
+                        <span>Go to Schedule &rarr;</span>
                     </button>
-                    <button class="action-btn-outline" data-jump-section="intro">
-                        <span>&larr; Back to Intro</span>
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- Section 2: Bottom Border Inactive -->
-        <section class="section-view" id="section2-view" data-index="2">
-            <div class="section-content">
-                <span class="indicator-tag">SECTION 2 // BOTTOM BORDER INACTIVE</span>
-                <h2>SECTION 02</h2>
-                <p class="section-note">Bottom border remains hidden downward.</p>
-                <div class="hero-actions">
-                    <button class="action-btn" data-jump-section="section-3">
-                        <span>Go to Section 3 &rarr;</span>
-                    </button>
-                    <button class="action-btn-outline" data-jump-section="intro">
-                        <span>&larr; Return to Intro</span>
+                    <button class="action-btn-outline" data-jump-section="welcome">
+                        <span>&larr; Back to Welcome</span>
                     </button>
                 </div>
             </div>
         </section>
 
-        <!-- Section 3: Bottom Border Inactive -->
-        <section class="section-view" id="section3-view" data-index="3">
+        <!-- Schedule Section -->
+        <section class="section-view" id="schedule-view" data-index="2">
             <div class="section-content">
-                <span class="indicator-tag">SECTION 3 // BOTTOM BORDER INACTIVE</span>
-                <h2>SECTION 03</h2>
-                <p class="section-note">Amber prism background with directional camera transition.</p>
+                <span class="indicator-tag">SCHEDULE</span>
+                <h2>SCHEDULE</h2>
+                <p class="section-note">Broadcast schedule, event appearances, and upcoming livestreams.</p>
                 <div class="hero-actions">
-                    <button class="action-btn" data-jump-section="intro">
-                        <span>&larr; Return to Intro</span>
+                    <button class="action-btn" data-jump-section="music">
+                        <span>Go to Music &rarr;</span>
                     </button>
-                    <button class="action-btn-outline" data-jump-section="section-2">
-                        <span>&larr; Section 2</span>
+                    <button class="action-btn-outline" data-jump-section="wiki">
+                        <span>&larr; Return to Wiki</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Music Section (Reserved for the big creative surprise) -->
+        <section class="section-view" id="music-view" data-index="3">
+            <div class="section-content">
+                <span class="indicator-tag">MUSIC // YOUTUBE &amp; SPOTIFY</span>
+                <h2>MUSIC</h2>
+                <p class="section-note">Stay tuned for an absurdly creative audio-visual experience.</p>
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="discography">
+                        <span>Go to Discography &rarr;</span>
+                    </button>
+                    <button class="action-btn-outline" data-jump-section="schedule">
+                        <span>&larr; Schedule</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Discography Section -->
+        <section class="section-view" id="discography-view" data-index="4">
+            <div class="section-content">
+                <span class="indicator-tag">DISCOGRAPHY // SONG DB</span>
+                <h2>DISCOGRAPHY</h2>
+                <p class="section-note">Original tracks, collaborations, albums, and song database.</p>
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="social">
+                        <span>Go to Social &rarr;</span>
+                    </button>
+                    <button class="action-btn-outline" data-jump-section="music">
+                        <span>&larr; Music</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Social Section -->
+        <section class="section-view" id="social-view" data-index="5">
+            <div class="section-content">
+                <span class="indicator-tag">SOCIAL // X &amp; TWITTER</span>
+                <h2>SOCIAL</h2>
+                <p class="section-note">Official updates, feed, and community announcements.</p>
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="welcome">
+                        <span>&larr; Return to Welcome</span>
+                    </button>
+                    <button class="action-btn-outline" data-jump-section="discography">
+                        <span>&larr; Discography</span>
                     </button>
                 </div>
             </div>
@@ -116,27 +162,20 @@
     <!-- 4. Header Div Element (Absolute Fixed Top, Never Moves) (Z-Index: 101) -->
     <header class="header-bar" id="header-bar">
         <div class="header-inner">
-            <div class="brand-wrap">
-                <span class="brand-badge">[FANCLUB]</span>
-                <span class="brand-title">AITSUKI NAKURU</span>
-            </div>
+            <div class="brand">NAKUCHA FANCLUB</div>
 
             <nav class="nav-wrap">
-                <a href="#intro" class="nav-link active" data-target="0">INTRO</a>
-                <a href="#section-1" class="nav-link" data-target="1">SECTION 1</a>
-                <a href="#section-2" class="nav-link" data-target="2">SECTION 2</a>
-                <a href="#section-3" class="nav-link" data-target="3">SECTION 3</a>
+                <button type="button" class="nav-btn active" data-target="welcome" data-header-style="welcome">WELCOME</button>
+                <button type="button" class="nav-btn" data-target="wiki" data-header-style="light">NAKU WIKI</button>
+                <button type="button" class="nav-btn" data-target="schedule" data-header-style="light">SCHEDULE</button>
+                <button type="button" class="nav-btn" data-target="music" data-header-style="light">MUSIC</button>
+                <button type="button" class="nav-btn" data-target="discography" data-header-style="light">DISCOGRAPHY</button>
+                <button type="button" class="nav-btn" data-target="social" data-header-style="light">SOCIAL</button>
             </nav>
         </div>
     </header>
 
-    <!-- 5. Footer Info Bar (Z-Index: 101, Translates with bottom border) -->
-    <footer class="footer-bar" id="footer-bar">
-        <div class="footer-inner">
-            <span>NAKUCHA FANCLUB // MODULAR SECTIONS // WEBGPU BORDERS</span>
-        </div>
-    </footer>
-
     <script type="module" src="/src/main.ts"></script>
 </body>
+
 </html>

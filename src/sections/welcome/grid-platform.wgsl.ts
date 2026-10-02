@@ -68,6 +68,9 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>, @location(0) uv: vec2<f32>) 
         if (parity == 0) {
             return uniforms.darkColor;
         } else {
+            if (uniforms.lightColor.a <= 0.001) {
+                discard;
+            }
             return uniforms.lightColor;
         }
     }
@@ -91,6 +94,9 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>, @location(0) uv: vec2<f32>) 
         if (parity == 0) {
             return uniforms.darkColor;
         } else {
+            if (uniforms.lightColor.a <= 0.001) {
+                discard;
+            }
             return uniforms.lightColor;
         }
     }

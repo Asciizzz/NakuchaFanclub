@@ -23,9 +23,9 @@ export const DEFAULT_GRID_CONFIG: GridPlatformConfig = {
     topDirection: -1,
     bottomSpeed: 34,
     bottomDirection: 1,
-    darkColor: [26 / 255, 40 / 255, 56 / 255, 1.0],      // #1A2838 deep navy
-    lightColor: [1.0, 1.0, 1.0, 1.0],                   // #FFFFFF chalk white
-    rectColor: [26 / 255, 40 / 255, 56 / 255, 1.0],     // #1A2838 deep navy solid rect
+    darkColor: [26 / 255, 40 / 255, 56 / 255, 1.0], // #1A2838 deep navy
+    lightColor: [0.0, 0.0, 0.0, 0.0],               // Transparent stencil cutout holes
+    rectColor: [26 / 255, 40 / 255, 56 / 255, 1.0], // #1A2838 deep navy solid rect
 };
 
 export class GridPlatform {
@@ -103,7 +103,7 @@ export class GridPlatform {
             layouts: [bindGroupLayout],
         });
 
-        // Default: visible (Intro starts with bottom border active)
+        // Default: visible (Welcome starts with bottom border active)
         this._bottomHideOffset = 0.0;
         this._targetBottomHideOffset = 0.0;
     }

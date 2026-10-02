@@ -3,7 +3,7 @@ export type EventCallback<T = any> = (payload: T) => void;
 export interface SectionChangeEvent {
     sectionIndex: number;
     sectionId: string;
-    isIntro: boolean;
+    isWelcome: boolean;
     progress: number;
 }
 

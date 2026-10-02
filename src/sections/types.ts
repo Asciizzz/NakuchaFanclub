@@ -1,38 +1,41 @@
-import type { GPUManager } from "../core/gpu.js";
-
 export interface TransitionContext {
-    state: "IDLE" | "TRANSITIONING";
-    from: Section | null;
-    to: Section | null;
-    duration: number;  // resolved window in ms
-    elapsed: number;   // elapsed ms
-    progress: number;  // 0.0 -> 1.0 linear normalized progress
-    sharedContext: Record<string, unknown>;
+    readonly role: "entering" | "leaving";
+    readonly other: Section;
+    readonly progress: number; // 0.0 -> 1.0 linear normalized progress
+    readonly duration: number; // ms
+    readonly direction: 1 | -1; // +1 if moving right/forward, -1 if left/backward
 }
 
-export interface SectionRenderContext extends TransitionContext {
-    time: number;
-    dt: number;
-    encoder: GPUCommandEncoder;
-    gpu: GPUManager;
+export interface FrameContext {
+    readonly time: number;
+    readonly dt: number;
+    readonly transition: TransitionContext | null; // null when IDLE
 }
 
 export interface Section {
-    readonly id: string; // Section ID, NOT domElement ID.
-    readonly name: string;
-    readonly hasBottomBorder: boolean;
-    readonly enterDuration: number;
+    readonly id: string; // Unique Section ID, NOT domElement ID
     readonly domElement: HTMLElement | null;
-    readonly gpu: GPUManager;
 
-    getExitDurationFor?(target: Section): number | null;
+    // ==============================================================
+    // 1. Instant Impulses (One-shot triggers at state boundaries)
+    // ==============================================================
+    onEnterStart?(from: Section | null): void; // Triggered at p = 0 of entrance
+    onEnterEnd?(from: Section | null): void;   // Triggered at p = 1 of entrance (settled)
+    onLeaveStart?(to: Section): void;          // Triggered at p = 0 of departure
+    onLeaveEnd?(to: Section): void;            // Triggered at p = 1 of departure (cleanup)
 
-    onEnter?(ctx: TransitionContext): void;
-    onLeave?(ctx: TransitionContext): void;
-    onTransitionTick?(ctx: TransitionContext): void;
-    onEnterComplete?(ctx: TransitionContext): void;
-    onLeaveComplete?(ctx: TransitionContext): void;
+    // ==============================================================
+    // 2. Continuous Per-Frame Pipeline (Executed in strict order)
+    // ==============================================================
+    // Phase 1: Logic, timelines, physics, skeletal armatures, writeBuffer
+    onTick(ctx: FrameContext): void;
 
-    // Direct render callback: section autonomously decides how to render to back and front canvases
-    render(ctx: SectionRenderContext): void;
+    // Phase 2: Layer 1 Back Canvas pass (background shaders, atmosphere)
+    renderBack(pass: GPURenderPassEncoder, ctx: FrameContext): void;
+
+    // Phase 3: Layer 3 Front Canvas pass (3D cutouts, front particles)
+    renderFront?(pass: GPURenderPassEncoder, ctx: FrameContext): void;
+
+    // Phase 4: Layer 2 DOM Middle Layer (transform, opacity)
+    updateDom(ctx: FrameContext): void;
 }
