@@ -10,7 +10,7 @@
     --ink-navy: #1A2838;
     --blue-steel: #4B6B8A;
     --cyan-soft: #B0C8DC;
-    --white-chalk: #E8F2FA;
+    --white-chalk: #dcefff;
     --white-pure: #FFFFFF;
 
     /* Dynamic heights synced with WebGPU borders */
@@ -58,6 +58,13 @@ html, body {
     z-index: 10;
     pointer-events: none;
     overflow: hidden;
+    opacity: 1;
+    transition: opacity 0.4s ease;
+}
+
+body.intro-active .sections-layer {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .section-view {
@@ -284,16 +291,23 @@ html, body {
 
 /* ================= 4. Header Div Element (Absolute Fixed Top) (Z-Index: 101) ================= */
 .header-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: var(--top-main-height);
-    z-index: 101;
-    pointer-events: auto;
-    display: flex;
-    align-items: center;
-    background: transparent;
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: var(--top-main-height);
+	z-index: 101;
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	background: transparent;
+	transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.header-bar.intro-hidden {
+	opacity: 0;
+	transform: translateY(-100%);
+	pointer-events: none;
 }
 
 .header-inner {
@@ -314,7 +328,7 @@ html, body {
     transition: color 0.3s, background 0.3s, border-color 0.3s;
 }
 
-.header-bar.light-theme .brand {
+.header-bar.light .brand {
     color: var(--blue-steel);
 }
 
@@ -335,22 +349,26 @@ html, body {
     font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: 0.05em;
-    color: var(--cyan-soft);
     transition: color 0.2s;
     cursor: pointer;
 }
 
-.nav-btn:hover, .nav-btn.active {
-    color: var(--white-pure);
-}
-
-.header-bar.light-theme .nav-btn {
+.header-bar.light .nav-btn {
     color: var(--blue-steel);
 }
 
-.header-bar.light-theme .nav-btn:hover,
-.header-bar.light-theme .nav-btn.active {
+.header-bar.light .nav-btn:hover,
+.header-bar.light .nav-btn.active {
     color: var(--ink-navy);
+}
+
+.header-bar.dark .nav-btn {
+    color: var(--cyan-soft);
+}
+
+.header-bar.dark .nav-btn:hover,
+.header-bar.dark .nav-btn.active {
+    color: var(--white-pure);
 }
 
 /* ================= 5. Discography Studio Stage Contrast ================= */
@@ -379,4 +397,7 @@ html, body {
 #discography-view .action-btn-outline:hover {
     background: rgba(176, 200, 220, 0.15);
 }
+
+
+
 

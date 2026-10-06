@@ -16,17 +16,13 @@ export interface Section {
     readonly id: string; // Unique Section ID, NOT domElement ID
     readonly domElement: HTMLElement | null;
 
-    // ==============================================================
     // 1. Instant Impulses (One-shot triggers at state boundaries)
-    // ==============================================================
     onEnterStart?(from: Section | null): void; // Triggered at p = 0 of entrance
     onEnterEnd?(from: Section | null): void;   // Triggered at p = 1 of entrance (settled)
     onLeaveStart?(to: Section): void;          // Triggered at p = 0 of departure
     onLeaveEnd?(to: Section): void;            // Triggered at p = 1 of departure (cleanup)
 
-    // ==============================================================
     // 2. Continuous Per-Frame Pipeline (Executed in strict order)
-    // ==============================================================
     // Phase 1: Logic, timelines, physics, skeletal armatures, writeBuffer
     onTick(ctx: FrameContext): void;
 

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/src/style.css" />
 </head>
 
-<body>
+<body class="intro-active">
 
     <!-- 1. Back WebGPU Canvas: Background Stage (Z-Index: 1) -->
     <canvas id="back-canvas"></canvas>
@@ -17,8 +17,22 @@
     <!-- Scrolling within a section scrolls that section. Section change is button-driven. -->
     <div class="sections-layer" id="sections-layer">
 
-        <!-- Welcome Section -->
-        <section class="section-view active" id="welcome-view" data-index="0"></section>
+        <!-- Home Section -->
+        <section class="section-view active" id="home-view" data-index="0">
+            <div class="section-content">
+                <span class="indicator-tag">PORTAL // WELCOME</span>
+                <h2>NAKUCHA FANCLUB</h2>
+                <p class="section-note">Official community and archive for Aitsuki Nakuru.</p>
+                <div class="hero-actions">
+                    <button class="action-btn" data-jump-section="wiki">
+                        <span>Explore Wiki &rarr;</span>
+                    </button>
+                    <button class="action-btn-outline" data-jump-section="music">
+                        <span>Discography &amp; Music</span>
+                    </button>
+                </div>
+            </div>
+        </section>
 
         <!-- Naku Wiki Section (Topographic Map Shader) -->
         <section class="section-view" id="wiki-view" data-index="1">
@@ -78,8 +92,8 @@
                     <button class="action-btn" data-jump-section="schedule">
                         <span>Go to Schedule &rarr;</span>
                     </button>
-                    <button class="action-btn-outline" data-jump-section="welcome">
-                        <span>&larr; Back to Welcome</span>
+                    <button class="action-btn-outline" data-jump-section="home">
+                        <span>&larr; Back to Home</span>
                     </button>
                 </div>
             </div>
@@ -143,8 +157,8 @@
                 <h2>SOCIAL</h2>
                 <p class="section-note">Official updates, feed, and community announcements.</p>
                 <div class="hero-actions">
-                    <button class="action-btn" data-jump-section="welcome">
-                        <span>&larr; Return to Welcome</span>
+                    <button class="action-btn" data-jump-section="home">
+                        <span>&larr; Return to Home</span>
                     </button>
                     <button class="action-btn-outline" data-jump-section="discography">
                         <span>&larr; Discography</span>
@@ -159,13 +173,13 @@
     <!-- Renders top border (rect + grid) and bottom border (grid + rect) in WebGPU -->
     <canvas id="front-canvas"></canvas>
 
-    <!-- 4. Header Div Element (Absolute Fixed Top, Never Moves) (Z-Index: 101) -->
-    <header class="header-bar" id="header-bar">
+    <!-- 4. Top Bar Div Element (Absolute Fixed Top) (Z-Index: 101) -->
+    <header class="header-bar intro-hidden" id="header-bar">
         <div class="header-inner">
             <div class="brand">NAKUCHA FANCLUB</div>
 
             <nav class="nav-wrap">
-                <button type="button" class="nav-btn active" data-target="welcome" data-header-style="welcome">WELCOME</button>
+                <button type="button" class="nav-btn active" data-target="home" data-header-style="light">HOME</button>
                 <button type="button" class="nav-btn" data-target="wiki" data-header-style="light">NAKU WIKI</button>
                 <button type="button" class="nav-btn" data-target="schedule" data-header-style="light">SCHEDULE</button>
                 <button type="button" class="nav-btn" data-target="music" data-header-style="light">MUSIC</button>
